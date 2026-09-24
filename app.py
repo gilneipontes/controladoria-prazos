@@ -344,17 +344,39 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
     
     processos_ativos = processos_df[processos_df["ativo"]].sort_values("numero")
     
-    # ===== SELECTBOX NORMAL (funciona em tempo real) =====
-    processo = st.selectbox(
-        "Nº Processo *",
-        options=processos_ativos["numero"].values,
-        index=None,  # Começa vazio
-        placeholder="Clique e comece a digitar o número",
-        key=f"p_{v}"
+    # ===== BUSCA DE PROCESSO (TEXTO PARA DIGITAR) =====
+    st.write("**Nº Processo ***")
+    busca = st.text_input(
+        "Digite o número do processo",
+        value="",
+        placeholder="Ex: 5014993 ou 5028905",
+        key=f"busca_proc_{v}",
+        label_visibility="collapsed"
     )
     
+    processo = None
     cliente = ""
     parte_adversaria = ""
+    
+    # Filtrar processos conforme digita
+    if busca:
+        processos_filtrados = processos_ativos[
+            processos_ativos["numero"].str.contains(busca, case=False)
+        ]
+        
+        if not processos_filtrados.empty:
+            st.caption(f"📋 {len(processos_filtrados)} processo(s) encontrado(s):")
+            
+            # Mostrar selectbox APENAS com os filtrados
+            processo = st.selectbox(
+                "Selecione:",
+                options=processos_filtrados["numero"].values,
+                index=0 if len(processos_filtrados) > 0 else None,
+                label_visibility="collapsed",
+                key=f"sel_proc_{v}"
+            )
+        else:
+            st.warning(f"❌ Nenhum processo encontrado com '{busca}'")
     
     # ===== MOSTRAR CLIENTE E PARTE ADVERSÁRIA (quando selecionado) =====
     if processo:
