@@ -324,6 +324,12 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
             
             st.write(f"**Tipo:** {prazo['tipo']}")
             
+            # ===== DESCRIÇÃO/OBSERVAÇÕES EXISTENTES =====
+            if prazo['descricao']:
+                st.divider()
+                st.subheader("📌 Observações Anteriores")
+                st.info(prazo['descricao'])
+            
             st.divider()
             st.subheader("📝 O QUE DEVE SER FEITO")
             
