@@ -140,10 +140,7 @@ def init_estado() -> None:
     st.session_state.setdefault("id_modal", None)
     st.session_state.setdefault("modo_modal", None)
     st.session_state.setdefault("sel_prazo_idx", 0)
-    st.session_state.setdefault("audiencia_modal_aberta", False)
-    st.session_state.setdefault("id_audiencia_modal", None)
-    st.session_state.setdefault("modo_audiencia_modal", None)
-    st.session_state.setdefault("sel_audiencia_idx", 0)
+    # Note: Audiência modal states are now scoped to each prefix and initialized in tabela_audiencias()
 
 def acesso_liberado() -> bool:
     senha_correta = st.secrets.get("APP_PASSWORD")
@@ -1055,7 +1052,7 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
             if aud_agendadas.empty:
                 st.info("Nenhuma audiência agendada!")
             else:
-                tabela_audiencias(aud_agendadas)
+                tabela_audiencias(aud_agendadas, prefix="dash_agendadas")
 
         # ===== AUDIÊNCIAS REALIZADAS =====
         elif filtro == "realizadas":
@@ -1063,7 +1060,7 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
             if aud_realizadas.empty:
                 st.info("Nenhuma audiência realizada!")
             else:
-                tabela_audiencias(aud_realizadas)
+                tabela_audiencias(aud_realizadas, prefix="dash_realizadas")
 
         # ===== AUDIÊNCIAS CANCELADAS =====
         elif filtro == "canceladas":
@@ -1071,7 +1068,7 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
             if aud_canceladas.empty:
                 st.info("Nenhuma audiência cancelada!")
             else:
-                tabela_audiencias(aud_canceladas)
+                tabela_audiencias(aud_canceladas, prefix="dash_canceladas")
 
 def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
     """Formulário para nova audiência na barra lateral"""
@@ -1341,6 +1338,15 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
 
     df_vis = df.copy()
 
+    # ===== INICIALIZAR ESTADO MODAL SCOPED AO PREFIX =====
+    modal_key_aberta = f"aud_modal_{prefix}_aberta"
+    modal_key_id = f"aud_modal_{prefix}_id"
+    modal_key_modo = f"aud_modal_{prefix}_modo"
+
+    st.session_state.setdefault(modal_key_aberta, False)
+    st.session_state.setdefault(modal_key_id, None)
+    st.session_state.setdefault(modal_key_modo, None)
+
     # ===== FORMATAR DATAS E HORAS =====
     df_vis["data_fmt"] = df_vis["data_audiencia"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
     df_vis["hora_ini_fmt"] = df_vis["hora_inicio"].astype(str)
@@ -1395,22 +1401,22 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
     if col2.button("📂 Ver Detalhes", use_container_width=True, type="primary", key=f"btn_aud_det_{prefix}"):
         if st.session_state.get(f"sel_audiencia_idx_{prefix}", 0) > 0:
             id_sel = opcoes_ids[st.session_state.get(f"sel_audiencia_idx_{prefix}", 0)]
-            st.session_state.id_audiencia_modal = id_sel
-            st.session_state.modo_audiencia_modal = "detalhes"
-            st.session_state.audiencia_modal_aberta = True
+            st.session_state[modal_key_id] = id_sel
+            st.session_state[modal_key_modo] = "detalhes"
+            st.session_state[modal_key_aberta] = True
             st.rerun()
         else:
             st.warning("⚠️ Selecione uma audiência primeiro!")
 
     # ===== MODAL DE DETALHES =====
-    if st.session_state.get("audiencia_modal_aberta") and st.session_state.get("id_audiencia_modal"):
-        id_audiencia = st.session_state.id_audiencia_modal
+    if st.session_state.get(modal_key_aberta) and st.session_state.get(modal_key_id):
+        id_audiencia = st.session_state[modal_key_id]
         audiencia = df[df["id"] == id_audiencia].iloc[0]
 
         st.divider()
         st.subheader(f"📅 {audiencia['processo']} - {audiencia['data_audiencia'].strftime('%d/%m/%Y')}")
 
-        if st.session_state.get("modo_audiencia_modal") == "detalhes":
+        if st.session_state.get(modal_key_modo) == "detalhes":
             st.info("📋 Detalhes Completos da Audiência")
 
             col1, col2 = st.columns(2)
@@ -1444,57 +1450,57 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
             col1, col2, col3, col4 = st.columns(4)
 
             with col1:
-                if st.button("✏️ Editar", use_container_width=True, type="secondary"):
-                    st.session_state.modo_audiencia_modal = "editar"
+                if st.button("✏️ Editar", use_container_width=True, type="secondary", key=f"btn_edit_aud_{prefix}_{id_audiencia}"):
+                    st.session_state[modal_key_modo] = "editar"
                     st.rerun()
 
             with col2:
-                if st.button("✅ Realizada", use_container_width=True, type="primary"):
+                if st.button("✅ Realizada", use_container_width=True, type="primary", key=f"btn_realizada_{prefix}_{id_audiencia}"):
                     atualizar_audiencia(id_audiencia, {"status": "Realizada"})
                     st.session_state.aviso = "✅ Audiência marcada como realizada!"
-                    st.session_state.audiencia_modal_aberta = False
+                    st.session_state[modal_key_aberta] = False
                     st.rerun()
 
             with col3:
-                if st.button("❌ Cancelar", use_container_width=True, type="secondary"):
+                if st.button("❌ Cancelar", use_container_width=True, type="secondary", key=f"btn_cancelar_{prefix}_{id_audiencia}"):
                     atualizar_audiencia(id_audiencia, {"status": "Cancelada"})
                     st.session_state.aviso = "⚠️ Audiência cancelada!"
-                    st.session_state.audiencia_modal_aberta = False
+                    st.session_state[modal_key_aberta] = False
                     st.rerun()
 
             with col4:
-                if st.button("🗑️ Excluir", use_container_width=True, type="secondary"):
-                    st.session_state.modo_audiencia_modal = "confirmar_excluir"
+                if st.button("🗑️ Excluir", use_container_width=True, type="secondary", key=f"btn_excluir_{prefix}_{id_audiencia}"):
+                    st.session_state[modal_key_modo] = "confirmar_excluir"
                     st.rerun()
 
             st.divider()
             col_fechar = st.columns([3, 1])
             with col_fechar[1]:
-                if st.button("🔙 Fechar", use_container_width=True, type="secondary"):
-                    st.session_state.audiencia_modal_aberta = False
+                if st.button("🔙 Fechar", use_container_width=True, type="secondary", key=f"btn_fechar_{prefix}_{id_audiencia}"):
+                    st.session_state[modal_key_aberta] = False
                     st.rerun()
 
-        elif st.session_state.get("modo_audiencia_modal") == "editar":
-            with st.form(f"form_edit_aud_{id_audiencia}"):
+        elif st.session_state.get(modal_key_modo) == "editar":
+            with st.form(f"form_edit_aud_{prefix}_{id_audiencia}"):
                 col1, col2 = st.columns(2)
                 with col1:
-                    nova_data = st.date_input("Data", value=audiencia["data_audiencia"], format="DD/MM/YYYY", key=f"edit_data_aud_{id_audiencia}")
+                    nova_data = st.date_input("Data", value=audiencia["data_audiencia"], format="DD/MM/YYYY", key=f"edit_data_aud_{prefix}_{id_audiencia}")
                 with col2:
-                    nova_sala = st.text_input("Sala", value=audiencia["sala"], key=f"edit_sala_{id_audiencia}")
+                    nova_sala = st.text_input("Sala", value=audiencia["sala"], key=f"edit_sala_{prefix}_{id_audiencia}")
 
                 col1, col2 = st.columns(2)
                 with col1:
-                    nova_hora_ini = st.time_input("Hora Início", value=pd.to_datetime(audiencia["hora_inicio"]).time() if isinstance(audiencia["hora_inicio"], str) else audiencia["hora_inicio"], key=f"edit_hora_ini_{id_audiencia}")
+                    nova_hora_ini = st.time_input("Hora Início", value=pd.to_datetime(audiencia["hora_inicio"]).time() if isinstance(audiencia["hora_inicio"], str) else audiencia["hora_inicio"], key=f"edit_hora_ini_{prefix}_{id_audiencia}")
                 with col2:
-                    nova_hora_fim = st.time_input("Hora Término", value=pd.to_datetime(audiencia["hora_termino"]).time() if isinstance(audiencia["hora_termino"], str) else audiencia["hora_termino"], key=f"edit_hora_fim_{id_audiencia}")
+                    nova_hora_fim = st.time_input("Hora Término", value=pd.to_datetime(audiencia["hora_termino"]).time() if isinstance(audiencia["hora_termino"], str) else audiencia["hora_termino"], key=f"edit_hora_fim_{prefix}_{id_audiencia}")
 
                 col1, col2 = st.columns(2)
                 with col1:
-                    novo_formato = st.selectbox("Formato", FORMATOS_AUDIENCIA, index=FORMATOS_AUDIENCIA.index(audiencia["formato"]), key=f"edit_formato_{id_audiencia}")
+                    novo_formato = st.selectbox("Formato", FORMATOS_AUDIENCIA, index=FORMATOS_AUDIENCIA.index(audiencia["formato"]), key=f"edit_formato_{prefix}_{id_audiencia}")
                 with col2:
-                    novo_tipo = st.selectbox("Tipo", TIPOS_AUDIENCIA, index=TIPOS_AUDIENCIA.index(audiencia["tipo"]), key=f"edit_tipo_{id_audiencia}")
+                    novo_tipo = st.selectbox("Tipo", TIPOS_AUDIENCIA, index=TIPOS_AUDIENCIA.index(audiencia["tipo"]), key=f"edit_tipo_{prefix}_{id_audiencia}")
 
-                nova_obs = st.text_area("Observações", value=audiencia["observacoes"] or "", height=100, key=f"edit_obs_{id_audiencia}")
+                nova_obs = st.text_area("Observações", value=audiencia["observacoes"] or "", height=100, key=f"edit_obs_{prefix}_{id_audiencia}")
 
                 c1, c2 = st.columns(2)
                 with c1:
@@ -1509,28 +1515,28 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
                             "observacoes": nova_obs or None
                         })
                         st.session_state.aviso = "✅ Audiência atualizada!"
-                        st.session_state.audiencia_modal_aberta = False
+                        st.session_state[modal_key_aberta] = False
                         st.rerun()
                 with c2:
                     if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                        st.session_state.modo_audiencia_modal = "detalhes"
+                        st.session_state[modal_key_modo] = "detalhes"
                         st.rerun()
 
-        elif st.session_state.get("modo_audiencia_modal") == "confirmar_excluir":
+        elif st.session_state.get(modal_key_modo) == "confirmar_excluir":
             st.error("🔴 ATENÇÃO: Excluir é permanente!")
             st.write(f"**Processo:** {audiencia['processo']}")
             st.write(f"**Data:** {audiencia['data_audiencia'].strftime('%d/%m/%Y')} às {audiencia['hora_inicio']}")
             st.caption("⚠️ Esta ação NÃO pode ser desfeita!")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("🗑️ SIM, Excluir", use_container_width=True, type="primary"):
+                if st.button("🗑️ SIM, Excluir", use_container_width=True, type="primary", key=f"btn_sim_excluir_{prefix}_{id_audiencia}"):
                     excluir_audiencia(id_audiencia)
                     st.session_state.aviso = "✅ Audiência excluída!"
-                    st.session_state.audiencia_modal_aberta = False
+                    st.session_state[modal_key_aberta] = False
                     st.rerun()
             with c2:
-                if st.button("❌ NÃO, Cancelar", use_container_width=True):
-                    st.session_state.modo_audiencia_modal = "detalhes"
+                if st.button("❌ NÃO, Cancelar", use_container_width=True, key=f"btn_nao_excluir_{prefix}_{id_audiencia}"):
+                    st.session_state[modal_key_modo] = "detalhes"
                     st.rerun()
 
 def main() -> None:
@@ -1766,19 +1772,19 @@ def main() -> None:
                 if audiencias_agendadas.empty:
                     st.info("✅ Nenhuma audiência agendada!")
                 else:
-                    tabela_audiencias(audiencias_agendadas)
+                    tabela_audiencias(audiencias_agendadas, prefix="tab_agendadas")
 
             with aud_tab2:
                 if audiencias_realizadas.empty:
                     st.info("Nenhuma audiência realizada ainda.")
                 else:
-                    tabela_audiencias(audiencias_realizadas)
+                    tabela_audiencias(audiencias_realizadas, prefix="tab_realizadas")
 
             with aud_tab3:
                 if audiencias_canceladas.empty:
                     st.info("Nenhuma audiência cancelada.")
                 else:
-                    tabela_audiencias(audiencias_canceladas)
+                    tabela_audiencias(audiencias_canceladas, prefix="tab_canceladas")
 
             # Exportar
             st.divider()
