@@ -357,7 +357,7 @@ def tabela_status(df: pd.DataFrame) -> None:
     id_selecionado = col1.selectbox(
         "Selecione o prazo para arquivar",
         options=df["id"].values,
-        format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} ({x})",
+        format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} | Proc: {df[df['id'] == x]['processo'].values[0] or '-'} | Cliente: {df[df['id'] == x]['cliente'].values[0] or '-'} | Data: {df[df['id'] == x]['data_fatal'].values[0]}",
         key="select_arquivar_prazo"
     )
     
@@ -402,16 +402,26 @@ def relatorio_arquivados(df: pd.DataFrame) -> None:
     })
     
     st.dataframe(rel, use_container_width=True, hide_index=True)
+
+
+def aba_desarquivar(df: pd.DataFrame) -> None:
+    """Aba para desarquivar prazos."""
+    arquivados = df[df["arquivado"]]
     
-    st.divider()
+    if arquivados.empty:
+        st.info("Nenhum prazo arquivado para desarquivar.")
+        return
+    
     st.subheader("🔄 Desarquivar prazo")
+    st.write(f"Total de arquivados: **{len(arquivados)}**")
+    st.divider()
     
     col1, col2 = st.columns([2, 1])
     
     id_desarquivar = col1.selectbox(
         "Selecione o prazo para desarquivar",
         options=arquivados["id"].values,
-        format_func=lambda x: f"{arquivados[arquivados['id'] == x]['titulo'].values[0]} ({x})",
+        format_func=lambda x: f"{arquivados[arquivados['id'] == x]['titulo'].values[0]} | Proc: {arquivados[arquivados['id'] == x]['processo'].values[0] or '-'} | Cliente: {arquivados[arquivados['id'] == x]['cliente'].values[0] or '-'} | Data: {arquivados[arquivados['id'] == x]['data_fatal'].values[0]}",
         key="select_desarquivar"
     )
     
@@ -456,7 +466,7 @@ def main() -> None:
 
     df = enriquecer(df)
     
-    tab1, tab2 = st.tabs(["📅 Prazos", "📋 Relatório"])
+    tab1, tab2, tab3 = st.tabs(["📅 Prazos", "📋 Relatório", "🔄 Desarquivar"])
     
     with tab1:
         topo = st.container()
@@ -470,6 +480,9 @@ def main() -> None:
     
     with tab2:
         relatorio_arquivados(df)
+    
+    with tab3:
+        aba_desarquivar(df)
 
 
 main()
