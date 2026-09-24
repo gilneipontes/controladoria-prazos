@@ -425,6 +425,7 @@ def main() -> None:
             sidebar_novo_prazo(df_processos)
         elif aba == "Novo Processo":
             st.subheader("⚖️ Novo Processo")
+            v = st.session_state.form_v
             with st.form("proc"):
                 numero = st.text_input("Nº CNJ *", placeholder="0000000-00.0000.0.00.0000", key=f"pnumero_{v}")
                 cliente = st.text_input("Cliente *", key=f"pcliente_{v}")
