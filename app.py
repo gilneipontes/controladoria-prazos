@@ -212,18 +212,40 @@ def enriquecer(df: pd.DataFrame) -> pd.DataFrame:
     df["situacao"] = df["faixa"].map(FAIXAS)
     return df
 
-def tabela_status(df: pd.DataFrame) -> None:
+def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
     if df.empty:
         st.info("Nenhum registro.")
         return
 
     df_vis = df.copy()
+    
+    # ===== EXTRAIR PRIMEIRO NOME DO CLIENTE =====
+    df_vis["cliente_primeiro"] = df_vis["cliente"].apply(lambda x: x.split()[0] if x else "")
+    
+    # ===== ADICIONAR PARTE CONTRÁRIA (SE HOUVER PROCESSOS) =====
+    if processos_df is not None:
+        # Merge com processos para pegar parte contrária
+        processos_parte = processos_df[["numero", "parte_contraria"]].copy()
+        df_vis = df_vis.merge(processos_parte, left_on="processo", right_on="numero", how="left")
+        
+        # Extrair primeiro nome da parte contrária
+        df_vis["parte_primeiro"] = df_vis["parte_contraria"].apply(lambda x: x.split()[0] if pd.notna(x) and x else "")
+        
+        # Concatenar cliente + parte
+        df_vis["cliente_parte"] = df_vis.apply(
+            lambda row: f"{row['cliente_primeiro']} / {row['parte_primeiro']}" if row['parte_primeiro'] else row['cliente_primeiro'],
+            axis=1
+        )
+    else:
+        df_vis["cliente_parte"] = df_vis["cliente_primeiro"]
+    
     df_vis["data_interna_fmt"] = df_vis["data_interna"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
     df_vis["data_fatal_fmt"] = df_vis["data_fatal"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
 
+    # ===== REMOVER D.ÚTEIS, TIPO E RESPONSÁVEL =====
     colunas_vis = [
-        "id", "situacao", "titulo", "processo", "cliente", "data_interna_fmt",
-        "data_fatal_fmt", "dias_uteis", "tipo", "responsavel", "prioridade",
+        "id", "situacao", "titulo", "processo", "cliente_parte",
+        "data_interna_fmt", "data_fatal_fmt", "responsavel", "prioridade",
     ]
     vis = (
         df_vis.assign(_p=df_vis["prioridade"].map(ORDEM_PRIORIDADE))
@@ -234,10 +256,8 @@ def tabela_status(df: pd.DataFrame) -> None:
             "data_fatal_fmt": "Data Fatal",
             "situacao": "Situação",
             "titulo": "Título",
-            "processo": "Processo",
-            "cliente": "Cliente",
-            "dias_uteis": "D.Úteis",
-            "tipo": "Tipo",
+            "processo": "Nº Processo",
+            "cliente_parte": "Cliente / Parte Contrária",
             "responsavel": "Responsável",
             "prioridade": "Prioridade"
         })
@@ -768,7 +788,7 @@ def main() -> None:
     tab1, tab2, tab3, tab4 = st.tabs(["📅 Prazos", "📋 Relatório", "🔄 Desarquivar", "📋 Processos"])
     
     with tab1:
-        tabela_status(df_prazos[~df_prazos["arquivado"]])
+        tabela_status(df_prazos[~df_prazos["arquivado"]], df_processos)
     
     with tab2:
         st.subheader("📋 Relatório de Prazos")
