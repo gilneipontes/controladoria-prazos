@@ -24,6 +24,7 @@ st.set_page_config(page_title="Controladoria Jurídica", page_icon="⚖️", lay
 TZ = ZoneInfo("America/Sao_Paulo")
 TABELA_PRAZOS = "prazos"
 TABELA_PROCESSOS = "processos"
+TABELA_AUDIENCIAS = "audiencias"
 
 RESPONSAVEIS = ["Dr. Gilnei", "Dra. Jéssica"]
 TIPOS = ["Prazo Processual", "Data Fatal", "Tarefa Operacional", "Admin"]
@@ -68,6 +69,15 @@ COLUNAS_PRAZOS = [
 ]
 
 COLUNAS_PROCESSOS = ["id", "created_at", "numero", "cliente", "parte_contraria", "descricao", "ativo"]
+
+COLUNAS_AUDIENCIAS = [
+    "id", "created_at", "processo", "autor", "reu", "sala", "data_audiencia",
+    "hora_inicio", "hora_termino", "formato", "tipo", "status", "observacoes", "responsavel"
+]
+
+FORMATOS_AUDIENCIA = ["Presencial", "Virtual"]
+TIPOS_AUDIENCIA = ["Inicial", "Continuação", "Sentença", "Outra"]
+STATUS_AUDIENCIA = ["Agendada", "Realizada", "Cancelada"]
 
 ATALHOS = {
     "PET-INI": "Petição Inicial",
@@ -130,6 +140,10 @@ def init_estado() -> None:
     st.session_state.setdefault("id_modal", None)
     st.session_state.setdefault("modo_modal", None)
     st.session_state.setdefault("sel_prazo_idx", 0)
+    st.session_state.setdefault("audiencia_modal_aberta", False)
+    st.session_state.setdefault("id_audiencia_modal", None)
+    st.session_state.setdefault("modo_audiencia_modal", None)
+    st.session_state.setdefault("sel_audiencia_idx", 0)
 
 def acesso_liberado() -> bool:
     senha_correta = st.secrets.get("APP_PASSWORD")
@@ -177,6 +191,19 @@ def carregar_processos() -> pd.DataFrame:
     df["ativo"] = df["ativo"].fillna(True).astype(bool)
     return df
 
+@st.cache_data(ttl=60, show_spinner="Carregando audiências…")
+def carregar_audiencias() -> pd.DataFrame:
+    try:
+        resp = supabase().table(TABELA_AUDIENCIAS).select("*").order("data_audiencia").execute()
+        if not resp.data:
+            return pd.DataFrame(columns=COLUNAS_AUDIENCIAS)
+        df = pd.DataFrame(resp.data, columns=COLUNAS_AUDIENCIAS)
+        df["data_audiencia"] = pd.to_datetime(df["data_audiencia"], errors="coerce").dt.date
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar audiências: {e}")
+        return pd.DataFrame(columns=COLUNAS_AUDIENCIAS)
+
 def inserir_prazo(registro: dict) -> None:
     supabase().table(TABELA_PRAZOS).insert(registro).execute()
     carregar_prazos.clear()
@@ -203,6 +230,19 @@ def arquivar_prazo(id_prazo: int) -> None:
 def excluir_prazo(id_prazo: int) -> None:
     supabase().table(TABELA_PRAZOS).delete().eq("id", id_prazo).execute()
     carregar_prazos.clear()
+
+def inserir_audiencia(registro: dict) -> None:
+    supabase().table(TABELA_AUDIENCIAS).insert(registro).execute()
+    carregar_audiencias.clear()
+
+def atualizar_audiencia(id_audiencia: int, campos: dict) -> None:
+    if campos:
+        supabase().table(TABELA_AUDIENCIAS).update(campos).eq("id", id_audiencia).execute()
+    carregar_audiencias.clear()
+
+def excluir_audiencia(id_audiencia: int) -> None:
+    supabase().table(TABELA_AUDIENCIAS).delete().eq("id", id_audiencia).execute()
+    carregar_audiencias.clear()
 
 def enriquecer(df: pd.DataFrame) -> pd.DataFrame:
     ref = np.datetime64(hoje())
@@ -345,6 +385,113 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
     ws.column_dimensions['D'].width = 15
     ws.column_dimensions['E'].width = 35
     
+    # Salvar em arquivo temporário
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        wb.save(tmp.name)
+        return tmp.name
+
+def gerar_audiencias_excel(df_audiencias: pd.DataFrame):
+    """Gera Excel bonito com agenda de audiências formatado"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    import tempfile
+
+    if df_audiencias.empty:
+        return None
+
+    # Preparar dados
+    df_export = df_audiencias[["processo", "autor", "reu", "sala", "data_audiencia", "hora_inicio", "hora_termino", "formato", "tipo", "status"]].copy()
+
+    # Converter datas e horas para string
+    try:
+        df_export["data_audiencia"] = pd.to_datetime(df_export["data_audiencia"]).dt.strftime("%d/%m/%Y")
+    except:
+        df_export["data_audiencia"] = df_export["data_audiencia"].astype(str)
+
+    df_export["hora_inicio"] = df_export["hora_inicio"].astype(str)
+    df_export["hora_termino"] = df_export["hora_termino"].astype(str)
+
+    # Criar workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Audiências"
+
+    # Definir estilos
+    header_fill = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    # Cabeçalhos
+    headers = ["Nº Processo", "Autor", "Réu", "Sala", "Data", "Início", "Término", "Formato", "Tipo", "Status"]
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.value = header
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center_align
+        cell.border = border
+
+    # Dados
+    for row_num, (idx, row) in enumerate(df_export.iterrows(), 2):
+        ws.cell(row=row_num, column=1).value = row["processo"]
+        ws.cell(row=row_num, column=1).alignment = left_align
+        ws.cell(row=row_num, column=1).border = border
+
+        ws.cell(row=row_num, column=2).value = row["autor"]
+        ws.cell(row=row_num, column=2).alignment = left_align
+        ws.cell(row=row_num, column=2).border = border
+
+        ws.cell(row=row_num, column=3).value = row["reu"]
+        ws.cell(row=row_num, column=3).alignment = left_align
+        ws.cell(row=row_num, column=3).border = border
+
+        ws.cell(row=row_num, column=4).value = row["sala"]
+        ws.cell(row=row_num, column=4).alignment = center_align
+        ws.cell(row=row_num, column=4).border = border
+
+        ws.cell(row=row_num, column=5).value = row["data_audiencia"]
+        ws.cell(row=row_num, column=5).alignment = center_align
+        ws.cell(row=row_num, column=5).border = border
+
+        ws.cell(row=row_num, column=6).value = row["hora_inicio"]
+        ws.cell(row=row_num, column=6).alignment = center_align
+        ws.cell(row=row_num, column=6).border = border
+
+        ws.cell(row=row_num, column=7).value = row["hora_termino"]
+        ws.cell(row=row_num, column=7).alignment = center_align
+        ws.cell(row=row_num, column=7).border = border
+
+        ws.cell(row=row_num, column=8).value = row["formato"]
+        ws.cell(row=row_num, column=8).alignment = center_align
+        ws.cell(row=row_num, column=8).border = border
+
+        ws.cell(row=row_num, column=9).value = row["tipo"]
+        ws.cell(row=row_num, column=9).alignment = center_align
+        ws.cell(row=row_num, column=9).border = border
+
+        ws.cell(row=row_num, column=10).value = row["status"]
+        ws.cell(row=row_num, column=10).alignment = center_align
+        ws.cell(row=row_num, column=10).border = border
+
+    # Ajustar largura das colunas
+    ws.column_dimensions['A'].width = 20
+    ws.column_dimensions['B'].width = 20
+    ws.column_dimensions['C'].width = 20
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 15
+    ws.column_dimensions['F'].width = 12
+    ws.column_dimensions['G'].width = 12
+    ws.column_dimensions['H'].width = 15
+    ws.column_dimensions['I'].width = 15
+    ws.column_dimensions['J'].width = 15
+
     # Salvar em arquivo temporário
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         wb.save(tmp.name)
@@ -789,6 +936,106 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                 st.session_state.form_v += 1
                 st.rerun()
 
+def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
+    """Formulário para nova audiência na barra lateral"""
+    st.subheader("📅 Nova Audiência")
+    v = st.session_state.form_v
+
+    processos_ativos = processos_df[processos_df["ativo"]].sort_values("numero")
+
+    st.write("**Nº Processo ***")
+    busca = st.text_input(
+        "Digite o número do processo",
+        value="",
+        placeholder="Ex: 5014993 ou 5028905",
+        key=f"busca_proc_aud_{v}",
+        label_visibility="collapsed"
+    )
+
+    processo = None
+    autor = ""
+    reu = ""
+
+    if busca:
+        processos_filtrados = processos_ativos[
+            processos_ativos["numero"].str.contains(busca, case=False, regex=False)
+        ]
+
+        if not processos_filtrados.empty:
+            st.caption(f"📋 {len(processos_filtrados)} processo(s) encontrado(s):")
+
+            processo = st.selectbox(
+                "Selecione:",
+                options=processos_filtrados["numero"].values,
+                index=0 if len(processos_filtrados) > 0 else None,
+                label_visibility="collapsed",
+                key=f"sel_proc_aud_{v}"
+            )
+        else:
+            st.warning(f"❌ Nenhum processo encontrado com '{busca}'")
+
+    if processo:
+        autor = processos_ativos[processos_ativos["numero"] == processo]["cliente"].values[0]
+        reu = processos_ativos[processos_ativos["numero"] == processo]["parte_contraria"].values[0]
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"**Autor**")
+            st.markdown(f"### **{autor}**")
+        with col2:
+            st.markdown(f"**Réu**")
+            st.markdown(f"### **{reu}**")
+
+        st.success(f"✅ Processo selecionado: **{processo}**")
+
+    # ===== FORMULÁRIO =====
+    with st.form(f"cad_aud_{v}"):
+        col1, col2 = st.columns(2)
+        with col1:
+            data = col1.date_input("Data *", format="DD/MM/YYYY", key=f"aud_data_{v}")
+        with col2:
+            sala = col2.text_input("Sala (Local) *", placeholder="Ex: Sala 101", key=f"aud_sala_{v}")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            hora_ini = col1.time_input("Hora Início *", key=f"aud_hora_ini_{v}")
+        with col2:
+            hora_fim = col2.time_input("Hora Término *", key=f"aud_hora_fim_{v}")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            formato = col1.selectbox("Formato *", FORMATOS_AUDIENCIA, key=f"aud_formato_{v}")
+        with col2:
+            tipo = col2.selectbox("Tipo *", TIPOS_AUDIENCIA, key=f"aud_tipo_{v}")
+
+        responsavel = st.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"aud_resp_{v}")
+
+        obs = st.text_area("Observações", placeholder="Ex: Traz documentação, etc...", key=f"aud_obs_{v}")
+
+        if st.form_submit_button("💾 Salvar", type="primary"):
+            if not processo or not data or not sala or not hora_ini or not hora_fim:
+                st.error("Preencha todos os campos obrigatórios!")
+            elif hora_ini >= hora_fim:
+                st.error("Hora início deve ser menor que hora término!")
+            else:
+                inserir_audiencia({
+                    "processo": processo,
+                    "autor": autor,
+                    "reu": reu,
+                    "sala": sala,
+                    "data_audiencia": data.isoformat(),
+                    "hora_inicio": hora_ini.isoformat(),
+                    "hora_termino": hora_fim.isoformat(),
+                    "formato": formato,
+                    "tipo": tipo,
+                    "status": "Agendada",
+                    "observacoes": obs or None,
+                    "responsavel": responsavel
+                })
+                st.session_state.aviso = "✅ Audiência salva!"
+                st.session_state.form_v += 1
+                st.rerun()
+
 def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
     if df_processos.empty:
         st.info("Nenhum processo cadastrado.")
@@ -920,33 +1167,233 @@ def mostra_card_prazo(prazo) -> None:
     """Mostra um card formatado de um prazo"""
     with st.container(border=True):
         col1, col2, col3, col4 = st.columns([0.8, 2, 1.2, 0.8])
-        
+
         # ===== SITUAÇÃO =====
         with col1:
             st.markdown(f"### {prazo['situacao']}")
-        
+
         # ===== TÍTULO E RESPONSÁVEL =====
         with col2:
             st.markdown(f"**{prazo['titulo']}**")
             st.caption(f"👤 {prazo['responsavel']}")
-        
+
         # ===== DATAS =====
         with col3:
             data_interna_str = prazo['data_interna'].strftime("%d/%m") if pd.notna(prazo['data_interna']) else "—"
             data_fatal_str = prazo['data_fatal'].strftime("%d/%m/%Y")
             st.text(f"📌 {data_interna_str}\n🔚 {data_fatal_str}")
-        
+
         # ===== PRIORIDADE =====
         with col4:
             prioridade_emoji = {"Alta": "🔴", "Normal": "🟡", "Baixa": "🟢"}
             emoji = prioridade_emoji.get(prazo['prioridade'], '⚪')
             st.markdown(f"**{emoji}**\n{prazo['prioridade']}")
-        
+
         # ===== OBSERVAÇÕES =====
         if prazo['descricao']:
             st.divider()
             st.markdown(f"**📝 Observações:**")
             st.caption(prazo['descricao'])
+
+def tabela_audiencias(df: pd.DataFrame) -> None:
+    """Exibe tabela de audiências agendadas"""
+    if df.empty:
+        st.info("Nenhuma audiência cadastrada.")
+        return
+
+    df_vis = df.copy()
+
+    # ===== FORMATAR DATAS E HORAS =====
+    df_vis["data_fmt"] = df_vis["data_audiencia"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
+    df_vis["hora_ini_fmt"] = df_vis["hora_inicio"].astype(str)
+    df_vis["hora_fim_fmt"] = df_vis["hora_termino"].astype(str)
+
+    # ===== COLUNAS A EXIBIR =====
+    colunas_vis = [
+        "id", "processo", "autor", "reu", "sala", "data_fmt", "hora_ini_fmt", "hora_fim_fmt",
+        "formato", "tipo", "status", "responsavel"
+    ]
+
+    vis = df_vis[colunas_vis].set_index("id").rename(columns={
+        "data_fmt": "Data",
+        "hora_ini_fmt": "Início",
+        "hora_fim_fmt": "Término",
+        "processo": "Nº Processo",
+        "autor": "Autor",
+        "reu": "Réu",
+        "sala": "Sala",
+        "formato": "Formato",
+        "tipo": "Tipo",
+        "status": "Status",
+        "responsavel": "Responsável"
+    })
+
+    st.dataframe(vis, use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.subheader("⚙️ Gerenciar Audiência")
+
+    if df.empty:
+        st.info("Nenhuma audiência ativa.")
+        return
+
+    col1, col2 = st.columns([2, 1])
+
+    # ===== CRIAR OPÇÕES SIMPLES =====
+    opcoes_display = ["📌 Selecione uma audiência..."]
+    opcoes_ids = [None]
+
+    for _, row in df.iterrows():
+        opcoes_display.append(f"{row['processo']} | {row['data_audiencia'].strftime('%d/%m/%Y %H:%M')} | {row['sala']}")
+        opcoes_ids.append(row['id'])
+
+    id_sel_idx = col1.selectbox(
+        "Clique na audiência para ver detalhes:",
+        options=range(len(opcoes_display)),
+        format_func=lambda x: opcoes_display[x],
+        key="sel_audiencia_idx"
+    )
+
+    if col2.button("📂 Ver Detalhes", use_container_width=True, type="primary"):
+        if st.session_state.get("sel_audiencia_idx", 0) > 0:
+            id_sel = opcoes_ids[st.session_state.sel_audiencia_idx]
+            st.session_state.id_audiencia_modal = id_sel
+            st.session_state.modo_audiencia_modal = "detalhes"
+            st.session_state.audiencia_modal_aberta = True
+            st.rerun()
+        else:
+            st.warning("⚠️ Selecione uma audiência primeiro!")
+
+    # ===== MODAL DE DETALHES =====
+    if st.session_state.get("audiencia_modal_aberta") and st.session_state.get("id_audiencia_modal"):
+        id_audiencia = st.session_state.id_audiencia_modal
+        audiencia = df[df["id"] == id_audiencia].iloc[0]
+
+        st.divider()
+        st.subheader(f"📅 {audiencia['processo']} - {audiencia['data_audiencia'].strftime('%d/%m/%Y')}")
+
+        if st.session_state.get("modo_audiencia_modal") == "detalhes":
+            st.info("📋 Detalhes Completos da Audiência")
+
+            col1, col2 = st.columns(2)
+            col1.write(f"**Nº Processo:** {audiencia['processo']}")
+            col2.write(f"**Sala:** {audiencia['sala']}")
+
+            col1, col2 = st.columns(2)
+            col1.write(f"**Autor:** {audiencia['autor']}")
+            col2.write(f"**Réu:** {audiencia['reu']}")
+
+            col1, col2 = st.columns(2)
+            col1.write(f"**Data:** {audiencia['data_audiencia'].strftime('%d/%m/%Y')}")
+            col2.write(f"**Horário:** {audiencia['hora_inicio']} às {audiencia['hora_termino']}")
+
+            col1, col2 = st.columns(2)
+            col1.write(f"**Formato:** {audiencia['formato']}")
+            col2.write(f"**Tipo:** {audiencia['tipo']}")
+
+            col1, col2 = st.columns(2)
+            col1.write(f"**Status:** {audiencia['status']}")
+            col2.write(f"**Responsável:** {audiencia['responsavel']}")
+
+            if audiencia['observacoes']:
+                st.divider()
+                st.subheader("📌 Observações")
+                st.info(audiencia['observacoes'])
+
+            st.divider()
+            st.subheader("⚙️ Ações")
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                if st.button("✏️ Editar", use_container_width=True, type="secondary"):
+                    st.session_state.modo_audiencia_modal = "editar"
+                    st.rerun()
+
+            with col2:
+                if st.button("✅ Realizada", use_container_width=True, type="primary"):
+                    atualizar_audiencia(id_audiencia, {"status": "Realizada"})
+                    st.session_state.aviso = "✅ Audiência marcada como realizada!"
+                    st.session_state.audiencia_modal_aberta = False
+                    st.rerun()
+
+            with col3:
+                if st.button("❌ Cancelar", use_container_width=True, type="secondary"):
+                    atualizar_audiencia(id_audiencia, {"status": "Cancelada"})
+                    st.session_state.aviso = "⚠️ Audiência cancelada!"
+                    st.session_state.audiencia_modal_aberta = False
+                    st.rerun()
+
+            with col4:
+                if st.button("🗑️ Excluir", use_container_width=True, type="secondary"):
+                    st.session_state.modo_audiencia_modal = "confirmar_excluir"
+                    st.rerun()
+
+            st.divider()
+            col_fechar = st.columns([3, 1])
+            with col_fechar[1]:
+                if st.button("🔙 Fechar", use_container_width=True, type="secondary"):
+                    st.session_state.audiencia_modal_aberta = False
+                    st.rerun()
+
+        elif st.session_state.get("modo_audiencia_modal") == "editar":
+            with st.form(f"form_edit_aud_{id_audiencia}"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    nova_data = st.date_input("Data", value=audiencia["data_audiencia"], format="DD/MM/YYYY", key=f"edit_data_aud_{id_audiencia}")
+                with col2:
+                    nova_sala = st.text_input("Sala", value=audiencia["sala"], key=f"edit_sala_{id_audiencia}")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    nova_hora_ini = st.time_input("Hora Início", value=pd.to_datetime(audiencia["hora_inicio"]).time() if isinstance(audiencia["hora_inicio"], str) else audiencia["hora_inicio"], key=f"edit_hora_ini_{id_audiencia}")
+                with col2:
+                    nova_hora_fim = st.time_input("Hora Término", value=pd.to_datetime(audiencia["hora_termino"]).time() if isinstance(audiencia["hora_termino"], str) else audiencia["hora_termino"], key=f"edit_hora_fim_{id_audiencia}")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    novo_formato = st.selectbox("Formato", FORMATOS_AUDIENCIA, index=FORMATOS_AUDIENCIA.index(audiencia["formato"]), key=f"edit_formato_{id_audiencia}")
+                with col2:
+                    novo_tipo = st.selectbox("Tipo", TIPOS_AUDIENCIA, index=TIPOS_AUDIENCIA.index(audiencia["tipo"]), key=f"edit_tipo_{id_audiencia}")
+
+                nova_obs = st.text_area("Observações", value=audiencia["observacoes"] or "", height=100, key=f"edit_obs_{id_audiencia}")
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
+                        atualizar_audiencia(id_audiencia, {
+                            "data_audiencia": nova_data.isoformat(),
+                            "hora_inicio": nova_hora_ini.isoformat(),
+                            "hora_termino": nova_hora_fim.isoformat(),
+                            "sala": nova_sala,
+                            "formato": novo_formato,
+                            "tipo": novo_tipo,
+                            "observacoes": nova_obs or None
+                        })
+                        st.session_state.aviso = "✅ Audiência atualizada!"
+                        st.session_state.audiencia_modal_aberta = False
+                        st.rerun()
+                with c2:
+                    if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                        st.session_state.modo_audiencia_modal = "detalhes"
+                        st.rerun()
+
+        elif st.session_state.get("modo_audiencia_modal") == "confirmar_excluir":
+            st.error("🔴 ATENÇÃO: Excluir é permanente!")
+            st.write(f"**Processo:** {audiencia['processo']}")
+            st.write(f"**Data:** {audiencia['data_audiencia'].strftime('%d/%m/%Y')} às {audiencia['hora_inicio']}")
+            st.caption("⚠️ Esta ação NÃO pode ser desfeita!")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("🗑️ SIM, Excluir", use_container_width=True, type="primary"):
+                    excluir_audiencia(id_audiencia)
+                    st.session_state.aviso = "✅ Audiência excluída!"
+                    st.session_state.audiencia_modal_aberta = False
+                    st.rerun()
+            with c2:
+                if st.button("❌ NÃO, Cancelar", use_container_width=True):
+                    st.session_state.modo_audiencia_modal = "detalhes"
+                    st.rerun()
 
 def main() -> None:
     init_estado()
@@ -956,24 +1403,28 @@ def main() -> None:
     try:
         df_prazos = carregar_prazos()
         df_processos = carregar_processos()
+        df_audiencias = carregar_audiencias()
     except Exception as exc:
         st.error(f"Erro: {exc}")
         st.stop()
 
     with st.sidebar:
         st.title("⚖️ Controladoria")
-        aba = st.radio("Opção:", ["Novo Prazo", "Novo Processo", "Dashboard"], key="aba")
+        aba = st.radio("Opção:", ["Novo Prazo", "Nova Audiência", "Novo Processo", "Dashboard"], key="aba")
         st.divider()
         
         if st.button("🔄 Recarregar Dados", use_container_width=True):
             carregar_prazos.clear()
             carregar_processos.clear()
+            carregar_audiencias.clear()
             st.rerun()
         
         st.divider()
         
         if aba == "Novo Prazo":
             sidebar_novo_prazo(df_processos)
+        elif aba == "Nova Audiência":
+            sidebar_nova_audiencia(df_processos)
         elif aba == "Novo Processo":
             st.subheader("⚖️ Novo Processo")
             v = st.session_state.form_v
@@ -1013,7 +1464,7 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos)
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📅 Prazos", "📋 Relatório", "📋 Pauta", "🔄 Desarquivar", "📋 Processos"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📅 Prazos", "📋 Relatório", "📋 Pauta", "🔄 Desarquivar", "📋 Processos", "📅 Audiências"])
     
     with tab1:
         tabela_status(df_prazos[~df_prazos["arquivado"]], df_processos)
@@ -1152,6 +1603,65 @@ def main() -> None:
     
     with tab5:
         gerenciar_processos(df_processos, df_prazos)
+
+    with tab6:
+        st.subheader("📅 Audiências Agendadas")
+
+        if df_audiencias.empty:
+            st.info("Nenhuma audiência agendada.")
+        else:
+            # Filtrar por status
+            audiencias_agendadas = df_audiencias[df_audiencias["status"] == "Agendada"].sort_values("data_audiencia")
+            audiencias_realizadas = df_audiencias[df_audiencias["status"] == "Realizada"].sort_values("data_audiencia", ascending=False)
+            audiencias_canceladas = df_audiencias[df_audiencias["status"] == "Cancelada"].sort_values("data_audiencia", ascending=False)
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("📅 Agendadas", len(audiencias_agendadas))
+            col2.metric("✅ Realizadas", len(audiencias_realizadas))
+            col3.metric("❌ Canceladas", len(audiencias_canceladas))
+
+            st.divider()
+
+            # Abas por status
+            aud_tab1, aud_tab2, aud_tab3 = st.tabs([
+                f"📅 Agendadas ({len(audiencias_agendadas)})",
+                f"✅ Realizadas ({len(audiencias_realizadas)})",
+                f"❌ Canceladas ({len(audiencias_canceladas)})"
+            ])
+
+            with aud_tab1:
+                if audiencias_agendadas.empty:
+                    st.info("✅ Nenhuma audiência agendada!")
+                else:
+                    tabela_audiencias(audiencias_agendadas)
+
+            with aud_tab2:
+                if audiencias_realizadas.empty:
+                    st.info("Nenhuma audiência realizada ainda.")
+                else:
+                    tabela_audiencias(audiencias_realizadas)
+
+            with aud_tab3:
+                if audiencias_canceladas.empty:
+                    st.info("Nenhuma audiência cancelada.")
+                else:
+                    tabela_audiencias(audiencias_canceladas)
+
+            # Exportar
+            st.divider()
+            st.subheader("📥 Exportar Audiências")
+
+            excel_path = gerar_audiencias_excel(df_audiencias)
+
+            if excel_path:
+                with open(excel_path, "rb") as f:
+                    st.download_button(
+                        label="📊 Baixar Audiências em Excel",
+                        data=f.read(),
+                        file_name=f"audiencias_{hoje().strftime('%d_%m_%Y')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
 
 if __name__ == "__main__":
     main()
