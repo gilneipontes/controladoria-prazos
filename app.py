@@ -235,17 +235,17 @@ def gerar_pdf_pauta(df_prazos: pd.DataFrame):
     
     # Título
     elements.append(Paragraph("CONTROLADORIA JURÍDICA - PAUTA DE PRAZOS", title_style))
-    hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
-    elements.append(Paragraph(f"Data: {hoje.strftime('%d de %B de %Y')}", styles['Normal']))
+    data_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+    elements.append(Paragraph(f"Data: {data_hoje.strftime('%d de %B de %Y')}", styles['Normal']))
     elements.append(Spacer(1, 0.3*inch))
     
     if df_prazos.empty:
         elements.append(Paragraph("✅ Nenhum prazo ativo no momento.", styles['Normal']))
     else:
         # Separar por período
-        prazos_hoje = df_prazos[df_prazos["data_fatal"] == hoje]
+        prazos_hoje = df_prazos[df_prazos["data_fatal"] == data_hoje]
         semana = hoje + pd.Timedelta(days=7)
-        prazos_semana = df_prazos[(df_prazos["data_fatal"] > hoje) & (df_prazos["data_fatal"] <= semana)]
+        prazos_semana = df_prazos[(df_prazos["data_fatal"] > data_hoje) & (df_prazos["data_fatal"] <= data_semana)]
         
         # HOJE
         if not prazos_hoje.empty:
@@ -314,7 +314,7 @@ def gerar_excel_pauta(df_prazos: pd.DataFrame):
     ws = wb.active
     ws.title = "Pauta"
     
-    hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+    data_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
     
     # Cabeçalho
     ws['A1'] = "CONTROLADORIA JURÍDICA - PAUTA DE PRAZOS"
@@ -322,7 +322,7 @@ def gerar_excel_pauta(df_prazos: pd.DataFrame):
     ws['A1'].fill = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
     ws.merge_cells('A1:E1')
     
-    ws['A2'] = f"Data: {hoje.strftime('%d/%m/%Y')}"
+    ws['A2'] = f"Data: {data_hoje.strftime('%d/%m/%Y')}"
     ws.merge_cells('A2:E2')
     
     # Cabeçalhos das colunas
@@ -1076,17 +1076,17 @@ def main() -> None:
             st.info("✅ Nenhum prazo ativo no momento!")
         else:
             # Calcular datas
-            hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
-            semana = pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=7)
+            data_data_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+            data_semana = pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=7)
             
             # Filtrar por período
-            prazos_hoje = prazos_ativos[prazos_ativos["data_fatal"] == hoje]
-            prazos_semana = prazos_ativos[(prazos_ativos["data_fatal"] > hoje) & (prazos_ativos["data_fatal"] <= semana)]
-            prazos_futuro = prazos_ativos[prazos_ativos["data_fatal"] > semana]
+            prazos_hoje = prazos_ativos[prazos_ativos["data_fatal"] == data_hoje]
+            prazos_semana = prazos_ativos[(prazos_ativos["data_fatal"] > data_hoje) & (prazos_ativos["data_fatal"] <= data_semana)]
+            prazos_futuro = prazos_ativos[prazos_ativos["data_fatal"] > data_semana]
             
             # Exibir HOJE
             if not prazos_hoje.empty:
-                st.markdown("### 🔴 **HOJE** (" + hoje.strftime("%d/%m/%Y") + ")")
+                st.markdown("### 🔴 **HOJE** (" + data_data_hoje.strftime("%d/%m/%Y") + ")")
                 for _, p in prazos_hoje.iterrows():
                     col1, col2 = st.columns([3, 1])
                     col1.markdown(f"""
@@ -1100,7 +1100,7 @@ def main() -> None:
             if not prazos_semana.empty:
                 st.markdown("### 🟠 **PRÓXIMOS 7 DIAS**")
                 for _, p in prazos_semana.iterrows():
-                    dias_faltam = (p['data_fatal'] - hoje).days
+                    dias_faltam = (p['data_fatal'] - data_hoje).days
                     col1, col2 = st.columns([3, 1])
                     col1.markdown(f"""
                     **{p['titulo']}** | {p['cliente']} ({dias_faltam} dia{'s' if dias_faltam != 1 else ''})
@@ -1134,7 +1134,7 @@ def main() -> None:
                     st.download_button(
                         label="⬇️ Baixar PDF",
                         data=f.read(),
-                        file_name=f"pauta_prazos_{hoje.strftime('%d_%m_%Y')}.pdf",
+                        file_name=f"pauta_prazos_{data_data_hoje.strftime('%d_%m_%Y')}.pdf",
                         mime="application/pdf",
                         use_container_width=True
                     )
@@ -1147,7 +1147,7 @@ def main() -> None:
                     st.download_button(
                         label="⬇️ Baixar Excel",
                         data=f.read(),
-                        file_name=f"pauta_prazos_{hoje.strftime('%d_%m_%Y')}.xlsx",
+                        file_name=f"pauta_prazos_{data_data_hoje.strftime('%d_%m_%Y')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
