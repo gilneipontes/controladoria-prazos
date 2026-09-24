@@ -189,14 +189,31 @@ def tabela_status(df: pd.DataFrame) -> None:
         st.info("Nenhum registro.")
         return
 
+    # Formatar datas para o formato brasileiro
+    df_vis = df.copy()
+    df_vis["data_interna_fmt"] = df_vis["data_interna"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
+    df_vis["data_fatal_fmt"] = df_vis["data_fatal"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
+
     colunas_vis = [
-        "id", "situacao", "titulo", "processo", "cliente", "data_fatal",
-        "data_interna", "dias_uteis", "tipo", "responsavel", "prioridade",
+        "id", "situacao", "titulo", "processo", "cliente", "data_interna_fmt",
+        "data_fatal_fmt", "dias_uteis", "tipo", "responsavel", "prioridade",
     ]
     vis = (
-        df.assign(_p=df["prioridade"].map(ORDEM_PRIORIDADE))
+        df_vis.assign(_p=df_vis["prioridade"].map(ORDEM_PRIORIDADE))
         .sort_values(["data_fatal", "_p"])[colunas_vis]
         .set_index("id")
+        .rename(columns={
+            "data_interna_fmt": "Prazo Interno",
+            "data_fatal_fmt": "Data Fatal",
+            "situacao": "Situação",
+            "titulo": "Título",
+            "processo": "Processo",
+            "cliente": "Cliente",
+            "dias_uteis": "D.Úteis",
+            "tipo": "Tipo",
+            "responsavel": "Responsável",
+            "prioridade": "Prioridade"
+        })
     )
 
     st.dataframe(vis, use_container_width=True, hide_index=True)
@@ -359,7 +376,7 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         tipo = st.selectbox("Tipo *", TIPOS, key=f"t_{v}")
         
         # ===== CAMPO DE BUSCA DE TÍTULO =====
-        st.write("**Título (Atalhos) ***")
+        st.write("**Título ***")
         busca_titulo = st.text_input(
             "Digite para filtrar atalhos jurídicos",
             value="",
@@ -391,8 +408,8 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         
         responsavel = st.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"r_{v}")
         c1, c2 = st.columns(2)
-        data_fatal = c1.date_input("Data Fatal *", format="DD/MM/YYYY", key=f"f_{v}")
-        data_interna = c2.date_input("Prazo Interno", format="DD/MM/YYYY", key=f"i_{v}")
+        data_interna = c1.date_input("Prazo Interno", format="DD/MM/YYYY", key=f"i_{v}")
+        data_fatal = c2.date_input("Data Fatal *", format="DD/MM/YYYY", key=f"f_{v}")
         
         prioridade = st.select_slider("Prioridade", PRIORIDADES, value="Normal", key=f"pr_{v}")
         st.text_area("Observações", key=f"d_{v}")
