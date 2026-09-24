@@ -155,6 +155,11 @@ def inserir_processo(registro: dict) -> None:
     supabase().table(TABELA_PROCESSOS).insert(registro).execute()
     carregar_processos.clear()
 
+def atualizar_processo(id_processo: int, campos: dict) -> None:
+    if campos:
+        supabase().table(TABELA_PROCESSOS).update(campos).eq("id", id_processo).execute()
+    carregar_processos.clear()
+
 def atualizar_campos(atualizacoes: dict[int, dict]) -> None:
     for id_prazo, campos in atualizacoes.items():
         if campos:
@@ -458,7 +463,114 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                 st.session_state.form_v += 1
                 st.rerun()
 
-def main() -> None:
+def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
+    """Gerenciar processos cadastrados e visualizar prazos relacionados"""
+    
+    if df_processos.empty:
+        st.info("Nenhum processo cadastrado.")
+        return
+    
+    st.subheader("📋 Processos Cadastrados")
+    
+    # ===== TABELA DE PROCESSOS =====
+    processos_ativos = df_processos[df_processos["ativo"]]
+    
+    if processos_ativos.empty:
+        st.info("Nenhum processo ativo.")
+        return
+    
+    # Contar prazos por processo
+    df_prazos_ativos = df_prazos[~df_prazos["arquivado"]]
+    
+    # Criar tabela com informações
+    dados_processos = []
+    for idx, proc in processos_ativos.iterrows():
+        qtd_prazos = len(df_prazos_ativos[df_prazos_ativos["processo"] == proc["numero"]])
+        dados_processos.append({
+            "id": proc["id"],
+            "Nº Processo": proc["numero"],
+            "Cliente": proc["cliente"],
+            "Parte Adversária": proc["parte_contraria"],
+            "Prazos": qtd_prazos,
+            "Descrição": proc["descricao"] or "-"
+        })
+    
+    df_view = pd.DataFrame(dados_processos).set_index("id")
+    st.dataframe(df_view, use_container_width=True, hide_index=False)
+    
+    # ===== SELECIONAR PROCESSO PARA EDITAR =====
+    st.divider()
+    st.subheader("⚙️ Editar Processo")
+    
+    id_proc = st.selectbox(
+        "Selecione um processo:",
+        options=processos_ativos["id"].values,
+        format_func=lambda x: f"{processos_ativos[processos_ativos['id'] == x]['numero'].values[0]} | {processos_ativos[processos_ativos['id'] == x]['cliente'].values[0]}",
+        key="sel_proc_edit"
+    )
+    
+    if id_proc:
+        proc = processos_ativos[processos_ativos["id"] == id_proc].iloc[0]
+        
+        with st.form(f"edit_proc_{id_proc}"):
+            st.write(f"**Nº Processo:** {proc['numero']}")
+            
+            novo_cliente = st.text_input("Cliente", value=proc["cliente"], key=f"cli_edit_{id_proc}")
+            nova_parte = st.text_input("Parte Adversária", value=proc["parte_contraria"], key=f"parte_edit_{id_proc}")
+            nova_descricao = st.text_area("Descrição", value=proc["descricao"] or "", key=f"desc_edit_{id_proc}")
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
+                    atualizar_processo(id_proc, {
+                        "cliente": novo_cliente,
+                        "parte_contraria": nova_parte,
+                        "descricao": nova_descricao or None
+                    })
+                    st.success("✅ Processo atualizado!")
+                    st.rerun()
+            
+            with c2:
+                if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                    st.info("Cancelado")
+        
+        # ===== MOSTRAR PRAZOS RELACIONADOS =====
+        st.divider()
+        st.subheader("📅 Prazos Relacionados")
+        
+        prazos_relacionados = df_prazos[
+            (df_prazos["processo"] == proc["numero"]) & 
+            (~df_prazos["arquivado"])
+        ]
+        
+        if prazos_relacionados.empty:
+            st.info("Nenhum prazo ativo para este processo.")
+        else:
+            # Enriquecer dados dos prazos
+            prazos_relacionados = enriquecer(prazos_relacionados)
+            
+            # Formatar datas
+            prazos_viz = prazos_relacionados[[
+                "situacao", "titulo", "data_interna", "data_fatal", "responsavel", "prioridade"
+            ]].copy()
+            
+            prazos_viz["data_interna"] = prazos_viz["data_interna"].apply(
+                lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "-"
+            )
+            prazos_viz["data_fatal"] = prazos_viz["data_fatal"].apply(
+                lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "-"
+            )
+            
+            prazos_viz = prazos_viz.rename(columns={
+                "situacao": "Situação",
+                "titulo": "Título",
+                "data_interna": "Prazo Interno",
+                "data_fatal": "Data Fatal",
+                "responsavel": "Responsável",
+                "prioridade": "Prioridade"
+            })
+            
+            st.dataframe(prazos_viz, use_container_width=True, hide_index=True)
     init_estado()
     if not acesso_liberado():
         st.stop()
@@ -523,7 +635,7 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos)
     
-    tab1, tab2, tab3 = st.tabs(["📅 Prazos", "📋 Relatório", "🔄 Desarquivar"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📅 Prazos", "📋 Relatório", "🔄 Desarquivar", "📋 Processos"])
     
     with tab1:
         tabela_status(df_prazos[~df_prazos["arquivado"]])
@@ -559,6 +671,9 @@ def main() -> None:
                 carregar_prazos.clear()
                 st.success("✅ Prazo restaurado!")
                 st.rerun()
+    
+    with tab4:
+        gerenciar_processos(df_processos, df_prazos)
 
 if __name__ == "__main__":
     main()
