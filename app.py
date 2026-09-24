@@ -165,6 +165,10 @@ def arquivar_prazo(id_prazo: int) -> None:
     supabase().table(TABELA_PRAZOS).update({"arquivado": True}).eq("id", id_prazo).execute()
     carregar_prazos.clear()
 
+def excluir_prazo(id_prazo: int) -> None:
+    supabase().table(TABELA_PRAZOS).delete().eq("id", id_prazo).execute()
+    carregar_prazos.clear()
+
 def enriquecer(df: pd.DataFrame) -> pd.DataFrame:
     ref = np.datetime64(hoje())
     fatal = df["data_fatal"].values.astype("datetime64[D]")
@@ -227,6 +231,13 @@ def tabela_status(df: pd.DataFrame) -> None:
             st.session_state.modo_modal = "confirmar_arquivar"
             st.session_state.modal_aberta = True
             st.rerun()
+    
+    with c3:
+        if st.button("❌ Excluir", use_container_width=True, type="secondary"):
+            st.session_state.id_modal = id_sel
+            st.session_state.modo_modal = "confirmar_excluir"
+            st.session_state.modal_aberta = True
+            st.rerun()
 
     # ===== MODAL =====
     if st.session_state.modal_aberta and st.session_state.id_modal:
@@ -281,6 +292,27 @@ def tabela_status(df: pd.DataFrame) -> None:
                     carregar_prazos.clear()
                     carregar_processos.clear()
                     st.session_state.aviso = "✅ Arquivado!"
+                    st.session_state.modal_aberta = False
+                    st.session_state.editor_v += 1
+                    st.rerun()
+            with c2:
+                if st.button("❌ NÃO, Cancelar", use_container_width=True):
+                    st.session_state.modal_aberta = False
+                    st.rerun()
+        
+        elif st.session_state.modo_modal == "confirmar_excluir":
+            st.error("🔴 ATENÇÃO: Excluir é permanente!")
+            st.write(f"**Cliente:** {prazo['cliente']}")
+            st.write(f"**Título (Prazo):** {prazo['titulo']}")
+            st.caption("⚠️ Esta ação NÃO pode ser desfeita!")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("🗑️ SIM, Excluir", use_container_width=True, type="primary"):
+                    excluir_prazo(id_prazo)
+                    # LIMPAR CACHE COMPLETAMENTE
+                    carregar_prazos.clear()
+                    carregar_processos.clear()
+                    st.session_state.aviso = "✅ Prazo excluído!"
                     st.session_state.modal_aberta = False
                     st.session_state.editor_v += 1
                     st.rerun()
