@@ -223,19 +223,28 @@ def gerar_csv_pauta(df_prazos: pd.DataFrame):
     if df_prazos.empty:
         return pd.DataFrame()
     
-    # Preparar dados simples
-    df_export = df_prazos[["data_fatal", "titulo", "cliente", "responsavel", "prioridade"]].copy()
+    # Preparar dados
+    df_export = df_prazos[["cliente", "processo", "titulo", "data_fatal", "descricao"]].copy()
+    
+    # Extrair primeiro nome do cliente
+    df_export["cliente_primeiro"] = df_export["cliente"].apply(lambda x: x.split()[0] if pd.notna(x) else "")
+    
+    # Reorganizar colunas na ordem desejada
+    df_export = df_export[["cliente_primeiro", "processo", "titulo", "data_fatal", "descricao"]]
     
     # Converter data_fatal para string
     df_export["data_fatal"] = df_export["data_fatal"].astype(str)
     
+    # Preencher descricao vazia com "-"
+    df_export["descricao"] = df_export["descricao"].fillna("-")
+    
     # Renomear colunas
     df_export = df_export.rename(columns={
-        "data_fatal": "Data Fatal",
+        "cliente_primeiro": "Cliente",
+        "processo": "Nº Processo",
         "titulo": "Título",
-        "cliente": "Cliente",
-        "responsavel": "Responsável",
-        "prioridade": "Prioridade"
+        "data_fatal": "Data Fatal",
+        "descricao": "Descrição"
     })
     
     return df_export
