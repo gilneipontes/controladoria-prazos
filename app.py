@@ -325,61 +325,40 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
     st.subheader("📋 Novo Prazo")
     v = st.session_state.form_v
     
-    processos_ativos = processos_df[processos_df["ativo"]]
+    processos_ativos = processos_df[processos_df["ativo"]].sort_values("numero")
     
-    # ===== BUSCA DE PROCESSO (FORA DO FORM - ATUALIZA EM TEMPO REAL) =====
-    busca_processo = st.text_input(
+    # ===== SELECTBOX NORMAL (funciona em tempo real) =====
+    processo = st.selectbox(
         "Nº Processo *",
-        value="",
-        placeholder="Digite o número do processo...",
-        key=f"busca_p_{v}"
+        options=processos_ativos["numero"].values,
+        index=None,  # Começa vazio
+        placeholder="Clique e comece a digitar o número",
+        key=f"p_{v}"
     )
     
-    processo = None
     cliente = ""
     parte_adversaria = ""
     
-    if busca_processo:
-        # Filtra processos que contêm o texto digitado
-        processos_filtrados = processos_ativos[
-            processos_ativos["numero"].str.contains(busca_processo, case=False)
-        ]
-        
-        if not processos_filtrados.empty:
-            # Se encontrou exatamente 1, seleciona automaticamente
-            if len(processos_filtrados) == 1:
-                processo = processos_filtrados.iloc[0]["numero"]
-                cliente = processos_filtrados.iloc[0]["cliente"]
-                parte_adversaria = processos_filtrados.iloc[0]["parte_contraria"]
-                st.success(f"✅ Processo encontrado: **{processo}**")
-            else:
-                # Se encontrou mais de 1, mostra dropdown com os filtrados
-                st.caption(f"📋 {len(processos_filtrados)} processo(s) encontrado(s):")
-                processo = st.selectbox(
-                    "Selecione um:",
-                    options=processos_filtrados["numero"].values,
-                    label_visibility="collapsed",
-                    key=f"p_{v}"
-                )
-                if processo:
-                    cliente = processos_filtrados[processos_filtrados["numero"] == processo]["cliente"].values[0]
-                    parte_adversaria = processos_filtrados[processos_filtrados["numero"] == processo]["parte_contraria"].values[0]
-        else:
-            st.warning("❌ Nenhum processo encontrado com esse número!")
-    
     # ===== MOSTRAR CLIENTE E PARTE ADVERSÁRIA (quando selecionado) =====
     if processo:
+        cliente = processos_ativos[processos_ativos["numero"] == processo]["cliente"].values[0]
+        parte_adversaria = processos_ativos[processos_ativos["numero"] == processo]["parte_contraria"].values[0]
+        
         col1, col2 = st.columns(2)
         with col1:
-            st.text_input("Cliente", value=cliente, disabled=True, key=f"cli_{v}")
+            st.markdown(f"**Cliente**")
+            st.markdown(f"### **{cliente}**")
         with col2:
-            st.text_input("Parte Adversária", value=parte_adversaria, disabled=True, key=f"adv_{v}")
+            st.markdown(f"**Parte Adversária**")
+            st.markdown(f"### **{parte_adversaria}**")
+        
+        st.success(f"✅ Processo selecionado: **{processo}**")
     
-    # ===== AGORA O FORMULÁRIO COMEÇA =====
+    # ===== FORMULÁRIO =====
     with st.form(f"cad_{v}"):
         tipo = st.selectbox("Tipo *", TIPOS, key=f"t_{v}")
         
-        # ===== CAMPO DE BUSCA DE TÍTULO (vazio inicialmente) =====
+        # ===== CAMPO DE BUSCA DE TÍTULO =====
         st.write("**Título (Atalhos) ***")
         busca_titulo = st.text_input(
             "Digite para filtrar atalhos jurídicos",
@@ -389,6 +368,7 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
             label_visibility="collapsed"
         )
         
+        titulo = ""
         # Filtrar atalhos conforme digita
         if busca_titulo:
             atalhos_filtrados = {k: v for k, v in ATALHOS.items() if busca_titulo.upper() in k}
@@ -403,10 +383,8 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                 titulo = atalhos_filtrados[titulo_atalho]
             else:
                 st.warning("Nenhum atalho encontrado!")
-                titulo = ""
         else:
             st.caption("👉 Digite acima para ver os atalhos disponíveis")
-            titulo = ""
         
         if titulo:
             st.caption(f"📌 Selecionado: **{titulo}**")
@@ -438,7 +416,7 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                     "arquivado": False,
                 })
                 st.session_state.aviso = f"✅ Prazo salvo!"
-                st.session_state.form_v += 1  # ← Incrementa para resetar TODOS os keys do form
+                st.session_state.form_v += 1
                 st.rerun()
 
 def main() -> None:
