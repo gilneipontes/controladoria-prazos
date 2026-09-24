@@ -579,7 +579,7 @@ def tabela_status(df: pd.DataFrame) -> None:
         vis,
         key=f"editor_{st.session_state.editor_v}",
         hide_index=True,
-        disabled=["situacao", "dias_uteis", "tipo", "responsavel", "concluido"],
+        disabled=["situacao", "dias_uteis", "tipo", "responsavel"],
         column_config={
             "concluido": st.column_config.CheckboxColumn(
                 "✅",
