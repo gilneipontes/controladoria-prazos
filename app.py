@@ -241,7 +241,10 @@ def gerar_csv_pauta(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
     df_export = df_export[["cliente_primeiro", "processo", "titulo", "data_fatal", "descricao"]]
     
     # Converter data_fatal para string com formato DD/MM/YYYY
-    df_export["data_fatal"] = df_export["data_fatal"].dt.strftime("%d/%m/%Y") if hasattr(df_export["data_fatal"], 'dt') else df_export["data_fatal"].astype(str)
+    try:
+        df_export["data_fatal"] = pd.to_datetime(df_export["data_fatal"]).dt.strftime("%d/%m/%Y")
+    except:
+        df_export["data_fatal"] = df_export["data_fatal"].astype(str)
     
     # Renomear colunas
     df_export = df_export.rename(columns={
@@ -278,7 +281,10 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
         df_export["descricao"] = "-"
     
     # Converter data_fatal para string com formato DD/MM/YYYY
-    df_export["data_fatal"] = df_export["data_fatal"].dt.strftime("%d/%m/%Y")
+    try:
+        df_export["data_fatal"] = pd.to_datetime(df_export["data_fatal"]).dt.strftime("%d/%m/%Y")
+    except:
+        df_export["data_fatal"] = df_export["data_fatal"].astype(str)
     
     # Reordenar colunas
     df_export = df_export[["cliente", "processo", "titulo", "data_fatal", "descricao"]]
