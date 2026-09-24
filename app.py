@@ -140,6 +140,7 @@ def init_estado() -> None:
     st.session_state.setdefault("id_modal", None)
     st.session_state.setdefault("modo_modal", None)
     st.session_state.setdefault("sel_prazo_idx", 0)
+    st.session_state.setdefault("aba_selecionada", "Novo Prazo")  # Controlar qual aba abrir
     # Note: Audiência modal states are now scoped to each prefix and initialized in tabela_audiencias()
 
 def acesso_liberado() -> bool:
@@ -1563,7 +1564,9 @@ def main() -> None:
 
     with st.sidebar:
         st.title("⚖️ Controladoria")
-        aba = st.radio("Opção:", ["Novo Prazo", "Nova Audiência", "Novo Processo", "Dashboard"], key="aba")
+        aba = st.radio("Opção:", ["Novo Prazo", "Nova Audiência", "Novo Processo", "Dashboard"],
+                      key="aba",
+                      index=["Novo Prazo", "Nova Audiência", "Novo Processo", "Dashboard"].index(st.session_state.aba_selecionada))
         st.divider()
         
         if st.button("🔄 Recarregar Dados", use_container_width=True):
