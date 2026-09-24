@@ -275,6 +275,9 @@ def tabela_status(df: pd.DataFrame) -> None:
             with c1:
                 if st.button("✅ SIM", use_container_width=True, type="primary"):
                     arquivar_prazo(id_prazo)
+                    # LIMPAR CACHE COMPLETAMENTE
+                    carregar_prazos.clear()
+                    carregar_processos.clear()
                     st.session_state.aviso = "✅ Arquivado!"
                     st.session_state.modal_aberta = False
                     st.session_state.editor_v += 1
@@ -348,6 +351,13 @@ def main() -> None:
         aba = st.radio("Opção:", ["Novo Prazo", "Novo Processo", "Dashboard"], key="aba")
         st.divider()
         
+        if st.button("🔄 Recarregar Dados", use_container_width=True):
+            carregar_prazos.clear()
+            carregar_processos.clear()
+            st.rerun()
+        
+        st.divider()
+        
         if aba == "Novo Prazo":
             sidebar_novo_prazo(df_processos)
         elif aba == "Novo Processo":
@@ -402,7 +412,28 @@ def main() -> None:
             st.dataframe(arquivados[["titulo", "data_fatal", "responsavel"]], use_container_width=True, hide_index=True)
     
     with tab3:
-        st.write("Prazos arquivados aparecem acima (aba Relatório)")
+        st.subheader("🔄 Desarquivar Prazos")
+        arquivados = df_prazos[df_prazos["arquivado"]]
+        
+        if arquivados.empty:
+            st.info("Nenhum prazo arquivado.")
+        else:
+            st.write(f"**{len(arquivados)} prazos arquivados:**")
+            
+            col1, col2 = st.columns([2, 1])
+            id_des = col1.selectbox(
+                "Selecione para desarquivar:",
+                options=arquivados["id"].values,
+                format_func=lambda x: f"{arquivados[arquivados['id'] == x]['titulo'].values[0]} | {arquivados[arquivados['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
+                key="sel_des"
+            )
+            
+            if col2.button("🔄 Desarquivar", use_container_width=True, type="secondary"):
+                # Desarchiva
+                supabase().table(TABELA_PRAZOS).update({"arquivado": False}).eq("id", id_des).execute()
+                carregar_prazos.clear()
+                st.success("✅ Prazo restaurado!")
+                st.rerun()
 
 if __name__ == "__main__":
     main()
