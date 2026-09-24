@@ -357,7 +357,7 @@ def tabela_status(df: pd.DataFrame) -> None:
     id_selecionado = col1.selectbox(
         "Selecione o prazo para arquivar",
         options=df["id"].values,
-        format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} | Proc: {df[df['id'] == x]['processo'].values[0] or '-'} | Cliente: {df[df['id'] == x]['cliente'].values[0] or '-'} | Data: {df[df['id'] == x]['data_fatal'].values[0]}",
+        format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} | Proc: {df[df['id'] == x]['processo'].values[0] or '-'} | Cliente: {df[df['id'] == x]['cliente'].values[0] or '-'} | Data: {df[df['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
         key="select_arquivar_prazo"
     )
     
@@ -421,7 +421,7 @@ def aba_desarquivar(df: pd.DataFrame) -> None:
     id_desarquivar = col1.selectbox(
         "Selecione o prazo para desarquivar",
         options=arquivados["id"].values,
-        format_func=lambda x: f"{arquivados[arquivados['id'] == x]['titulo'].values[0]} | Proc: {arquivados[arquivados['id'] == x]['processo'].values[0] or '-'} | Cliente: {arquivados[arquivados['id'] == x]['cliente'].values[0] or '-'} | Data: {arquivados[arquivados['id'] == x]['data_fatal'].values[0]}",
+        format_func=lambda x: f"{arquivados[arquivados['id'] == x]['titulo'].values[0]} | Proc: {arquivados[arquivados['id'] == x]['processo'].values[0] or '-'} | Cliente: {arquivados[arquivados['id'] == x]['cliente'].values[0] or '-'} | Data: {arquivados[arquivados['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
         key="select_desarquivar"
     )
     
