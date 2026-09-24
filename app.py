@@ -5,9 +5,9 @@ Stack: Streamlit + Supabase
 Estrutura:
   1. Configuração e constantes
   2. Acesso (senha opcional via st.secrets)
-  3. Camada de dados (Supabase: leitura com cache, escrita invalidando cache)
+  3. Camada de dados (Supabase: prazos + processos)
   4. Regras de negócio (urgência, dias úteis, validação)
-  5. Interface (formulário lateral, filtros, métricas, tabela editável)
+  5. Interface (3 abas na sidebar + 3 abas no conteúdo principal)
 """
 from __future__ import annotations
 
@@ -25,7 +25,8 @@ from supabase import Client, create_client
 st.set_page_config(page_title="Controladoria Jurídica", page_icon="⚖️", layout="wide")
 
 TZ = ZoneInfo("America/Sao_Paulo")
-TABELA = "prazos"
+TABELA_PRAZOS = "prazos"
+TABELA_PROCESSOS = "processos"
 
 RESPONSAVEIS = ["Dr. Gilnei", "Dra. Jéssica"]
 TIPOS = ["Prazo processual", "Data fatal", "Tarefa operacional"]
@@ -52,13 +53,14 @@ FERIADOS = np.array(
 
 CNJ_REGEX = re.compile(r"^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$")
 
-COLUNAS = [
+COLUNAS_PRAZOS = [
     "id", "created_at", "tipo", "titulo", "processo", "cliente", "responsavel",
     "data_fatal", "data_interna", "prioridade", "descricao", "concluido", "concluido_em",
     "arquivado",
 ]
 
-# Dicionário de atalhos e títulos completos
+COLUNAS_PROCESSOS = ["id", "created_at", "numero", "cliente", "parte_contraria", "descricao", "ativo"]
+
 ATALHOS = {
     "PET-INI": "Petição Inicial",
     "EMEND-INI": "Emenda à Petição Inicial",
@@ -150,8 +152,8 @@ def supabase() -> Client:
 
 @st.cache_data(ttl=60, show_spinner="Carregando prazos…")
 def carregar_prazos() -> pd.DataFrame:
-    resp = supabase().table(TABELA).select("*").order("data_fatal").execute()
-    df = pd.DataFrame(resp.data, columns=COLUNAS)
+    resp = supabase().table(TABELA_PRAZOS).select("*").order("data_fatal").execute()
+    df = pd.DataFrame(resp.data, columns=COLUNAS_PRAZOS)
     for col in ("data_fatal", "data_interna"):
         df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
     df["concluido"] = df["concluido"].fillna(False).astype(bool)
@@ -159,28 +161,41 @@ def carregar_prazos() -> pd.DataFrame:
     return df
 
 
-def inserir(registro: dict) -> None:
-    supabase().table(TABELA).insert(registro).execute()
+@st.cache_data(ttl=60, show_spinner="Carregando processos…")
+def carregar_processos() -> pd.DataFrame:
+    resp = supabase().table(TABELA_PROCESSOS).select("*").order("numero").execute()
+    df = pd.DataFrame(resp.data, columns=COLUNAS_PROCESSOS)
+    df["ativo"] = df["ativo"].fillna(True).astype(bool)
+    return df
+
+
+def inserir_prazo(registro: dict) -> None:
+    supabase().table(TABELA_PRAZOS).insert(registro).execute()
     carregar_prazos.clear()
+
+
+def inserir_processo(registro: dict) -> None:
+    supabase().table(TABELA_PROCESSOS).insert(registro).execute()
+    carregar_processos.clear()
 
 
 def atualizar_campos(atualizacoes: dict[int, dict]) -> None:
     """Atualiza múltiplos campos de vários registros."""
     for id_prazo, campos in atualizacoes.items():
         if campos:
-            supabase().table(TABELA).update(campos).eq("id", id_prazo).execute()
+            supabase().table(TABELA_PRAZOS).update(campos).eq("id", id_prazo).execute()
     carregar_prazos.clear()
 
 
 def arquivar_prazo(id_prazo: int) -> None:
     """Marca um prazo como arquivado."""
-    supabase().table(TABELA).update({"arquivado": True}).eq("id", id_prazo).execute()
+    supabase().table(TABELA_PRAZOS).update({"arquivado": True}).eq("id", id_prazo).execute()
     carregar_prazos.clear()
 
 
 def desarquivar_prazo(id_prazo: int) -> None:
     """Remove o arquivo de um prazo."""
-    supabase().table(TABELA).update({"arquivado": False}).eq("id", id_prazo).execute()
+    supabase().table(TABELA_PRAZOS).update({"arquivado": False}).eq("id", id_prazo).execute()
     carregar_prazos.clear()
 
 
@@ -216,86 +231,172 @@ def validar(titulo: str, processo: str, data_fatal, data_interna) -> list[str]:
     return erros
 
 
-# ───────────────────────── 5. Interface ─────────────────────────
-def formulario_cadastro() -> None:
+# ───────────────────────── 5. SIDEBAR COM 3 ABAS ─────────────────────────
+
+def sidebar_controle_prazos(processos_df: pd.DataFrame) -> None:
+    """Aba 1: Controle de Prazos"""
+    st.subheader("📋 Novo Prazo")
+    
     v = st.session_state.form_v
-    with st.sidebar:
-        st.header("Novo prazo ou tarefa")
+    with st.form(f"cadastro_{v}", border=False):
+        tipo = st.selectbox("Tipo", TIPOS, key=f"tipo_{v}")
         
-        # Guia de Atalhos
-        with st.expander("📋 Guia de Atalhos"):
-            atalhos_df = pd.DataFrame([
-                {"Sigla": k, "Nome Completo": v} for k, v in sorted(ATALHOS.items())
-            ])
-            st.dataframe(atalhos_df, use_container_width=True, hide_index=True)
+        st.write("**Usar atalho?**")
+        atalhoselecionado = st.selectbox(
+            "Selecione um atalho",
+            options=["-- Nenhum --"] + list(sorted(ATALHOS.keys())),
+            key=f"atalho_{v}",
+        )
         
-        with st.form(f"cadastro_{v}", border=False):
-            tipo = st.selectbox("Tipo", TIPOS, key=f"tipo_{v}")
-            
-            # Seletor rápido de atalhos
-            st.write("**Usar atalho?**")
-            atalhoselecionado = st.selectbox(
-                "Selecione um atalho (preenche o título automaticamente)",
-                options=["-- Nenhum --"] + list(sorted(ATALHOS.keys())),
-                key=f"atalho_{v}",
-                help="Escolha uma sigla para preencher o título automaticamente"
+        titulo = st.text_input(
+            "Título *", 
+            value=ATALHOS[atalhoselecionado] if atalhoselecionado != "-- Nenhum --" else "",
+            key=f"titulo_{v}"
+        )
+        
+        processos_ativos = processos_df[processos_df["ativo"]]
+        if not processos_ativos.empty:
+            processo_selecionado = st.selectbox(
+                "Processo *",
+                options=processos_ativos["numero"].values,
+                key=f"processo_sel_{v}"
             )
-            
-            titulo = st.text_input(
-                "Título *", 
-                value=ATALHOS[atalhoselecionado] if atalhoselecionado != "-- Nenhum --" else "",
-                placeholder="Ex.: Contestação, juntar procuração", 
-                key=f"titulo_{v}"
-            )
-            processo = st.text_input(
-                "Nº do processo", placeholder="0000000-00.0000.0.00.0000", key=f"proc_{v}"
-            )
-            cliente = st.text_input("Cliente", key=f"cli_{v}")
-            responsavel = st.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"resp_{v}")
-            c1, c2 = st.columns(2)
-            data_fatal = c1.date_input(
-                "Data fatal *", value=None, format="DD/MM/YYYY", key=f"fatal_{v}"
-            )
-            data_interna = c2.date_input(
-                "Prazo interno", value=None, format="DD/MM/YYYY", key=f"int_{v}",
-                help="Data de segurança para concluir antes do vencimento.",
-            )
-            prioridade = st.select_slider("Prioridade", PRIORIDADES, value="Normal", key=f"prio_{v}")
-            descricao = st.text_area("Observações", key=f"desc_{v}")
-            enviar = st.form_submit_button("Salvar prazo", type="primary")
+            cliente = processos_ativos[processos_ativos["numero"] == processo_selecionado]["cliente"].values[0]
+        else:
+            processo_selecionado = ""
+            cliente = ""
+        
+        responsavel = st.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"resp_{v}")
+        c1, c2 = st.columns(2)
+        data_fatal = c1.date_input("Data fatal *", value=None, format="DD/MM/YYYY", key=f"fatal_{v}")
+        data_interna = c2.date_input("Prazo interno", value=None, format="DD/MM/YYYY", key=f"int_{v}")
+        
+        prioridade = st.select_slider("Prioridade", PRIORIDADES, value="Normal", key=f"prio_{v}")
+        descricao = st.text_area("Observações", key=f"desc_{v}")
+        enviar = st.form_submit_button("Salvar prazo", type="primary")
 
-        if not enviar:
-            return
+    if not enviar:
+        return
 
-        erros = validar(titulo, processo, data_fatal, data_interna)
-        if erros:
-            for e in erros:
-                st.error(e)
-            return
+    erros = validar(titulo, processo_selecionado, data_fatal, data_interna)
+    if erros:
+        for e in erros:
+            st.error(e)
+        return
 
-        registro = {
-            "tipo": tipo,
-            "titulo": titulo.strip(),
-            "processo": processo.strip() or None,
-            "cliente": cliente.strip() or None,
-            "responsavel": responsavel,
-            "data_fatal": data_fatal.isoformat(),
-            "data_interna": data_interna.isoformat() if data_interna else None,
-            "prioridade": prioridade,
-            "descricao": descricao.strip() or None,
-            "arquivado": False,
-        }
-        try:
-            inserir(registro)
-        except Exception as exc:
-            st.error(f"O prazo não foi salvo. Detalhe do banco: {exc}")
-            return
-
-        st.session_state.aviso = f"Prazo salvo: {registro['titulo']} ({responsavel})"
+    registro = {
+        "tipo": tipo,
+        "titulo": titulo.strip(),
+        "processo": processo_selecionado,
+        "cliente": cliente,
+        "responsavel": responsavel,
+        "data_fatal": data_fatal.isoformat(),
+        "data_interna": data_interna.isoformat() if data_interna else None,
+        "prioridade": prioridade,
+        "descricao": descricao.strip() or None,
+        "arquivado": False,
+    }
+    try:
+        inserir_prazo(registro)
+        st.session_state.aviso = f"Prazo salvo: {titulo}"
         st.session_state.form_v += 1
         st.rerun()
+    except Exception as exc:
+        st.error(f"Erro: {exc}")
 
 
+def sidebar_cadastro_processo() -> None:
+    """Aba 2: Cadastro de Novo Processo"""
+    st.subheader("⚖️ Novo Processo")
+    
+    v = st.session_state.form_v
+    with st.form(f"proc_cadastro_{v}", border=False):
+        numero = st.text_input(
+            "Nº do Processo (CNJ) *",
+            placeholder="0000000-00.0000.0.00.0000",
+            key=f"proc_numero_{v}"
+        )
+        cliente = st.text_input(
+            "Nome do Cliente *",
+            placeholder="Nome exato conforme eproc/pje",
+            key=f"proc_cliente_{v}"
+        )
+        parte_contraria = st.text_input(
+            "Parte Contrária *",
+            placeholder="Nome exato conforme eproc/pje",
+            key=f"proc_parte_{v}"
+        )
+        descricao = st.text_area(
+            "Descrição / Observações",
+            key=f"proc_desc_{v}"
+        )
+        enviar = st.form_submit_button("Salvar Processo", type="primary")
+
+    if not enviar:
+        return
+
+    erros = []
+    if not numero.strip():
+        erros.append("Informe o número do processo.")
+    if not cliente.strip():
+        erros.append("Informe o nome do cliente.")
+    if not parte_contraria.strip():
+        erros.append("Informe o nome da parte contrária.")
+    if numero.strip() and not CNJ_REGEX.match(numero.strip()):
+        erros.append("Use o padrão CNJ: 0000000-00.0000.0.00.0000.")
+    
+    if erros:
+        for e in erros:
+            st.error(e)
+        return
+
+    registro = {
+        "numero": numero.strip(),
+        "cliente": cliente.strip(),
+        "parte_contraria": parte_contraria.strip(),
+        "descricao": descricao.strip() or None,
+        "ativo": True,
+    }
+    try:
+        inserir_processo(registro)
+        st.session_state.aviso = f"Processo salvo: {numero}"
+        st.session_state.form_v += 1
+        st.rerun()
+    except Exception as exc:
+        st.error(f"Erro: {exc}")
+
+
+def sidebar_dashboard(df_prazos: pd.DataFrame) -> None:
+    """Aba 3: Dashboard Rápido"""
+    st.subheader("📊 Dashboard - Visão Geral")
+    
+    df = enriquecer(df_prazos)
+    pendentes = df[~df["concluido"] & ~df["arquivado"]]
+    
+    st.write("**Hoje:**")
+    vence_hoje = pendentes[pendentes["faixa"] == "Hoje"]
+    st.metric("⏰ Vencem HOJE", len(vence_hoje))
+    
+    if not vence_hoje.empty:
+        st.write("_Prazos que vencem hoje:_")
+        for idx, row in vence_hoje.iterrows():
+            st.write(f"🔴 **{row['titulo']}** ({row['responsavel']})")
+    
+    st.divider()
+    
+    st.write("**Próximos 7 dias:**")
+    vence_7 = pendentes[pendentes["faixa"].isin(["Até 3 dias", "Até 7 dias"])]
+    st.metric("📅 Próximos 7 dias", len(vence_7))
+    
+    st.divider()
+    
+    st.write("**Geral:**")
+    vencidos = pendentes[pendentes["faixa"] == "Vencido"]
+    st.metric("🔴 Vencidos", len(vencidos))
+    st.metric("📋 Pendentes", len(pendentes))
+
+
+# ───────────────────────── 6. INTERFACE PRINCIPAL ─────────────────────────
 def aplicar_filtros(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     c1, c2, c3, c4 = st.columns([1.2, 1.5, 1.3, 1.1])
     resp = c1.multiselect("Responsável", RESPONSAVEIS, default=RESPONSAVEIS)
@@ -349,7 +450,7 @@ def painel_metricas(df: pd.DataFrame, resp: list[str]) -> None:
 
 def tabela_status(df: pd.DataFrame) -> None:
     if df.empty:
-        st.info("Nenhum registro com esses filtros. Ajuste os filtros ou cadastre um prazo na barra lateral.")
+        st.info("Nenhum registro com esses filtros.")
         return
 
     colunas_vis = [
@@ -417,12 +518,12 @@ def tabela_status(df: pd.DataFrame) -> None:
         if c2.button("Salvar tudo", type="primary"):
             try:
                 atualizar_campos(mudancas)
+                st.session_state.aviso = "Prazos salvos!"
+                st.session_state.editor_v += 1
+                st.rerun()
             except Exception as exc:
-                st.error(f"Não foi salvo. Detalhe: {exc}")
+                st.error(f"Erro: {exc}")
                 return
-            st.session_state.aviso = "Prazos salvos!"
-            st.session_state.editor_v += 1
-            st.rerun()
 
     st.divider()
     st.subheader("📦 Arquivar prazo")
@@ -432,7 +533,7 @@ def tabela_status(df: pd.DataFrame) -> None:
     id_selecionado = col1.selectbox(
         "Selecione o prazo para arquivar",
         options=df["id"].values,
-        format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} | Proc: {df[df['id'] == x]['processo'].values[0] or '-'} | Cliente: {df[df['id'] == x]['cliente'].values[0] or '-'} | Data: {df[df['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
+        format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} | Proc: {df[df['id'] == x]['processo'].values[0] or '-'} | Data: {df[df['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
         key="select_arquivar_prazo"
     )
     
@@ -450,11 +551,11 @@ def tabela_status(df: pd.DataFrame) -> None:
                 st.session_state.id_arquivar_selecionado = None
                 st.rerun()
             except Exception as exc:
-                st.error(f"Não foi arquivado. Detalhe: {exc}")
+                st.error(f"Erro: {exc}")
 
 
 def relatorio_arquivados(df: pd.DataFrame) -> None:
-    """Mostra relatório dos prazos arquivados."""
+    """Relatório de arquivados"""
     arquivados = df[df["arquivado"]]
     
     if arquivados.empty:
@@ -466,25 +567,19 @@ def relatorio_arquivados(df: pd.DataFrame) -> None:
     colunas_rel = ["id", "titulo", "processo", "cliente", "responsavel", "data_fatal", "concluido_em", "prioridade"]
     rel = arquivados[colunas_rel].copy()
     rel = rel.rename(columns={
-        "id": "ID",
-        "titulo": "Título",
-        "processo": "Processo",
-        "cliente": "Cliente",
-        "responsavel": "Responsável",
-        "data_fatal": "Data Fatal",
-        "concluido_em": "Concluído em",
-        "prioridade": "Prioridade"
+        "id": "ID", "titulo": "Título", "processo": "Processo", "cliente": "Cliente",
+        "responsavel": "Responsável", "data_fatal": "Data Fatal", "concluido_em": "Concluído em", "prioridade": "Prioridade"
     })
     
     st.dataframe(rel, use_container_width=True, hide_index=True)
 
 
 def aba_desarquivar(df: pd.DataFrame) -> None:
-    """Aba para desarquivar prazos."""
+    """Aba de desarquivar"""
     arquivados = df[df["arquivado"]]
     
     if arquivados.empty:
-        st.info("Nenhum prazo arquivado para desarquivar.")
+        st.info("Nenhum prazo arquivado.")
         return
     
     st.subheader("🔄 Desarquivar prazo")
@@ -496,7 +591,7 @@ def aba_desarquivar(df: pd.DataFrame) -> None:
     id_desarquivar = col1.selectbox(
         "Selecione o prazo para desarquivar",
         options=arquivados["id"].values,
-        format_func=lambda x: f"{arquivados[arquivados['id'] == x]['titulo'].values[0]} | Proc: {arquivados[arquivados['id'] == x]['processo'].values[0] or '-'} | Cliente: {arquivados[arquivados['id'] == x]['cliente'].values[0] or '-'} | Data: {arquivados[arquivados['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
+        format_func=lambda x: f"{arquivados[arquivados['id'] == x]['titulo'].values[0]} | Proc: {arquivados[arquivados['id'] == x]['processo'].values[0] or '-'} | Data: {arquivados[arquivados['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
         key="select_desarquivar"
     )
     
@@ -507,7 +602,7 @@ def aba_desarquivar(df: pd.DataFrame) -> None:
             st.session_state.editor_v += 1
             st.rerun()
         except Exception as exc:
-            st.error(f"Não foi desarquivado. Detalhe: {exc}")
+            st.error(f"Erro: {exc}")
 
 
 def main() -> None:
@@ -515,13 +610,39 @@ def main() -> None:
     if not acesso_liberado():
         st.stop()
 
-    formulario_cadastro()
+    try:
+        df_prazos = carregar_prazos()
+        df_processos = carregar_processos()
+    except Exception as exc:
+        st.error(f"Erro ao conectar: {exc}")
+        st.stop()
+
+    # ===== SIDEBAR COM 3 ABAS =====
     with st.sidebar:
+        st.title("⚖️ Controladoria")
+        
+        aba = st.radio(
+            "Escolha uma opção:",
+            ["Controle de Prazos", "Cadastro de Novo Processo", "Dashboard"],
+            key="aba_sidebar"
+        )
+        
         st.divider()
-        if st.button("Recarregar dados", help="Busca alterações feitas pela outra pessoa"):
+        
+        if aba == "Controle de Prazos":
+            sidebar_controle_prazos(df_processos)
+        elif aba == "Cadastro de Novo Processo":
+            sidebar_cadastro_processo()
+        elif aba == "Dashboard":
+            sidebar_dashboard(df_prazos)
+        
+        st.divider()
+        if st.button("🔄 Recarregar dados"):
             carregar_prazos.clear()
+            carregar_processos.clear()
             st.rerun()
 
+    # ===== CONTEÚDO PRINCIPAL =====
     st.title("⚖️ Controladoria Jurídica")
     st.caption(f"Hoje é {hoje():%d/%m/%Y} (horário de Brasília)")
 
@@ -529,35 +650,30 @@ def main() -> None:
         st.toast(st.session_state.aviso, icon="✅")
         st.session_state.aviso = None
 
-    try:
-        df = carregar_prazos()
-    except Exception as exc:
-        st.error(f"Não foi possível conectar ao banco. Verifique os secrets do Supabase. Detalhe: {exc}")
+    if df_prazos.empty:
+        st.info("Nenhum prazo cadastrado ainda.")
         st.stop()
 
-    if df.empty:
-        st.info("Nenhum prazo cadastrado ainda. Use o formulário na barra lateral para começar.")
-        return
-
-    df = enriquecer(df)
+    df_prazos = enriquecer(df_prazos)
     
     tab1, tab2, tab3 = st.tabs(["📅 Prazos", "📋 Relatório", "🔄 Desarquivar"])
     
     with tab1:
         topo = st.container()
         with st.expander("Filtros", expanded=True):
-            filtrado, resp = aplicar_filtros(df)
+            filtrado, resp = aplicar_filtros(df_prazos)
         with topo:
-            painel_metricas(df, resp)
+            painel_metricas(df_prazos, resp)
 
         st.subheader(f"Prazos e tarefas ({len(filtrado)})")
         tabela_status(filtrado)
     
     with tab2:
-        relatorio_arquivados(df)
+        relatorio_arquivados(df_prazos)
     
     with tab3:
-        aba_desarquivar(df)
+        aba_desarquivar(df_prazos)
 
 
-main()
+if __name__ == "__main__":
+    main()
