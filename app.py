@@ -109,15 +109,17 @@ def inserir(registro: dict) -> None:
     carregar_prazos.clear()
 
 
-def atualizar_status(concluir: list[int], reabrir: list[int]) -> None:
-    if concluir:
-        supabase().table(TABELA).update(
-            {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()}
-        ).in_("id", concluir).execute()
-    if reabrir:
-        supabase().table(TABELA).update(
-            {"concluido": False, "concluido_em": None}
-        ).in_("id", reabrir).execute()
+def atualizar_campos(atualizacoes: dict[int, dict]) -> None:
+    """Atualiza múltiplos campos de vários registros."""
+    for id_prazo, campos in atualizacoes.items():
+        if campos:
+            supabase().table(TABELA).update(campos).eq("id", id_prazo).execute()
+    carregar_prazos.clear()
+
+
+def deletar_prazo(id_prazo: int) -> None:
+    """Deleta um prazo do banco."""
+    supabase().table(TABELA).delete().eq("id", id_prazo).execute()
     carregar_prazos.clear()
 
 
@@ -263,13 +265,13 @@ def tabela_status(df: pd.DataFrame) -> None:
         st.info("Nenhum registro com esses filtros. Ajuste os filtros ou cadastre um prazo na barra lateral.")
         return
 
-    colunas = [
-        "id", "concluido", "situacao", "data_fatal", "dias_uteis", "data_interna", "tipo",
-        "titulo", "processo", "cliente", "responsavel", "prioridade", "descricao",
+    colunas_vis = [
+        "id", "concluido", "situacao", "titulo", "processo", "cliente", "data_fatal",
+        "data_interna", "dias_uteis", "tipo", "responsavel", "prioridade", "descricao",
     ]
     vis = (
         df.assign(_p=df["prioridade"].map(ORDEM_PRIORIDADE))
-        .sort_values(["concluido", "data_fatal", "_p"])[colunas]
+        .sort_values(["concluido", "data_fatal", "_p"])[colunas_vis]
         .set_index("id")
     )
 
@@ -277,48 +279,88 @@ def tabela_status(df: pd.DataFrame) -> None:
         vis,
         key=f"editor_{st.session_state.editor_v}",
         hide_index=True,
-        disabled=[c for c in colunas if c not in ("id", "concluido")],
+        disabled=["situacao", "dias_uteis", "tipo", "responsavel"],  # só leitura
         column_config={
             "concluido": st.column_config.CheckboxColumn("Feito", help="Marque para concluir"),
             "situacao": "Situação",
-            "data_fatal": st.column_config.DateColumn("Data fatal", format="DD/MM/YYYY"),
-            "dias_uteis": st.column_config.NumberColumn(
-                "Dias úteis", help="Aproximado: considera só feriados nacionais cadastrados."
-            ),
-            "data_interna": st.column_config.DateColumn("Prazo interno", format="DD/MM/YYYY"),
-            "tipo": "Tipo",
             "titulo": st.column_config.TextColumn("Título", width="medium"),
-            "processo": "Processo",
-            "cliente": "Cliente",
+            "processo": st.column_config.TextColumn("Processo", width="small"),
+            "cliente": st.column_config.TextColumn("Cliente", width="small"),
+            "data_fatal": st.column_config.DateColumn("Data fatal", format="DD/MM/YYYY"),
+            "data_interna": st.column_config.DateColumn("Prazo interno", format="DD/MM/YYYY"),
+            "dias_uteis": st.column_config.NumberColumn("Dias úteis"),
+            "tipo": "Tipo",
             "responsavel": "Responsável",
-            "prioridade": "Prioridade",
+            "prioridade": st.column_config.SelectboxColumn(
+                "Prioridade", options=PRIORIDADES
+            ),
             "descricao": st.column_config.TextColumn("Observações", width="large"),
         },
     )
 
-    alterados = editado.loc[editado["concluido"] != vis["concluido"], "concluido"]
-    if alterados.empty:
+    # Detectar mudanças
+    mudancas = {}
+    for idx in editado.index:
+        alterado = {}
+        if editado.loc[idx, "concluido"] != vis.loc[idx, "concluido"]:
+            alterado["concluido"] = editado.loc[idx, "concluido"]
+            if editado.loc[idx, "concluido"]:
+                alterado["concluido_em"] = dt.datetime.now(TZ).isoformat()
+            else:
+                alterado["concluido_em"] = None
+        if editado.loc[idx, "titulo"] != vis.loc[idx, "titulo"]:
+            alterado["titulo"] = editado.loc[idx, "titulo"].strip() or None
+        if editado.loc[idx, "processo"] != vis.loc[idx, "processo"]:
+            alterado["processo"] = editado.loc[idx, "processo"].strip() or None
+        if editado.loc[idx, "cliente"] != vis.loc[idx, "cliente"]:
+            alterado["cliente"] = editado.loc[idx, "cliente"].strip() or None
+        if editado.loc[idx, "data_fatal"] != vis.loc[idx, "data_fatal"]:
+            alterado["data_fatal"] = editado.loc[idx, "data_fatal"].isoformat()
+        if editado.loc[idx, "data_interna"] != vis.loc[idx, "data_interna"]:
+            data = editado.loc[idx, "data_interna"]
+            alterado["data_interna"] = data.isoformat() if data else None
+        if editado.loc[idx, "prioridade"] != vis.loc[idx, "prioridade"]:
+            alterado["prioridade"] = editado.loc[idx, "prioridade"]
+        if editado.loc[idx, "descricao"] != vis.loc[idx, "descricao"]:
+            alterado["descricao"] = editado.loc[idx, "descricao"].strip() or None
+        
+        if alterado:
+            mudancas[int(idx)] = alterado
+
+    if not mudancas:
         return
 
-    concluir = [int(i) for i, feito in alterados.items() if feito]
-    reabrir = [int(i) for i, feito in alterados.items() if not feito]
-    partes = []
-    if concluir:
-        partes.append(f"{len(concluir)} para concluir")
-    if reabrir:
-        partes.append(f"{len(reabrir)} para reabrir")
-
     c1, c2 = st.columns([3, 1])
-    c1.warning("Alterações não salvas: " + " e ".join(partes) + ".")
-    if c2.button("Salvar status", type="primary"):
+    c1.warning(f"Alterações não salvas: {len(mudancas)} prazo(s) modificado(s).")
+    if c2.button("Salvar tudo", type="primary"):
         try:
-            atualizar_status(concluir, reabrir)
+            atualizar_campos(mudancas)
         except Exception as exc:
-            st.error(f"O status não foi salvo. Detalhe do banco: {exc}")
+            st.error(f"Não foi salvo. Detalhe: {exc}")
             return
-        st.session_state.aviso = "Status salvo."
+        st.session_state.aviso = "Prazos salvos!"
         st.session_state.editor_v += 1
         st.rerun()
+
+    st.divider()
+    st.subheader("🗑️ Deletar prazo")
+    col1, col2, col3 = st.columns([2, 1, 1])
+    id_para_deletar = col1.selectbox(
+        "Selecione o prazo para deletar",
+        options=df["id"].values,
+        format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} ({x})",
+        key="select_delete"
+    )
+    if col2.button("🗑️ Deletar", type="secondary"):
+        if col3.button("✅ Confirmar"):
+            try:
+                deletar_prazo(id_para_deletar)
+            except Exception as exc:
+                st.error(f"Não foi deletado. Detalhe: {exc}")
+                return
+            st.session_state.aviso = "Prazo deletado!"
+            st.session_state.editor_v += 1
+            st.rerun()
 
 
 def main() -> None:
