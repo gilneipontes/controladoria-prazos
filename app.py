@@ -937,6 +937,142 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                 st.session_state.aviso = "✅ Prazo salvo com sucesso!"
                 st.rerun()
 
+def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+    """Dashboard interativo com métricas clicáveis"""
+    st.markdown("# 📊 DASHBOARD CONTROLADORIA")
+    st.divider()
+
+    # ===== INICIALIZAR ESTADO =====
+    st.session_state.setdefault("dashboard_filtro", None)
+
+    # ===== ENRIQUECER DADOS =====
+    if not df_prazos.empty:
+        df_prazos = enriquecer(df_prazos)
+
+    # ===== CALCULAR MÉTRICAS PRAZOS =====
+    pend = df_prazos[~df_prazos["concluido"] & ~df_prazos["arquivado"]] if not df_prazos.empty else pd.DataFrame()
+    vencidos = pend[pend["faixa"] == "Vencido"] if not pend.empty else pd.DataFrame()
+    hoje_prazos = pend[pend["faixa"] == "Hoje"] if not pend.empty else pd.DataFrame()
+
+    aud_agendadas = df_audiencias[df_audiencias["status"] == "Agendada"] if not df_audiencias.empty else pd.DataFrame()
+    aud_realizadas = df_audiencias[df_audiencias["status"] == "Realizada"] if not df_audiencias.empty else pd.DataFrame()
+    aud_canceladas = df_audiencias[df_audiencias["status"] == "Cancelada"] if not df_audiencias.empty else pd.DataFrame()
+
+    # ===== LINHA 1: PRAZOS =====
+    st.markdown("## 📋 PRAZOS")
+    col1, col2, col3 = st.columns(3, gap="large")
+
+    with col1:
+        with st.container(border=True):
+            st.markdown("### 🔴 VENCIDOS")
+            st.metric("", len(vencidos), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_vencidos", use_container_width=True):
+                st.session_state.dashboard_filtro = "vencidos"
+
+    with col2:
+        with st.container(border=True):
+            st.markdown("### 🟠 HOJE")
+            st.metric("", len(hoje_prazos), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_hoje", use_container_width=True):
+                st.session_state.dashboard_filtro = "hoje"
+
+    with col3:
+        with st.container(border=True):
+            st.markdown("### 📋 PENDENTES")
+            st.metric("", len(pend), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_pendentes", use_container_width=True):
+                st.session_state.dashboard_filtro = "pendentes"
+
+    st.divider()
+
+    # ===== LINHA 2: AUDIÊNCIAS =====
+    st.markdown("## 📅 AUDIÊNCIAS")
+    col1, col2, col3 = st.columns(3, gap="large")
+
+    with col1:
+        with st.container(border=True):
+            st.markdown("### 📅 AGENDADAS")
+            st.metric("", len(aud_agendadas), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_agendadas", use_container_width=True):
+                st.session_state.dashboard_filtro = "agendadas"
+
+    with col2:
+        with st.container(border=True):
+            st.markdown("### ✅ REALIZADAS")
+            st.metric("", len(aud_realizadas), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_realizadas", use_container_width=True):
+                st.session_state.dashboard_filtro = "realizadas"
+
+    with col3:
+        with st.container(border=True):
+            st.markdown("### ❌ CANCELADAS")
+            st.metric("", len(aud_canceladas), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_canceladas", use_container_width=True):
+                st.session_state.dashboard_filtro = "canceladas"
+
+    st.divider()
+
+    # ===== EXIBIR DETALHES SELECIONADOS =====
+    if st.session_state.dashboard_filtro:
+        filtro = st.session_state.dashboard_filtro
+
+        st.markdown("---")
+        col_voltar = st.columns([3, 1])
+        with col_voltar[1]:
+            if st.button("🔙 Voltar", use_container_width=True, key="btn_voltar_dash"):
+                st.session_state.dashboard_filtro = None
+                st.rerun()
+
+        st.markdown("---")
+
+        # ===== PRAZOS VENCIDOS =====
+        if filtro == "vencidos":
+            st.subheader("🔴 Prazos Vencidos")
+            if vencidos.empty:
+                st.info("Nenhum prazo vencido!")
+            else:
+                tabela_status(vencidos, df_processos)
+
+        # ===== PRAZOS HOJE =====
+        elif filtro == "hoje":
+            st.subheader("🟠 Prazos de Hoje")
+            if hoje_prazos.empty:
+                st.info("Nenhum prazo para hoje!")
+            else:
+                tabela_status(hoje_prazos, df_processos)
+
+        # ===== PRAZOS PENDENTES =====
+        elif filtro == "pendentes":
+            st.subheader("📋 Prazos Pendentes")
+            if pend.empty:
+                st.info("Nenhum prazo pendente!")
+            else:
+                tabela_status(pend, df_processos)
+
+        # ===== AUDIÊNCIAS AGENDADAS =====
+        elif filtro == "agendadas":
+            st.subheader("📅 Audiências Agendadas")
+            if aud_agendadas.empty:
+                st.info("Nenhuma audiência agendada!")
+            else:
+                tabela_audiencias(aud_agendadas)
+
+        # ===== AUDIÊNCIAS REALIZADAS =====
+        elif filtro == "realizadas":
+            st.subheader("✅ Audiências Realizadas")
+            if aud_realizadas.empty:
+                st.info("Nenhuma audiência realizada!")
+            else:
+                tabela_audiencias(aud_realizadas)
+
+        # ===== AUDIÊNCIAS CANCELADAS =====
+        elif filtro == "canceladas":
+            st.subheader("❌ Audiências Canceladas")
+            if aud_canceladas.empty:
+                st.info("Nenhuma audiência cancelada!")
+            else:
+                tabela_audiencias(aud_canceladas)
+
 def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
     """Formulário para nova audiência na barra lateral"""
     st.subheader("📅 Nova Audiência")
