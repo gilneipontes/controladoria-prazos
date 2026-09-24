@@ -1615,7 +1615,9 @@ def main() -> None:
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📅 Prazos", "📋 Relatório", "📋 Pauta", "🔄 Desarquivar", "📋 Processos", "📅 Audiências"])
 
     with tab1:
-        tabela_status(df_prazos[~df_prazos["arquivado"]], df_processos, prefix="tab_prazos")
+        # Mostrar apenas prazos ATIVOS (não concluídos e não arquivados)
+        prazos_ativos = df_prazos[~df_prazos["concluido"] & ~df_prazos["arquivado"]]
+        tabela_status(prazos_ativos, df_processos, prefix="tab_prazos")
     
     with tab2:
         st.subheader("📋 Relatório de Prazos")
