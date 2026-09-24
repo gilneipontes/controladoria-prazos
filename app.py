@@ -277,27 +277,34 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
 
     col1, col2 = st.columns([2, 1])
     
-    # ===== CRIAR OPÇÃO VAZIA COMO PADRÃO =====
-    opcoes = [None] + list(df_ativos["id"].values)
+    # ===== CRIAR OPÇÕES SIMPLES =====
+    if df_ativos.empty:
+        st.info("Nenhum prazo ativo.")
+        return
     
-    def formatar_opcao(x):
-        if x is None:
-            return "📌 Selecione um prazo..."
-        return f"{df_ativos[df_ativos['id'] == x]['cliente'].values[0]} | {df_ativos[df_ativos['id'] == x]['titulo'].values[0]} | {df_ativos[df_ativos['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}"
+    # Criar lista de strings para exibir
+    opcoes_display = ["📌 Selecione um prazo..."]
+    opcoes_ids = [None]
     
-    # ===== RESETAR SELETOR QUANDO FECHAR MODAL =====
-    if not st.session_state.modal_aberta and st.session_state.get("sel_prazo") is not None:
-        st.session_state.sel_prazo = None
+    for _, row in df_ativos.iterrows():
+        opcoes_display.append(f"{row['cliente']} | {row['titulo']} | {row['data_fatal'].strftime('%d/%m/%Y')}")
+        opcoes_ids.append(row['id'])
     
-    id_sel = col1.selectbox(
+    # Resetar seletor quando fechar modal
+    if not st.session_state.modal_aberta and st.session_state.get("sel_prazo_idx") is not None:
+        st.session_state.sel_prazo_idx = 0
+    
+    id_sel_idx = col1.selectbox(
         "Clique no prazo para ver detalhes:",
-        options=opcoes,
-        format_func=formatar_opcao,
-        key="sel_prazo"
+        options=range(len(opcoes_display)),
+        format_func=lambda x: opcoes_display[x],
+        key="sel_prazo_idx"
     )
+    
+    id_sel = opcoes_ids[id_sel_idx]
 
     if col2.button("📂 Ver Detalhes", use_container_width=True, type="primary"):
-        if id_sel is not None:
+        if id_sel_idx > 0:  # Índice 0 é a opção vazia
             st.session_state.id_modal = id_sel
             st.session_state.modo_modal = "detalhes"
             st.session_state.modal_aberta = True
@@ -400,7 +407,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
                 if st.button("🔙 Fechar", use_container_width=True, type="secondary"):
                     st.session_state.modal_aberta = False
                     st.session_state.modo_modal = None
-                    st.session_state.sel_prazo = None
+                    st.session_state.sel_prazo_idx = 0
                     st.rerun()
         
         elif st.session_state.modo_modal == "editar":
@@ -448,7 +455,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
                         }})
                         st.session_state.aviso = "✅ Prazo atualizado!"
                         st.session_state.modal_aberta = False
-                        st.session_state.sel_prazo = None
+                        st.session_state.sel_prazo_idx = 0
                         st.session_state.editor_v += 1
                         st.rerun()
                 with c2:
@@ -468,7 +475,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
                     carregar_processos.clear()
                     st.session_state.aviso = "✅ Arquivado!"
                     st.session_state.modal_aberta = False
-                    st.session_state.sel_prazo = None
+                    st.session_state.sel_prazo_idx = 0
                     st.session_state.editor_v += 1
                     st.rerun()
             with c2:
@@ -506,7 +513,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
                         }})
                         st.session_state.aviso = "✅ Prazo concluído com anotações!"
                         st.session_state.modal_aberta = False
-                        st.session_state.sel_prazo = None
+                        st.session_state.sel_prazo_idx = 0
                         st.session_state.editor_v += 1
                         st.rerun()
                 
@@ -528,7 +535,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
                     carregar_processos.clear()
                     st.session_state.aviso = "✅ Prazo excluído!"
                     st.session_state.modal_aberta = False
-                    st.session_state.sel_prazo = None
+                    st.session_state.sel_prazo_idx = 0
                     st.session_state.editor_v += 1
                     st.rerun()
             with c2:
