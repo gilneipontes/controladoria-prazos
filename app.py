@@ -276,18 +276,31 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
         return
 
     col1, col2 = st.columns([2, 1])
+    
+    # ===== CRIAR OPÇÃO VAZIA COMO PADRÃO =====
+    opcoes = [None] + list(df_ativos["id"].values)
+    
+    def formatar_opcao(x):
+        if x is None:
+            return "📌 Selecione um prazo..."
+        return f"{df_ativos[df_ativos['id'] == x]['cliente'].values[0]} | {df_ativos[df_ativos['id'] == x]['titulo'].values[0]} | {df_ativos[df_ativos['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}"
+    
     id_sel = col1.selectbox(
         "Clique no prazo para ver detalhes:",
-        options=df_ativos["id"].values,
-        format_func=lambda x: f"{df_ativos[df_ativos['id'] == x]['cliente'].values[0]} | {df_ativos[df_ativos['id'] == x]['titulo'].values[0]} | {df_ativos[df_ativos['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
+        options=opcoes,
+        format_func=formatar_opcao,
+        index=0,
         key="sel_prazo"
     )
 
     if col2.button("📂 Ver Detalhes", use_container_width=True, type="primary"):
-        st.session_state.id_modal = id_sel
-        st.session_state.modo_modal = "detalhes"
-        st.session_state.modal_aberta = True
-        st.rerun()
+        if id_sel is not None:
+            st.session_state.id_modal = id_sel
+            st.session_state.modo_modal = "detalhes"
+            st.session_state.modal_aberta = True
+            st.rerun()
+        else:
+            st.warning("⚠️ Selecione um prazo primeiro!")
 
     if st.session_state.modal_aberta and st.session_state.id_modal:
         id_prazo = st.session_state.id_modal
