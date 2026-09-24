@@ -300,12 +300,14 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
         if st.session_state.modo_modal == "detalhes":
             st.info("📋 Detalhes Completos do Prazo")
             
-            # Buscar parte contrária nos processos se existir
+            # Buscar parte contrária e descrição do processo
             parte_contraria = ""
+            descricao_processo = ""
             if processos_df is not None and prazo['processo']:
                 proc_match = processos_df[processos_df['numero'] == prazo['processo']]
                 if not proc_match.empty:
                     parte_contraria = proc_match.iloc[0]['parte_contraria']
+                    descricao_processo = proc_match.iloc[0]['descricao']
             
             col1, col2 = st.columns(2)
             col1.write(f"**Cliente:** {prazo['cliente']}")
@@ -313,6 +315,9 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
             
             if parte_contraria:
                 st.write(f"**Parte Contrária:** {parte_contraria}")
+            
+            if descricao_processo:
+                st.write(f"**Ação:** {descricao_processo}")
             
             col1, col2 = st.columns(2)
             col1.write(f"**Responsável:** {prazo['responsavel']}")
