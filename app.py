@@ -543,9 +543,26 @@ def painel_metricas(df: pd.DataFrame, resp: list[str]) -> None:
 
 
 def tabela_status(df: pd.DataFrame) -> None:
+    """
+    Tabela de prazos com MODAL ao clicar checkbox:
+    
+    Fluxo:
+    1. Clica checkbox ✅ → Abre janela com opções
+    2. "Editar" → Abre campos de data + recalcula situação
+    3. "Arquivar" → Pede confirmação → Arquiva
+    4. "Cancelar" → Fecha tudo
+    """
     if df.empty:
         st.info("Nenhum registro com esses filtros.")
         return
+
+    # ===== ESTADO DA MODAL =====
+    if "modal_aberta" not in st.session_state:
+        st.session_state.modal_aberta = False
+    if "id_modal" not in st.session_state:
+        st.session_state.id_modal = None
+    if "modo_modal" not in st.session_state:
+        st.session_state.modo_modal = None  # None, "editar" ou "confirmar_arquivar"
 
     colunas_vis = [
         "id", "concluido", "situacao", "titulo", "processo", "cliente", "data_fatal",
@@ -557,19 +574,29 @@ def tabela_status(df: pd.DataFrame) -> None:
         .set_index("id")
     )
 
+    # ===== TABELA EDITÁVEL (sem checkbox de conclusão) =====
     editado = st.data_editor(
         vis,
         key=f"editor_{st.session_state.editor_v}",
         hide_index=True,
-        disabled=["situacao", "dias_uteis", "tipo", "responsavel"],
+        disabled=["situacao", "dias_uteis", "tipo", "responsavel", "concluido"],
         column_config={
-            "concluido": st.column_config.CheckboxColumn("✅", help="Marque para concluir"),
+            "concluido": st.column_config.CheckboxColumn(
+                "✅",
+                help="Clique para abrir opções (Editar ou Arquivar)"
+            ),
             "situacao": "Situação",
             "titulo": st.column_config.TextColumn("Título", width="medium"),
             "processo": st.column_config.TextColumn("Processo", width="small"),
             "cliente": st.column_config.TextColumn("Cliente", width="small"),
-            "data_fatal": st.column_config.DateColumn("Data Fatal", format="DD/MM/YYYY"),
-            "data_interna": st.column_config.DateColumn("Prazo Interno", format="DD/MM/YYYY"),
+            "data_fatal": st.column_config.DateColumn(
+                "📅 Data Fatal",
+                format="DD/MM/YYYY",
+            ),
+            "data_interna": st.column_config.DateColumn(
+                "📅 Prazo Interno",
+                format="DD/MM/YYYY",
+            ),
             "dias_uteis": st.column_config.NumberColumn("D.Úteis"),
             "tipo": "Tipo",
             "responsavel": "Resp.",
@@ -578,26 +605,175 @@ def tabela_status(df: pd.DataFrame) -> None:
         },
     )
 
+    # ===== DETECTAR CLIQUE NO CHECKBOX =====
+    for idx in editado.index:
+        if editado.loc[idx, "concluido"] != vis.loc[idx, "concluido"]:
+            # Checkbox mudou! Abre a modal
+            st.session_state.modal_aberta = True
+            st.session_state.id_modal = int(idx)
+            st.session_state.modo_modal = None  # Volta pra menu principal
+            st.rerun()
+
+    # ===== MODAL/DIALOG =====
+    if st.session_state.modal_aberta and st.session_state.id_modal:
+        id_prazo = st.session_state.id_modal
+        prazo = df[df["id"] == id_prazo].iloc[0]
+        
+        st.divider()
+        st.subheader(f"⚙️ Gerenciar Prazo: {prazo['titulo']}")
+        
+        # MENU PRINCIPAL DA MODAL
+        if st.session_state.modo_modal is None:
+            col1, col2, col3 = st.columns([1, 1, 1])
+            
+            with col1:
+                if st.button("✏️ Editar", use_container_width=True, type="secondary"):
+                    st.session_state.modo_modal = "editar"
+                    st.rerun()
+            
+            with col2:
+                if st.button("📦 Arquivar", use_container_width=True, type="secondary"):
+                    st.session_state.modo_modal = "confirmar_arquivar"
+                    st.rerun()
+            
+            with col3:
+                if st.button("❌ Cancelar", use_container_width=True):
+                    st.session_state.modal_aberta = False
+                    st.session_state.id_modal = None
+                    st.session_state.modo_modal = None
+                    st.rerun()
+
+        # MODO EDITAR
+        elif st.session_state.modo_modal == "editar":
+            st.write(f"**Editando:** {prazo['titulo']}")
+            
+            with st.form(f"form_editar_{id_prazo}", border=True):
+                st.write("Altere as datas e a situação recalculará automaticamente:")
+                
+                col1, col2 = st.columns(2)
+                nova_data_fatal = col1.date_input(
+                    "Data Fatal",
+                    value=prazo["data_fatal"],
+                    format="DD/MM/YYYY",
+                    key=f"edit_fatal_{id_prazo}"
+                )
+                nova_data_interna = col2.date_input(
+                    "Prazo Interno",
+                    value=prazo["data_interna"],
+                    format="DD/MM/YYYY",
+                    key=f"edit_interna_{id_prazo}"
+                )
+                
+                # Preview da situação nova
+                if nova_data_fatal:
+                    ref = np.datetime64(hoje())
+                    fatal = np.datetime64(nova_data_fatal)
+                    dias_corridos = (fatal - ref).astype(int)
+                    dias_uteis = np.busday_count(ref, fatal, holidays=FERIADOS)
+                    
+                    # Calcular faixa
+                    if dias_corridos < 0:
+                        faixa_nova = "Vencido"
+                        situacao_nova = "🔴 Vencido"
+                    elif dias_corridos == 0:
+                        faixa_nova = "Hoje"
+                        situacao_nova = "🟠 Vence hoje"
+                    elif dias_corridos <= 3:
+                        faixa_nova = "Até 3 dias"
+                        situacao_nova = "🟡 Até 3 dias"
+                    elif dias_corridos <= 7:
+                        faixa_nova = "Até 7 dias"
+                        situacao_nova = "🔵 Até 7 dias"
+                    else:
+                        faixa_nova = "Futuro"
+                        situacao_nova = "🟢 Mais de 7 dias"
+                    
+                    st.info(f"📊 Nova Situação: **{situacao_nova}** | Dias úteis: **{dias_uteis}**")
+                
+                c1, c2, c3 = st.columns([1, 1, 1])
+                with c1:
+                    salvar_editar = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
+                with c2:
+                    voltar_editar = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+                with c3:
+                    st.write("")  # Espaço
+
+            if salvar_editar:
+                # Validar
+                erros = []
+                if nova_data_fatal is None:
+                    erros.append("Data fatal é obrigatória.")
+                if nova_data_fatal and nova_data_interna and nova_data_interna > nova_data_fatal:
+                    erros.append("Prazo interno deve ser igual ou anterior à data fatal.")
+                
+                if erros:
+                    for e in erros:
+                        st.error(e)
+                else:
+                    # Salvar mudanças
+                    mudancas = {
+                        id_prazo: {
+                            "data_fatal": nova_data_fatal.isoformat(),
+                            "data_interna": nova_data_interna.isoformat() if nova_data_interna else None,
+                        }
+                    }
+                    try:
+                        atualizar_campos(mudancas)
+                        st.session_state.aviso = f"✅ Datas atualizadas! Situação recalculada."
+                        st.session_state.modal_aberta = False
+                        st.session_state.id_modal = None
+                        st.session_state.modo_modal = None
+                        st.session_state.editor_v += 1
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Erro ao salvar: {exc}")
+            
+            if voltar_editar:
+                st.session_state.modo_modal = None
+                st.rerun()
+
+        # MODO CONFIRMAR ARQUIVAMENTO
+        elif st.session_state.modo_modal == "confirmar_arquivar":
+            st.warning("⚠️ Tem certeza que deseja arquivar este prazo?")
+            st.write(f"**{prazo['titulo']}** | {prazo['processo']} | {prazo['data_fatal'].strftime('%d/%m/%Y')}")
+            
+            col1, col2, col3 = st.columns([1, 1, 1])
+            
+            with col1:
+                if st.button("✅ SIM, Arquivar", use_container_width=True, type="primary"):
+                    try:
+                        arquivar_prazo(id_prazo)
+                        st.session_state.aviso = "✅ Prazo arquivado com sucesso!"
+                        st.session_state.modal_aberta = False
+                        st.session_state.id_modal = None
+                        st.session_state.modo_modal = None
+                        st.session_state.editor_v += 1
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Erro ao arquivar: {exc}")
+            
+            with col2:
+                if st.button("❌ NÃO, Cancelar", use_container_width=True):
+                    st.session_state.modo_modal = None
+                    st.rerun()
+            
+            with col3:
+                st.write("")  # Espaço
+
+    # ===== EDITAR OUTROS CAMPOS (sem checkbox) =====
+    st.divider()
+    st.subheader("📝 Editar outros dados")
+    
     mudancas = {}
     for idx in editado.index:
         alterado = {}
-        if editado.loc[idx, "concluido"] != vis.loc[idx, "concluido"]:
-            alterado["concluido"] = editado.loc[idx, "concluido"]
-            if editado.loc[idx, "concluido"]:
-                alterado["concluido_em"] = dt.datetime.now(TZ).isoformat()
-            else:
-                alterado["concluido_em"] = None
+        
         if editado.loc[idx, "titulo"] != vis.loc[idx, "titulo"]:
             alterado["titulo"] = editado.loc[idx, "titulo"].strip() or None
         if editado.loc[idx, "processo"] != vis.loc[idx, "processo"]:
             alterado["processo"] = editado.loc[idx, "processo"].strip() or None
         if editado.loc[idx, "cliente"] != vis.loc[idx, "cliente"]:
             alterado["cliente"] = editado.loc[idx, "cliente"].strip() or None
-        if editado.loc[idx, "data_fatal"] != vis.loc[idx, "data_fatal"]:
-            alterado["data_fatal"] = editado.loc[idx, "data_fatal"].isoformat()
-        if editado.loc[idx, "data_interna"] != vis.loc[idx, "data_interna"]:
-            data = editado.loc[idx, "data_interna"]
-            alterado["data_interna"] = data.isoformat() if data else None
         if editado.loc[idx, "prioridade"] != vis.loc[idx, "prioridade"]:
             alterado["prioridade"] = editado.loc[idx, "prioridade"]
         if editado.loc[idx, "descricao"] != vis.loc[idx, "descricao"]:
@@ -614,35 +790,6 @@ def tabela_status(df: pd.DataFrame) -> None:
                 atualizar_campos(mudancas)
                 st.session_state.aviso = "✅ Prazos salvos!"
                 st.session_state.editor_v += 1
-                st.rerun()
-            except Exception as exc:
-                st.error(f"❌ Erro: {exc}")
-                return
-
-    st.divider()
-    st.subheader("📦 Arquivar prazo")
-    
-    col1, col2, col3 = st.columns([2, 1, 1])
-    
-    id_selecionado = col1.selectbox(
-        "Selecione o prazo para arquivar",
-        options=df["id"].values,
-        format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} | {df[df['id'] == x]['processo'].values[0] or '-'} | {df[df['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
-        key="select_arquivar_prazo"
-    )
-    
-    st.session_state.id_arquivar_selecionado = id_selecionado
-    
-    if col2.button("📦 Arquivar", type="secondary", key="btn_arquivar"):
-        st.rerun()
-    
-    if col3.button("✅ Confirmar", type="primary", key="btn_confirmar_arquivar"):
-        if st.session_state.id_arquivar_selecionado:
-            try:
-                arquivar_prazo(st.session_state.id_arquivar_selecionado)
-                st.session_state.aviso = "✅ Prazo arquivado!"
-                st.session_state.editor_v += 1
-                st.session_state.id_arquivar_selecionado = None
                 st.rerun()
             except Exception as exc:
                 st.error(f"❌ Erro: {exc}")
