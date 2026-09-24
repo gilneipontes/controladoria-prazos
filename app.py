@@ -124,6 +124,8 @@ def init_estado() -> None:
     st.session_state.setdefault("modal_aberta", False)
     st.session_state.setdefault("id_modal", None)
     st.session_state.setdefault("modo_modal", None)
+    st.session_state.setdefault("sel_prazo_idx", 0)
+    st.session_state.setdefault("modal_estava_aberta", False)
 
 def acesso_liberado() -> bool:
     senha_correta = st.secrets.get("APP_PASSWORD")
@@ -290,9 +292,12 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
         opcoes_display.append(f"{row['cliente']} | {row['titulo']} | {row['data_fatal'].strftime('%d/%m/%Y')}")
         opcoes_ids.append(row['id'])
     
-    # Resetar seletor quando fechar modal
-    if not st.session_state.modal_aberta and st.session_state.get("sel_prazo_idx") is not None:
+    # Resetar seletor APENAS quando a modal FECHA (transição de aberta para fechada)
+    if st.session_state.modal_estava_aberta and not st.session_state.modal_aberta:
         st.session_state.sel_prazo_idx = 0
+    
+    # Atualizar flag para próxima execução
+    st.session_state.modal_estava_aberta = st.session_state.modal_aberta
     
     id_sel_idx = col1.selectbox(
         "Clique no prazo para ver detalhes:",
@@ -300,11 +305,10 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
         format_func=lambda x: opcoes_display[x],
         key="sel_prazo_idx"
     )
-    
-    id_sel = opcoes_ids[id_sel_idx]
 
     if col2.button("📂 Ver Detalhes", use_container_width=True, type="primary"):
-        if id_sel_idx > 0:  # Índice 0 é a opção vazia
+        if st.session_state.get("sel_prazo_idx", 0) > 0:  # Índice 0 é a opção vazia
+            id_sel = opcoes_ids[st.session_state.sel_prazo_idx]
             st.session_state.id_modal = id_sel
             st.session_state.modo_modal = "detalhes"
             st.session_state.modal_aberta = True
