@@ -55,6 +55,7 @@ CNJ_REGEX = re.compile(r"^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$")
 COLUNAS = [
     "id", "created_at", "tipo", "titulo", "processo", "cliente", "responsavel",
     "data_fatal", "data_interna", "prioridade", "descricao", "concluido", "concluido_em",
+    "arquivado",
 ]
 
 
@@ -66,8 +67,7 @@ def init_estado() -> None:
     st.session_state.setdefault("form_v", 0)
     st.session_state.setdefault("editor_v", 0)
     st.session_state.setdefault("aviso", None)
-    st.session_state.setdefault("deletar_confirmado", False)
-    st.session_state.setdefault("id_deletar_selecionado", None)
+    st.session_state.setdefault("id_arquivar_selecionado", None)
 
 
 # ───────────────────────── 2. Acesso ─────────────────────────
@@ -101,6 +101,7 @@ def carregar_prazos() -> pd.DataFrame:
     for col in ("data_fatal", "data_interna"):
         df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
     df["concluido"] = df["concluido"].fillna(False).astype(bool)
+    df["arquivado"] = df["arquivado"].fillna(False).astype(bool)
     return df
 
 
@@ -117,9 +118,15 @@ def atualizar_campos(atualizacoes: dict[int, dict]) -> None:
     carregar_prazos.clear()
 
 
-def deletar_prazo(id_prazo: int) -> None:
-    """Deleta um prazo do banco."""
-    supabase().table(TABELA).delete().eq("id", id_prazo).execute()
+def arquivar_prazo(id_prazo: int) -> None:
+    """Marca um prazo como arquivado."""
+    supabase().table(TABELA).update({"arquivado": True}).eq("id", id_prazo).execute()
+    carregar_prazos.clear()
+
+
+def desarquivar_prazo(id_prazo: int) -> None:
+    """Remove o arquivo de um prazo."""
+    supabase().table(TABELA).update({"arquivado": False}).eq("id", id_prazo).execute()
     carregar_prazos.clear()
 
 
@@ -201,6 +208,7 @@ def formulario_cadastro() -> None:
             "data_interna": data_interna.isoformat() if data_interna else None,
             "prioridade": prioridade,
             "descricao": descricao.strip() or None,
+            "arquivado": False,
         }
         try:
             inserir(registro)
@@ -221,7 +229,7 @@ def aplicar_filtros(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         format_func=FAIXAS.get, placeholder="Todas",
     )
     tipos = c3.multiselect("Tipo", TIPOS, placeholder="Todos")
-    status = c4.radio("Status", ["Pendentes", "Concluídos", "Todos"], horizontal=True)
+    status = c4.radio("Status", ["Pendentes", "Concluídos", "Arquivados", "Todos"], horizontal=False)
 
     c5, c6 = st.columns([2, 1])
     busca = c5.text_input("Buscar", placeholder="Título, cliente ou nº do processo")
@@ -233,10 +241,14 @@ def aplicar_filtros(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         m &= df["faixa"].isin(faixas)
     if tipos:
         m &= df["tipo"].isin(tipos)
+    
     if status == "Pendentes":
-        m &= ~df["concluido"]
+        m &= ~df["concluido"] & ~df["arquivado"]
     elif status == "Concluídos":
-        m &= df["concluido"]
+        m &= df["concluido"] & ~df["arquivado"]
+    elif status == "Arquivados":
+        m &= df["arquivado"]
+    
     if len(periodo) == 2:
         m &= df["data_fatal"].between(periodo[0], periodo[1])
     if busca.strip():
@@ -249,7 +261,7 @@ def aplicar_filtros(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 
 
 def painel_metricas(df: pd.DataFrame, resp: list[str]) -> None:
-    pend = df[~df["concluido"] & df["responsavel"].isin(resp)]
+    pend = df[~df["concluido"] & ~df["arquivado"] & df["responsavel"].isin(resp)]
     vencidos = int((pend["faixa"] == "Vencido").sum())
     c = st.columns(4)
     c[0].metric("Vencidos", vencidos)
@@ -338,33 +350,79 @@ def tabela_status(df: pd.DataFrame) -> None:
             st.rerun()
 
     st.divider()
-    st.subheader("🗑️ Deletar prazo")
+    st.subheader("📦 Arquivar prazo")
     
     col1, col2, col3 = st.columns([2, 1, 1])
     
     id_selecionado = col1.selectbox(
-        "Selecione o prazo para deletar",
+        "Selecione o prazo para arquivar",
         options=df["id"].values,
         format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} ({x})",
-        key="select_delete_prazo"
+        key="select_arquivar_prazo"
     )
     
-    st.session_state.id_deletar_selecionado = id_selecionado
+    st.session_state.id_arquivar_selecionado = id_selecionado
     
-    if col2.button("🗑️ Deletar", type="secondary", key="btn_deletar"):
-        st.session_state.deletar_confirmado = False
+    if col2.button("📦 Arquivar", type="secondary", key="btn_arquivar"):
         st.rerun()
     
-    if col3.button("✅ Confirmar", type="primary", key="btn_confirmar"):
-        if st.session_state.id_deletar_selecionado:
+    if col3.button("✅ Confirmar", type="primary", key="btn_confirmar_arquivar"):
+        if st.session_state.id_arquivar_selecionado:
             try:
-                deletar_prazo(st.session_state.id_deletar_selecionado)
-                st.session_state.aviso = "Prazo deletado!"
+                arquivar_prazo(st.session_state.id_arquivar_selecionado)
+                st.session_state.aviso = "Prazo arquivado!"
                 st.session_state.editor_v += 1
-                st.session_state.id_deletar_selecionado = None
+                st.session_state.id_arquivar_selecionado = None
                 st.rerun()
             except Exception as exc:
-                st.error(f"Não foi deletado. Detalhe: {exc}")
+                st.error(f"Não foi arquivado. Detalhe: {exc}")
+
+
+def relatorio_arquivados(df: pd.DataFrame) -> None:
+    """Mostra relatório dos prazos arquivados."""
+    arquivados = df[df["arquivado"]]
+    
+    if arquivados.empty:
+        st.info("Nenhum prazo arquivado.")
+        return
+    
+    st.subheader(f"📋 Relatório de Arquivados ({len(arquivados)})")
+    
+    colunas_rel = ["id", "titulo", "processo", "cliente", "responsavel", "data_fatal", "concluido_em", "prioridade"]
+    rel = arquivados[colunas_rel].copy()
+    rel = rel.rename(columns={
+        "id": "ID",
+        "titulo": "Título",
+        "processo": "Processo",
+        "cliente": "Cliente",
+        "responsavel": "Responsável",
+        "data_fatal": "Data Fatal",
+        "concluido_em": "Concluído em",
+        "prioridade": "Prioridade"
+    })
+    
+    st.dataframe(rel, use_container_width=True, hide_index=True)
+    
+    st.divider()
+    st.subheader("🔄 Desarquivar prazo")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    id_desarquivar = col1.selectbox(
+        "Selecione o prazo para desarquivar",
+        options=arquivados["id"].values,
+        format_func=lambda x: f"{arquivados[arquivados['id'] == x]['titulo'].values[0]} ({x})",
+        key="select_desarquivar"
+    )
+    
+    if col2.button("🔄 Desarquivar", type="secondary", key="btn_desarquivar"):
+        try:
+            desarquivar_prazo(id_desarquivar)
+            st.session_state.aviso = "Prazo desarquivado!"
+            st.session_state.editor_v += 1
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Não foi desarquivado. Detalhe: {exc}")
 
 
 def main() -> None:
@@ -397,14 +455,21 @@ def main() -> None:
         return
 
     df = enriquecer(df)
-    topo = st.container()
-    with st.expander("Filtros", expanded=True):
-        filtrado, resp = aplicar_filtros(df)
-    with topo:
-        painel_metricas(df, resp)
+    
+    tab1, tab2 = st.tabs(["📅 Prazos", "📋 Relatório"])
+    
+    with tab1:
+        topo = st.container()
+        with st.expander("Filtros", expanded=True):
+            filtrado, resp = aplicar_filtros(df)
+        with topo:
+            painel_metricas(df, resp)
 
-    st.subheader(f"Prazos e tarefas ({len(filtrado)})")
-    tabela_status(filtrado)
+        st.subheader(f"Prazos e tarefas ({len(filtrado)})")
+        tabela_status(filtrado)
+    
+    with tab2:
+        relatorio_arquivados(df)
 
 
 main()
