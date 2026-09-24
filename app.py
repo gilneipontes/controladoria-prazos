@@ -455,98 +455,100 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
     
     st.subheader("📋 Processos Cadastrados")
     
-    processos_ativos = df_processos[df_processos["ativo"]]
+    processos_ativos = df_processos[df_processos["ativo"]].copy()
     
     if processos_ativos.empty:
         st.info("Nenhum processo ativo.")
         return
     
+    # ===== REMOVER DUPLICATAS - MANTER APENAS UMA DE CADA PROCESSO =====
+    processos_unicos = processos_ativos.drop_duplicates(subset=["numero"], keep="first").sort_values("numero")
+    
     df_prazos_ativos = df_prazos[~df_prazos["arquivado"]]
     
-    dados_processos = []
-    for idx, proc in processos_ativos.iterrows():
+    # ===== EXPANDIR CADA PROCESSO =====
+    st.write("**Clique para expandir e ver todos os prazos do processo:**")
+    
+    for idx, proc in processos_unicos.iterrows():
         qtd_prazos = len(df_prazos_ativos[df_prazos_ativos["processo"] == proc["numero"]])
-        dados_processos.append({
-            "id": proc["id"],
-            "Nº Processo": proc["numero"],
-            "Cliente": proc["cliente"],
-            "Parte Adversária": proc["parte_contraria"],
-            "Prazos": qtd_prazos,
-            "Descrição": proc["descricao"] or "-"
-        })
-    
-    df_view = pd.DataFrame(dados_processos).set_index("id")
-    st.dataframe(df_view, use_container_width=True, hide_index=False)
-    
-    st.divider()
-    st.subheader("⚙️ Editar Processo")
-    
-    id_proc = st.selectbox(
-        "Selecione um processo:",
-        options=processos_ativos["id"].values,
-        format_func=lambda x: f"{processos_ativos[processos_ativos['id'] == x]['numero'].values[0]} | {processos_ativos[processos_ativos['id'] == x]['cliente'].values[0]}",
-        key="sel_proc_edit"
-    )
-    
-    if id_proc:
-        proc = processos_ativos[processos_ativos["id"] == id_proc].iloc[0]
         
-        with st.form(f"edit_proc_{id_proc}"):
-            st.write(f"**Nº Processo:** {proc['numero']}")
-            
-            novo_cliente = st.text_input("Cliente", value=proc["cliente"], key=f"cli_edit_{id_proc}")
-            nova_parte = st.text_input("Parte Adversária", value=proc["parte_contraria"], key=f"parte_edit_{id_proc}")
-            nova_descricao = st.text_area("Descrição", value=proc["descricao"] or "", key=f"desc_edit_{id_proc}")
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
-                    atualizar_processo(id_proc, {
-                        "cliente": novo_cliente,
-                        "parte_contraria": nova_parte,
-                        "descricao": nova_descricao or None
-                    })
-                    st.success("✅ Processo atualizado!")
-                    st.rerun()
-            
-            with c2:
-                if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                    st.info("Cancelado")
+        titulo_expander = f"**{proc['numero']}** | {proc['cliente']} | 📋 {qtd_prazos} prazo(s)"
         
-        st.divider()
-        st.subheader("📅 Prazos Relacionados")
-        
-        prazos_relacionados = df_prazos[
-            (df_prazos["processo"] == proc["numero"]) & 
-            (~df_prazos["arquivado"])
-        ]
-        
-        if prazos_relacionados.empty:
-            st.info("Nenhum prazo ativo para este processo.")
-        else:
-            prazos_relacionados = enriquecer(prazos_relacionados)
+        with st.expander(titulo_expander, expanded=False):
             
-            prazos_viz = prazos_relacionados[[
-                "situacao", "titulo", "data_interna", "data_fatal", "responsavel", "prioridade"
-            ]].copy()
+            # ===== INFORMAÇÕES DO PROCESSO =====
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("### 📋 Informações do Processo")
+                st.write(f"**Nº Processo:** {proc['numero']}")
+                st.write(f"**Cliente:** {proc['cliente']}")
+                st.write(f"**Parte Adversária:** {proc['parte_contraria']}")
+                if proc["descricao"]:
+                    st.write(f"**Descrição:** {proc['descricao']}")
             
-            prazos_viz["data_interna"] = prazos_viz["data_interna"].apply(
-                lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "-"
-            )
-            prazos_viz["data_fatal"] = prazos_viz["data_fatal"].apply(
-                lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "-"
-            )
+            with col2:
+                st.markdown("### ⚙️ Editar Processo")
+                with st.form(f"edit_proc_{proc['id']}"):
+                    novo_cliente = st.text_input("Cliente", value=proc["cliente"], key=f"cli_{proc['id']}")
+                    nova_parte = st.text_input("Parte Adversária", value=proc["parte_contraria"], key=f"parte_{proc['id']}")
+                    nova_desc = st.text_area("Descrição", value=proc["descricao"] or "", key=f"desc_{proc['id']}")
+                    
+                    if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
+                        atualizar_processo(proc["id"], {
+                            "cliente": novo_cliente,
+                            "parte_contraria": nova_parte,
+                            "descricao": nova_desc or None
+                        })
+                        st.success("✅ Atualizado!")
+                        st.rerun()
             
-            prazos_viz = prazos_viz.rename(columns={
-                "situacao": "Situação",
-                "titulo": "Título",
-                "data_interna": "Prazo Interno",
-                "data_fatal": "Data Fatal",
-                "responsavel": "Responsável",
-                "prioridade": "Prioridade"
-            })
+            # ===== PRAZOS RELACIONADOS =====
+            st.divider()
+            st.markdown("### 📅 Todos os Prazos deste Processo")
             
-            st.dataframe(prazos_viz, use_container_width=True, hide_index=True)
+            prazos_proc = df_prazos_ativos[df_prazos_ativos["processo"] == proc["numero"]]
+            
+            if prazos_proc.empty:
+                st.info("Nenhum prazo ativo para este processo.")
+            else:
+                prazos_proc = enriquecer(prazos_proc)
+                
+                # ===== MOSTRAR CADA PRAZO COM OBSERVAÇÕES =====
+                for p_idx, prazo in prazos_proc.iterrows():
+                    with st.container(border=True):
+                        col1, col2, col3 = st.columns([1, 2, 1])
+                        
+                        with col1:
+                            st.markdown(f"**{prazo['situacao']}**")
+                        
+                        with col2:
+                            st.markdown(f"**{prazo['titulo']}**")
+                            st.caption(f"Responsável: {prazo['responsavel']}")
+                        
+                        with col3:
+                            prioridade_emoji = {"Alta": "🔴", "Normal": "🟡", "Baixa": "🟢"}
+                            st.markdown(f"**{prioridade_emoji.get(prazo['prioridade'], '⚪')} {prazo['prioridade']}**")
+                        
+                        # ===== DATAS =====
+                        col_datas_1, col_datas_2, col_datas_3 = st.columns(3)
+                        with col_datas_1:
+                            if pd.notna(prazo['data_interna']):
+                                st.text(f"📌 Prazo Interno\n{prazo['data_interna'].strftime('%d/%m/%Y')}")
+                            else:
+                                st.text("📌 Prazo Interno\n—")
+                        
+                        with col_datas_2:
+                            st.text(f"🔚 Data Fatal\n{prazo['data_fatal'].strftime('%d/%m/%Y')}")
+                        
+                        with col_datas_3:
+                            dias = prazo['dias_uteis']
+                            st.text(f"⏱️ Dias Úteis\n{dias}d")
+                        
+                        # ===== OBSERVAÇÕES =====
+                        if prazo['descricao']:
+                            st.divider()
+                            st.markdown(f"**📝 Observações:**")
+                            st.markdown(f"> {prazo['descricao']}")
 
 def main() -> None:
     init_estado()
