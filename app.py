@@ -254,6 +254,96 @@ def gerar_csv_pauta(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
     
     return df_export
 
+def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
+    """Gera Excel bonito com pauta de prazos formatado"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    import tempfile
+    
+    if df_prazos.empty:
+        return None
+    
+    # Preparar dados
+    df_export = df_prazos[["cliente", "processo", "titulo", "data_fatal"]].copy()
+    
+    # Extrair primeiro nome do cliente
+    df_export["cliente"] = df_export["cliente"].apply(lambda x: x.split()[0] if pd.notna(x) else "")
+    
+    # Se temos dados de processos, fazer merge para trazer descrição
+    if df_processos is not None:
+        processos_desc = df_processos[["numero", "descricao"]].copy()
+        df_export = df_export.merge(processos_desc, left_on="processo", right_on="numero", how="left")
+        df_export["descricao"] = df_export["descricao"].fillna("-")
+    else:
+        df_export["descricao"] = "-"
+    
+    # Converter data_fatal para string com formato DD/MM/YYYY
+    df_export["data_fatal"] = df_export["data_fatal"].dt.strftime("%d/%m/%Y")
+    
+    # Reordenar colunas
+    df_export = df_export[["cliente", "processo", "titulo", "data_fatal", "descricao"]]
+    
+    # Criar workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Pauta"
+    
+    # Definir estilos
+    header_fill = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    
+    # Cabeçalhos
+    headers = ["Cliente", "Nº Processo", "Título", "Data Fatal", "Descrição"]
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.value = header
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center_align
+        cell.border = border
+    
+    # Dados
+    for row_num, (idx, row) in enumerate(df_export.iterrows(), 2):
+        ws.cell(row=row_num, column=1).value = row["cliente"]
+        ws.cell(row=row_num, column=1).alignment = left_align
+        ws.cell(row=row_num, column=1).border = border
+        
+        ws.cell(row=row_num, column=2).value = row["processo"]
+        ws.cell(row=row_num, column=2).alignment = left_align
+        ws.cell(row=row_num, column=2).border = border
+        
+        ws.cell(row=row_num, column=3).value = row["titulo"]
+        ws.cell(row=row_num, column=3).alignment = left_align
+        ws.cell(row=row_num, column=3).border = border
+        
+        ws.cell(row=row_num, column=4).value = row["data_fatal"]
+        ws.cell(row=row_num, column=4).alignment = center_align
+        ws.cell(row=row_num, column=4).border = border
+        
+        ws.cell(row=row_num, column=5).value = row["descricao"]
+        ws.cell(row=row_num, column=5).alignment = left_align
+        ws.cell(row=row_num, column=5).border = border
+    
+    # Ajustar largura das colunas
+    ws.column_dimensions['A'].width = 15
+    ws.column_dimensions['B'].width = 30
+    ws.column_dimensions['C'].width = 25
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 35
+    
+    # Salvar em arquivo temporário
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        wb.save(tmp.name)
+        return tmp.name
+
 def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
     if df.empty:
         st.info("Nenhum registro.")
@@ -1017,18 +1107,18 @@ def main() -> None:
         st.divider()
         st.subheader("📥 Exportar Pauta")
         
-        # Preparar dados para download
-        df_export = gerar_csv_pauta(prazos_ativos, df_processos)
+        # Gerar Excel bonito
+        excel_path = gerar_excel_bonito(prazos_ativos, df_processos)
         
-        if not df_export.empty:
-            csv = df_export.to_csv(index=False, encoding='utf-8-sig', sep=';')
-            st.download_button(
-                label="📊 Baixar Pauta em CSV",
-                data=csv,
-                file_name=f"pauta_prazos_{data_hoje.strftime('%d_%m_%Y')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+        if excel_path:
+            with open(excel_path, "rb") as f:
+                st.download_button(
+                    label="📊 Baixar Pauta em Excel",
+                    data=f.read(),
+                    file_name=f"pauta_prazos_{data_hoje.strftime('%d_%m_%Y')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
         else:
             st.info("Sem dados para exportar")
     
