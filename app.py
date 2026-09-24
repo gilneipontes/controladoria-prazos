@@ -24,7 +24,7 @@ from supabase import Client, create_client
 # ───────────────────────── 1. Configuração ─────────────────────────
 st.set_page_config(page_title="Controladoria Jurídica", page_icon="⚖️", layout="wide")
 
-TZ = ZoneInfo("America/Sao_Paulo")  # o servidor do Streamlit Cloud roda em UTC
+TZ = ZoneInfo("America/Sao_Paulo")
 TABELA = "prazos"
 
 RESPONSAVEIS = ["Dr. Gilnei", "Dra. Jéssica"]
@@ -41,8 +41,6 @@ FAIXAS = {
     "Concluído": "✅ Concluído",
 }
 
-# Feriados nacionais de 2026. Acrescente feriados estaduais/municipais,
-# suspensões do TJRS e o recesso forense (20/12 a 20/01, art. 220 do CPC).
 FERIADOS = np.array(
     [
         "2026-01-01", "2026-02-16", "2026-02-17", "2026-04-03", "2026-04-21",
@@ -65,9 +63,9 @@ def hoje() -> dt.date:
 
 
 def init_estado() -> None:
-    st.session_state.setdefault("form_v", 0)    # versão do formulário (para limpá-lo após salvar)
-    st.session_state.setdefault("editor_v", 0)  # versão da tabela (para descartar edições já salvas)
-    st.session_state.setdefault("aviso", None)  # mensagem exibida após um st.rerun()
+    st.session_state.setdefault("form_v", 0)
+    st.session_state.setdefault("editor_v", 0)
+    st.session_state.setdefault("aviso", None)
 
 
 # ───────────────────────── 2. Acesso ─────────────────────────
@@ -157,7 +155,7 @@ def validar(titulo: str, processo: str, data_fatal, data_interna) -> list[str]:
 
 # ───────────────────────── 5. Interface ─────────────────────────
 def formulario_cadastro() -> None:
-    v = st.session_state.form_v  # chaves versionadas: mudar a versão limpa o formulário
+    v = st.session_state.form_v
     with st.sidebar:
         st.header("Novo prazo ou tarefa")
         with st.form(f"cadastro_{v}", border=False):
@@ -279,7 +277,7 @@ def tabela_status(df: pd.DataFrame) -> None:
         vis,
         key=f"editor_{st.session_state.editor_v}",
         hide_index=True,
-        disabled=["situacao", "dias_uteis", "tipo", "responsavel"],  # só leitura
+        disabled=["situacao", "dias_uteis", "tipo", "responsavel"],
         column_config={
             "concluido": st.column_config.CheckboxColumn("Feito", help="Marque para concluir"),
             "situacao": "Situação",
@@ -291,14 +289,11 @@ def tabela_status(df: pd.DataFrame) -> None:
             "dias_uteis": st.column_config.NumberColumn("Dias úteis"),
             "tipo": "Tipo",
             "responsavel": "Responsável",
-            "prioridade": st.column_config.SelectboxColumn(
-                "Prioridade", options=PRIORIDADES
-            ),
+            "prioridade": st.column_config.SelectboxColumn("Prioridade", options=PRIORIDADES),
             "descricao": st.column_config.TextColumn("Observações", width="large"),
         },
     )
 
-    # Detectar mudanças
     mudancas = {}
     for idx in editado.index:
         alterado = {}
@@ -327,20 +322,18 @@ def tabela_status(df: pd.DataFrame) -> None:
         if alterado:
             mudancas[int(idx)] = alterado
 
-    if not mudancas:
-        return
-
-    c1, c2 = st.columns([3, 1])
-    c1.warning(f"Alterações não salvas: {len(mudancas)} prazo(s) modificado(s).")
-    if c2.button("Salvar tudo", type="primary"):
-        try:
-            atualizar_campos(mudancas)
-        except Exception as exc:
-            st.error(f"Não foi salvo. Detalhe: {exc}")
-            return
-        st.session_state.aviso = "Prazos salvos!"
-        st.session_state.editor_v += 1
-        st.rerun()
+    if mudancas:
+        c1, c2 = st.columns([3, 1])
+        c1.warning(f"Alterações não salvas: {len(mudancas)} prazo(s) modificado(s).")
+        if c2.button("Salvar tudo", type="primary"):
+            try:
+                atualizar_campos(mudancas)
+            except Exception as exc:
+                st.error(f"Não foi salvo. Detalhe: {exc}")
+                return
+            st.session_state.aviso = "Prazos salvos!"
+            st.session_state.editor_v += 1
+            st.rerun()
 
     st.divider()
     st.subheader("🗑️ Deletar prazo")
@@ -393,7 +386,7 @@ def main() -> None:
         return
 
     df = enriquecer(df)
-    topo = st.container()  # métricas aparecem acima, mas dependem dos filtros abaixo
+    topo = st.container()
     with st.expander("Filtros", expanded=True):
         filtrado, resp = aplicar_filtros(df)
     with topo:
