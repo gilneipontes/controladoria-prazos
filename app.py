@@ -327,27 +327,53 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
     with st.form(f"cad_{v}"):
         processos_ativos = processos_df[processos_df["ativo"]]
         
-        # ===== SELEÇÃO DE PROCESSO (COMEÇA VAZIO) =====
-        processo = st.selectbox(
+        # ===== BUSCA DE PROCESSO (FILTRA CONFORME DIGITA) =====
+        busca_processo = st.text_input(
             "Nº Processo *",
-            options=[None] + list(processos_ativos["numero"].values),
-            format_func=lambda x: "" if x is None else x,
-            key=f"p_{v}"
+            value="",
+            placeholder="Digite o número do processo...",
+            key=f"busca_p_{v}"
         )
+        
+        # Filtrar processos conforme digita
+        processo = None
+        cliente = ""
+        parte_adversaria = ""
+        
+        if busca_processo:
+            # Filtra processos que contêm o texto digitado
+            processos_filtrados = processos_ativos[
+                processos_ativos["numero"].str.contains(busca_processo, case=False)
+            ]
+            
+            if not processos_filtrados.empty:
+                # Se encontrou exatamente 1, seleciona automaticamente
+                if len(processos_filtrados) == 1:
+                    processo = processos_filtrados.iloc[0]["numero"]
+                    cliente = processos_filtrados.iloc[0]["cliente"]
+                    parte_adversaria = processos_filtrados.iloc[0]["parte_contraria"]
+                else:
+                    # Se encontrou mais de 1, mostra dropdown com os filtrados
+                    st.caption(f"📋 {len(processos_filtrados)} processo(s) encontrado(s):")
+                    processo = st.selectbox(
+                        "Selecione um:",
+                        options=processos_filtrados["numero"].values,
+                        label_visibility="collapsed",
+                        key=f"p_{v}"
+                    )
+                    if processo:
+                        cliente = processos_filtrados[processos_filtrados["numero"] == processo]["cliente"].values[0]
+                        parte_adversaria = processos_filtrados[processos_filtrados["numero"] == processo]["parte_contraria"].values[0]
+            else:
+                st.warning("❌ Nenhum processo encontrado com esse número!")
         
         # ===== MOSTRAR CLIENTE E PARTE ADVERSÁRIA (quando selecionado) =====
         if processo:
-            cliente = processos_ativos[processos_ativos["numero"] == processo]["cliente"].values[0]
-            parte_adversaria = processos_ativos[processos_ativos["numero"] == processo]["parte_contraria"].values[0]
-            
             col1, col2 = st.columns(2)
             with col1:
                 st.text_input("Cliente", value=cliente, disabled=True, key=f"cli_{v}")
             with col2:
                 st.text_input("Parte Adversária", value=parte_adversaria, disabled=True, key=f"adv_{v}")
-        else:
-            cliente = ""
-            parte_adversaria = ""
         
         tipo = st.selectbox("Tipo *", TIPOS, key=f"t_{v}")
         
