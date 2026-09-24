@@ -904,16 +904,16 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
     
     # ===== FORMULÁRIO (DENTRO DO FORM) =====
     with st.form(f"cad_{v}"):
-        tipo = st.selectbox("Tipo *", TIPOS, key=f"t_{v}")
-        
+        tipo = st.selectbox("Tipo *", TIPOS, index=0, key=f"t_{v}")
+
         responsavel = st.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"r_{v}")
         c1, c2 = st.columns(2)
         data_interna = c1.date_input("Prazo Interno", value=None, format="DD/MM/YYYY", key=f"i_{v}")
-        data_fatal = c2.date_input("Data Fatal *", format="DD/MM/YYYY", key=f"f_{v}")
-        
+        data_fatal = c2.date_input("Data Fatal *", value=None, format="DD/MM/YYYY", key=f"f_{v}")
+
         prioridade = st.select_slider("Prioridade", PRIORIDADES, value="Normal", key=f"pr_{v}")
-        st.text_area("Observações", key=f"d_{v}")
-        
+        st.text_area("Observações", value="", key=f"d_{v}")
+
         if st.form_submit_button("💾 Salvar", type="primary"):
             if not processo or not data_fatal or not titulo:
                 st.error("Preencha processo, data fatal e título!")
@@ -932,8 +932,9 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                     "descricao": st.session_state.get(f"d_{v}") or None,
                     "arquivado": False,
                 })
-                st.session_state.aviso = f"✅ Prazo salvo!"
+                # ===== LIMPAR FORMULÁRIO =====
                 st.session_state.form_v += 1
+                st.session_state.aviso = "✅ Prazo salvo com sucesso!"
                 st.rerun()
 
 def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
@@ -992,9 +993,9 @@ def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
     with st.form(f"cad_aud_{v}"):
         col1, col2 = st.columns(2)
         with col1:
-            data = col1.date_input("Data *", format="DD/MM/YYYY", key=f"aud_data_{v}")
+            data = col1.date_input("Data *", value=None, format="DD/MM/YYYY", key=f"aud_data_{v}")
         with col2:
-            sala = col2.text_input("Sala (Local) *", placeholder="Ex: Sala 101", key=f"aud_sala_{v}")
+            sala = col2.text_input("Sala (Local) *", value="", placeholder="Ex: Sala 101", key=f"aud_sala_{v}")
 
         col1, col2 = st.columns(2)
         with col1:
@@ -1004,13 +1005,13 @@ def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
 
         col1, col2 = st.columns(2)
         with col1:
-            formato = col1.selectbox("Formato *", FORMATOS_AUDIENCIA, key=f"aud_formato_{v}")
+            formato = col1.selectbox("Formato *", FORMATOS_AUDIENCIA, index=0, key=f"aud_formato_{v}")
         with col2:
-            tipo = col2.selectbox("Tipo *", TIPOS_AUDIENCIA, key=f"aud_tipo_{v}")
+            tipo = col2.selectbox("Tipo *", TIPOS_AUDIENCIA, index=0, key=f"aud_tipo_{v}")
 
         responsavel = st.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"aud_resp_{v}")
 
-        obs = st.text_area("Observações", placeholder="Ex: Traz documentação, etc...", key=f"aud_obs_{v}")
+        obs = st.text_area("Observações", value="", placeholder="Ex: Traz documentação, etc...", key=f"aud_obs_{v}")
 
         if st.form_submit_button("💾 Salvar", type="primary"):
             if not processo or not data or not sala or not hora_ini or not hora_fim:
@@ -1032,8 +1033,9 @@ def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
                     "observacoes": obs or None,
                     "responsavel": responsavel
                 })
-                st.session_state.aviso = "✅ Audiência salva!"
+                # ===== LIMPAR FORMULÁRIO =====
                 st.session_state.form_v += 1
+                st.session_state.aviso = "✅ Audiência salva com sucesso!"
                 st.rerun()
 
 def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
@@ -1429,15 +1431,16 @@ def main() -> None:
             st.subheader("⚖️ Novo Processo")
             v = st.session_state.form_v
             with st.form("proc"):
-                numero = st.text_input("Nº CNJ *", placeholder="0000000-00.0000.0.00.0000", key=f"pnumero_{v}")
-                cliente = st.text_input("Cliente *", key=f"pcliente_{v}")
-                parte = st.text_input("Parte Adversária *", key=f"pparte_{v}")
-                descricao = st.text_area("Descrição", key=f"pdesc_{v}")
+                numero = st.text_input("Nº CNJ *", value="", placeholder="0000000-00.0000.0.00.0000", key=f"pnumero_{v}")
+                cliente = st.text_input("Cliente *", value="", key=f"pcliente_{v}")
+                parte = st.text_input("Parte Adversária *", value="", key=f"pparte_{v}")
+                descricao = st.text_area("Descrição", value="", key=f"pdesc_{v}")
                 if st.form_submit_button("Salvar", type="primary"):
                     if numero and cliente and parte:
                         inserir_processo({"numero": numero, "cliente": cliente, "parte_contraria": parte, "descricao": descricao or None, "ativo": True})
-                        st.success("✅ Salvo!")
+                        # ===== LIMPAR FORMULÁRIO =====
                         st.session_state.form_v += 1
+                        st.session_state.aviso = "✅ Processo salvo com sucesso!"
                         st.rerun()
                     else:
                         st.error("Preencha todos!")
