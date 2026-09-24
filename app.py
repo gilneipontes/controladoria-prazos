@@ -750,6 +750,24 @@ def main() -> None:
         else:
             cols_viz = ["titulo", "cliente", "data_fatal", "responsavel"]
             st.dataframe(prazos_concluidos[cols_viz], use_container_width=True, hide_index=True)
+            
+            # ===== BOTÃO PARA REATIVAR PRAZO CONCLUÍDO =====
+            st.divider()
+            st.subheader("🔄 Reativar Prazo")
+            
+            col1, col2 = st.columns([2, 1])
+            id_reativar = col1.selectbox(
+                "Selecione um prazo concluído para reativar:",
+                options=prazos_concluidos["id"].values,
+                format_func=lambda x: f"{prazos_concluidos[prazos_concluidos['id'] == x]['cliente'].values[0]} | {prazos_concluidos[prazos_concluidos['id'] == x]['titulo'].values[0]} | {prazos_concluidos[prazos_concluidos['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
+                key="sel_reativar"
+            )
+            
+            if col2.button("🔄 Reativar", use_container_width=True, type="secondary"):
+                atualizar_campos({id_reativar: {"concluido": False, "concluido_em": None}})
+                st.session_state.aviso = "✅ Prazo reativado!"
+                st.session_state.editor_v += 1
+                st.rerun()
     
     with tab3:
         st.subheader("🔄 Desarquivar Prazos")
