@@ -58,6 +58,60 @@ COLUNAS = [
     "arquivado",
 ]
 
+# Dicionário de atalhos e títulos completos
+ATALHOS = {
+    "PET-INI": "Petição Inicial",
+    "EMEND-INI": "Emenda à Petição Inicial",
+    "RECL-TRAB": "Reclamação Trabalhista (Inicial)",
+    "EMEND-TRAB": "Emenda à Reclamação Trabalhista",
+    "CONT": "Contestação",
+    "CONT-TRAB": "Contestação Trabalhista",
+    "REPL": "Réplica à Contestação",
+    "CONTR-DOC": "Manifestação sobre Documentos (Réplica)",
+    "RECONV": "Reconvenção",
+    "IMP-VALI": "Impugnação ao Valor da Causa",
+    "EX-INCOMP": "Exceção de Incompetência",
+    "EX-PREEXEC": "Exceção de Pré-Executividade",
+    "SPEC-PROV": "Especificação de Provas",
+    "ROL-TEST": "Rol de Testemunhas",
+    "QUESITOS": "Quesitos para Perícia",
+    "QUES-TRAB": "Quesitos Trabalhistas (Médica/Engenharia)",
+    "MANIFEST-LAUDO": "Manifestação sobre Laudo Pericial",
+    "MANIFEST-PERIC": "Manifestação sobre Laudo Pericial",
+    "MANIF": "Manifestação",
+    "MEMORIAIS": "Alegações Finais / Memoriais",
+    "RAZOES-FIN": "Razões Finais / Memoriais",
+    "APEL": "Apelação",
+    "CONTR-APEL": "Contrarrazões de Apelação",
+    "RO": "Recurso Ordinário",
+    "CONTR-RO": "Contrarrazões de Recurso Ordinário",
+    "RR": "Recurso de Revista",
+    "CONTR-RR": "Contrarrazões de Recurso de Revista",
+    "AG-INST": "Agravo de Instrumento",
+    "CONTR-AG": "Contraminuta de Agravo de Instrumento",
+    "AIRO": "Agravo de Instrumento em Recurso Ordinário",
+    "AG-INT": "Agravo Interno",
+    "EMB-DECL": "Embargos de Declaração",
+    "RESP": "Recurso Especial / Recurso Extraordinário",
+    "RE": "Recurso Extraordinário",
+    "CUMP-SENT": "Cumprimento de Sentença",
+    "IMP-CUMP": "Impugnação ao Cumprimento de Sentença",
+    "EX-EXEC": "Execução de Título Extrajudicial",
+    "EMB-EXEC": "Embargos à Execução",
+    "AG-PET": "Agravo de Petição",
+    "CONTR-AG-PET": "Contrarrazões de Agravo de Petição",
+    "EMB-EXEC-TRAB": "Embargos à Execução",
+    "IMP-CALC": "Impugnação aos Cálculos",
+    "MANIFEST-CALC": "Manifestação sobre Cálculos / Contador",
+    "INDIC-BENS": "Indicação de Bens à Penhora",
+    "PET-JUNT": "Petição de Juntada (Documentos/Procuração)",
+    "TERMO-AUD": "Data de Audiência",
+    "ACORDO": "Minuta / Termo de Acordo",
+    "PED-SUSP": "Pedido de Suspensão / Sobreseimento",
+    "PET-EXT": "Pedido de Extinção / Baixa",
+    "ALVARA": "Requerimento de Expedição de Alvará",
+}
+
 
 def hoje() -> dt.date:
     return dt.datetime.now(TZ).date()
@@ -167,10 +221,31 @@ def formulario_cadastro() -> None:
     v = st.session_state.form_v
     with st.sidebar:
         st.header("Novo prazo ou tarefa")
+        
+        # Guia de Atalhos
+        with st.expander("📋 Guia de Atalhos"):
+            atalhos_df = pd.DataFrame([
+                {"Sigla": k, "Nome Completo": v} for k, v in sorted(ATALHOS.items())
+            ])
+            st.dataframe(atalhos_df, use_container_width=True, hide_index=True)
+        
         with st.form(f"cadastro_{v}", border=False):
             tipo = st.selectbox("Tipo", TIPOS, key=f"tipo_{v}")
+            
+            # Seletor rápido de atalhos
+            st.write("**Usar atalho?**")
+            atalhoselecionado = st.selectbox(
+                "Selecione um atalho (preenche o título automaticamente)",
+                options=["-- Nenhum --"] + list(sorted(ATALHOS.keys())),
+                key=f"atalho_{v}",
+                help="Escolha uma sigla para preencher o título automaticamente"
+            )
+            
             titulo = st.text_input(
-                "Título *", placeholder="Ex.: Contestação, juntar procuração", key=f"titulo_{v}"
+                "Título *", 
+                value=ATALHOS[atalhoselecionado] if atalhoselecionado != "-- Nenhum --" else "",
+                placeholder="Ex.: Contestação, juntar procuração", 
+                key=f"titulo_{v}"
             )
             processo = st.text_input(
                 "Nº do processo", placeholder="0000000-00.0000.0.00.0000", key=f"proc_{v}"
