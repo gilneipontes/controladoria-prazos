@@ -1072,13 +1072,13 @@ def main() -> None:
         # Filtrar prazos não arquivados e não concluídos
         prazos_ativos = df_prazos[~df_prazos["arquivado"] & ~df_prazos["concluido"]].copy()
         
+        # Calcular datas (ANTES de usar)
+        data_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+        data_semana = pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=7)
+        
         if prazos_ativos.empty:
             st.info("✅ Nenhum prazo ativo no momento!")
         else:
-            # Calcular datas
-            data_data_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
-            data_semana = pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=7)
-            
             # Filtrar por período
             prazos_hoje = prazos_ativos[prazos_ativos["data_fatal"] == data_hoje]
             prazos_semana = prazos_ativos[(prazos_ativos["data_fatal"] > data_hoje) & (prazos_ativos["data_fatal"] <= data_semana)]
@@ -1086,7 +1086,7 @@ def main() -> None:
             
             # Exibir HOJE
             if not prazos_hoje.empty:
-                st.markdown("### 🔴 **HOJE** (" + data_data_hoje.strftime("%d/%m/%Y") + ")")
+                st.markdown("### 🔴 **HOJE** (" + data_hoje.strftime("%d/%m/%Y") + ")")
                 for _, p in prazos_hoje.iterrows():
                     col1, col2 = st.columns([3, 1])
                     col1.markdown(f"""
@@ -1134,7 +1134,7 @@ def main() -> None:
                     st.download_button(
                         label="⬇️ Baixar PDF",
                         data=f.read(),
-                        file_name=f"pauta_prazos_{data_data_hoje.strftime('%d_%m_%Y')}.pdf",
+                        file_name=f"pauta_prazos_{data_hoje.strftime('%d_%m_%Y')}.pdf",
                         mime="application/pdf",
                         use_container_width=True
                     )
@@ -1147,7 +1147,7 @@ def main() -> None:
                     st.download_button(
                         label="⬇️ Baixar Excel",
                         data=f.read(),
-                        file_name=f"pauta_prazos_{data_data_hoje.strftime('%d_%m_%Y')}.xlsx",
+                        file_name=f"pauta_prazos_{data_hoje.strftime('%d_%m_%Y')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
