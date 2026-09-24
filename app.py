@@ -224,8 +224,8 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
     
     # ===== ADICIONAR PARTE CONTRÁRIA (SE HOUVER PROCESSOS) =====
     if processos_df is not None:
-        # Merge com processos para pegar parte contrária
-        processos_parte = processos_df[["numero", "parte_contraria"]].copy()
+        # Remover duplicatas do processos antes de fazer merge
+        processos_parte = processos_df[["numero", "parte_contraria"]].drop_duplicates(subset=["numero"], keep="first").copy()
         df_vis = df_vis.merge(processos_parte, left_on="processo", right_on="numero", how="left")
         
         # Extrair primeiro nome da parte contrária
@@ -243,6 +243,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
     df_vis["data_fatal_fmt"] = df_vis["data_fatal"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
 
     # ===== REMOVER D.ÚTEIS, TIPO E RESPONSÁVEL =====
+    # ===== REMOVER DUPLICATAS DE EXIBIÇÃO =====
     colunas_vis = [
         "id", "situacao", "titulo", "processo", "cliente_parte",
         "data_interna_fmt", "data_fatal_fmt", "responsavel", "prioridade",
@@ -250,6 +251,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
     vis = (
         df_vis.assign(_p=df_vis["prioridade"].map(ORDEM_PRIORIDADE))
         .sort_values(["dias_uteis"])[colunas_vis]
+        .drop_duplicates(subset=["processo", "titulo", "data_fatal_fmt"], keep="first")
         .set_index("id")
         .rename(columns={
             "data_interna_fmt": "Prazo Interno",
@@ -275,40 +277,17 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
 
     col1, col2 = st.columns([2, 1])
     id_sel = col1.selectbox(
-        "Selecione:",
+        "Clique no prazo para ver detalhes:",
         options=df_ativos["id"].values,
         format_func=lambda x: f"{df_ativos[df_ativos['id'] == x]['cliente'].values[0]} | {df_ativos[df_ativos['id'] == x]['titulo'].values[0]} | {df_ativos[df_ativos['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
         key="sel_prazo"
     )
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        if st.button("✏️ Editar", use_container_width=True, type="secondary"):
-            st.session_state.id_modal = id_sel
-            st.session_state.modo_modal = "editar"
-            st.session_state.modal_aberta = True
-            st.rerun()
-    
-    with c2:
-        if st.button("✅ Concluído", use_container_width=True, type="primary"):
-            st.session_state.id_modal = id_sel
-            st.session_state.modo_modal = "concluir_com_obs"
-            st.session_state.modal_aberta = True
-            st.rerun()
-    
-    with c3:
-        if st.button("📦 Arquivar", use_container_width=True, type="secondary"):
-            st.session_state.id_modal = id_sel
-            st.session_state.modo_modal = "confirmar_arquivar"
-            st.session_state.modal_aberta = True
-            st.rerun()
-    
-    with c4:
-        if st.button("❌ Excluir", use_container_width=True, type="secondary"):
-            st.session_state.id_modal = id_sel
-            st.session_state.modo_modal = "confirmar_excluir"
-            st.session_state.modal_aberta = True
-            st.rerun()
+    if col2.button("📂 Ver Detalhes", use_container_width=True, type="primary"):
+        st.session_state.id_modal = id_sel
+        st.session_state.modo_modal = "detalhes"
+        st.session_state.modal_aberta = True
+        st.rerun()
 
     if st.session_state.modal_aberta and st.session_state.id_modal:
         id_prazo = st.session_state.id_modal
@@ -317,7 +296,73 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
         st.divider()
         st.subheader(f"⚙️ {prazo['titulo']}")
         
-        if st.session_state.modo_modal == "editar":
+        # ===== MODAL DE DETALHES DO PRAZO =====
+        if st.session_state.modo_modal == "detalhes":
+            st.info("📋 Detalhes Completos do Prazo")
+            
+            col1, col2 = st.columns(2)
+            col1.write(f"**Cliente:** {prazo['cliente']}")
+            col2.write(f"**Nº Processo:** {prazo['processo']}")
+            
+            col1, col2 = st.columns(2)
+            col1.write(f"**Responsável:** {prazo['responsavel']}")
+            col2.write(f"**Prioridade:** {prazo['prioridade']}")
+            
+            col1, col2 = st.columns(2)
+            col1.write(f"**Prazo Interno:** {prazo['data_interna'].strftime('%d/%m/%Y') if pd.notna(prazo['data_interna']) else 'Não definido'}")
+            col2.write(f"**Data Fatal:** {prazo['data_fatal'].strftime('%d/%m/%Y')}")
+            
+            st.write(f"**Tipo:** {prazo['tipo']}")
+            
+            st.divider()
+            st.subheader("📝 O QUE DEVE SER FEITO")
+            
+            with st.form(f"form_dicas_{id_prazo}"):
+                dicas = st.text_area(
+                    "Anote aqui as dicas, passos e informações para cumprir este prazo:",
+                    value=prazo['descricao'] or "",
+                    height=150,
+                    placeholder="Ex: \n- Buscar artigos CPC 150-200\n- Citar jurisprudência STJ\n- Anexar RG, CPF e comprovante de residência\n- Enviar ao tribunal até 15h",
+                    key=f"dicas_{id_prazo}"
+                )
+                
+                if st.form_submit_button("💾 Salvar Dicas", use_container_width=True, type="primary"):
+                    atualizar_campos({id_prazo: {"descricao": dicas}})
+                    st.session_state.aviso = "✅ Dicas salvas!"
+                    st.session_state.editor_v += 1
+                    st.rerun()
+            
+            st.divider()
+            st.subheader("⚙️ Ações")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                if st.button("✏️ Editar Prazo", use_container_width=True, type="secondary"):
+                    st.session_state.modo_modal = "editar"
+                    st.rerun()
+            
+            with col2:
+                if st.button("✅ Concluído", use_container_width=True, type="primary"):
+                    st.session_state.modo_modal = "concluir_com_obs"
+                    st.rerun()
+            
+            with col3:
+                if st.button("📦 Arquivar", use_container_width=True, type="secondary"):
+                    st.session_state.modo_modal = "confirmar_arquivar"
+                    st.rerun()
+            
+            with col4:
+                if st.button("❌ Excluir", use_container_width=True, type="secondary"):
+                    st.session_state.modo_modal = "confirmar_excluir"
+                    st.rerun()
+            
+            if st.button("🔙 Fechar", use_container_width=True):
+                st.session_state.modal_aberta = False
+                st.session_state.modo_modal = None
+                st.rerun()
+        
+        elif st.session_state.modo_modal == "editar":
             with st.form(f"form_{id_prazo}"):
                 # ===== EDITAR TODOS OS CAMPOS =====
                 novo_titulo = st.text_input("Título", value=prazo["titulo"], key=f"edit_titulo_{id_prazo}")
