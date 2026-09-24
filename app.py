@@ -35,9 +35,25 @@ FAIXAS = {
 }
 
 FERIADOS = np.array([
+    # 2026
     "2026-01-01", "2026-02-16", "2026-02-17", "2026-04-03", "2026-04-21",
     "2026-05-01", "2026-06-04", "2026-09-07", "2026-10-12", "2026-11-02",
     "2026-11-15", "2026-11-20", "2026-12-25",
+    # 2027
+    "2027-01-01", "2027-02-08", "2027-02-09", "2027-03-26", "2027-04-21",
+    "2027-05-01", "2027-06-03", "2027-09-07", "2027-10-12", "2027-11-02",
+    "2027-11-15", "2027-11-20", "2027-12-25",
+    # 2028
+    "2028-01-01", "2028-02-28", "2028-03-01", "2028-04-14", "2028-04-21",
+    "2028-05-01", "2028-05-30", "2028-09-07", "2028-10-12", "2028-11-02",
+    "2028-11-15", "2028-11-20", "2028-12-25",
+    # Recesso Forense (20/12 a 20/01 - Art. 220 CPC)
+    "2026-12-20", "2026-12-21", "2026-12-22", "2026-12-23", "2026-12-24", "2026-12-28", "2026-12-29", "2026-12-30", "2026-12-31",
+    "2027-01-04", "2027-01-05", "2027-01-06", "2027-01-07", "2027-01-08", "2027-01-11", "2027-01-12", "2027-01-13", "2027-01-14", "2027-01-15", "2027-01-18", "2027-01-19", "2027-01-20",
+    "2028-12-20", "2028-12-21", "2028-12-22", "2028-12-23", "2028-12-24", "2028-12-28", "2028-12-29", "2028-12-30", "2028-12-31",
+    "2029-01-04", "2029-01-05", "2029-01-06", "2029-01-07", "2029-01-08", "2029-01-11", "2029-01-12", "2029-01-13", "2029-01-14", "2029-01-15", "2029-01-18", "2029-01-19", "2029-01-20",
+    # Feriados Estaduais RS
+    "2026-09-20", "2027-09-20", "2028-09-20",
 ], dtype="datetime64[D]")
 
 COLUNAS_PRAZOS = [
@@ -111,8 +127,19 @@ def init_estado() -> None:
 
 def acesso_liberado() -> bool:
     senha_correta = st.secrets.get("APP_PASSWORD")
-    if not senha_correta or st.session_state.get("autenticado"):
+    
+    # ===== AVISAR SE SENHA NÃO ESTÁ CONFIGURADA =====
+    if not senha_correta:
+        st.title("⚖️ Controladoria Jurídica")
+        st.error("🔴 ERRO: APP_PASSWORD não configurada em .streamlit/secrets.toml")
+        st.info("Configure a senha no arquivo secrets.toml e redeploy o app.")
+        st.stop()
+    
+    # ===== SE JÁ AUTENTICADO, LIBERA =====
+    if st.session_state.get("autenticado"):
         return True
+    
+    # ===== TELA DE LOGIN =====
     st.title("⚖️ Controladoria Jurídica")
     with st.form("login"):
         senha = st.text_input("Senha de acesso", type="password")
@@ -234,7 +261,7 @@ def tabela_status(df: pd.DataFrame) -> None:
         key="sel_prazo"
     )
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         if st.button("✏️ Editar", use_container_width=True, type="secondary"):
             st.session_state.id_modal = id_sel
@@ -243,13 +270,20 @@ def tabela_status(df: pd.DataFrame) -> None:
             st.rerun()
     
     with c2:
+        if st.button("✅ Concluído", use_container_width=True, type="primary"):
+            atualizar_campos({id_sel: {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()}})
+            st.session_state.aviso = "✅ Prazo marcado como concluído!"
+            st.session_state.editor_v += 1
+            st.rerun()
+    
+    with c3:
         if st.button("📦 Arquivar", use_container_width=True, type="secondary"):
             st.session_state.id_modal = id_sel
             st.session_state.modo_modal = "confirmar_arquivar"
             st.session_state.modal_aberta = True
             st.rerun()
     
-    with c3:
+    with c4:
         if st.button("❌ Excluir", use_container_width=True, type="secondary"):
             st.session_state.id_modal = id_sel
             st.session_state.modo_modal = "confirmar_excluir"
@@ -265,10 +299,22 @@ def tabela_status(df: pd.DataFrame) -> None:
         
         if st.session_state.modo_modal == "editar":
             with st.form(f"form_{id_prazo}"):
-                col1, col2 = st.columns(2)
-                nova_fatal = col1.date_input("Data Fatal", value=prazo["data_fatal"], format="DD/MM/YYYY")
-                nova_interna = col2.date_input("Prazo Interno", value=prazo["data_interna"], format="DD/MM/YYYY")
+                # ===== EDITAR TODOS OS CAMPOS =====
+                novo_titulo = st.text_input("Título", value=prazo["titulo"], key=f"edit_titulo_{id_prazo}")
                 
+                col1, col2 = st.columns(2)
+                with col1:
+                    novo_responsavel = st.selectbox("Responsável", RESPONSAVEIS, index=RESPONSAVEIS.index(prazo["responsavel"]), key=f"edit_resp_{id_prazo}")
+                with col2:
+                    nova_prioridade = st.selectbox("Prioridade", PRIORIDADES, index=PRIORIDADES.index(prazo["prioridade"]), key=f"edit_prio_{id_prazo}")
+                
+                col1, col2 = st.columns(2)
+                nova_interna = col1.date_input("Prazo Interno", value=prazo["data_interna"], format="DD/MM/YYYY", key=f"edit_interna_{id_prazo}")
+                nova_fatal = col2.date_input("Data Fatal", value=prazo["data_fatal"], format="DD/MM/YYYY", key=f"edit_fatal_{id_prazo}")
+                
+                nova_descricao = st.text_area("Observações", value=prazo["descricao"] or "", key=f"edit_desc_{id_prazo}")
+                
+                # ===== PREVIEW DE SITUAÇÃO (TEMPO REAL) =====
                 if nova_fatal:
                     dias = (np.datetime64(nova_fatal) - np.datetime64(hoje())).astype(int)
                     if dias < 0:
@@ -281,13 +327,20 @@ def tabela_status(df: pd.DataFrame) -> None:
                         sit = "🔵 Até 7d"
                     else:
                         sit = "🟢 Futuro"
-                    st.info(f"Nova Situação: {sit}")
+                    st.info(f"📌 Nova Situação: {sit}")
                 
                 c1, c2 = st.columns(2)
                 with c1:
                     if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
-                        atualizar_campos({id_prazo: {"data_fatal": nova_fatal.isoformat(), "data_interna": nova_interna.isoformat() if nova_interna else None}})
-                        st.session_state.aviso = "✅ Atualizado!"
+                        atualizar_campos({id_prazo: {
+                            "titulo": novo_titulo,
+                            "responsavel": novo_responsavel,
+                            "prioridade": nova_prioridade,
+                            "data_fatal": nova_fatal.isoformat(),
+                            "data_interna": nova_interna.isoformat() if nova_interna else None,
+                            "descricao": nova_descricao or None
+                        }})
+                        st.session_state.aviso = "✅ Prazo atualizado!"
                         st.session_state.modal_aberta = False
                         st.session_state.editor_v += 1
                         st.rerun()
@@ -356,7 +409,7 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
     
     if busca:
         processos_filtrados = processos_ativos[
-            processos_ativos["numero"].str.contains(busca, case=False)
+            processos_ativos["numero"].str.contains(busca, case=False, regex=False)
         ]
         
         if not processos_filtrados.empty:
@@ -386,41 +439,43 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         
         st.success(f"✅ Processo selecionado: **{processo}**")
     
+    # ===== BUSCA DE ATALHOS (FORA DO FORM - TEMPO REAL) =====
+    st.write("**Título ***")
+    busca_titulo = st.text_input(
+        "Digite para filtrar atalhos jurídicos",
+        value="",
+        placeholder="Ex: PET, CONT, MANIF...",
+        key=f"busca_{v}",
+        label_visibility="collapsed"
+    )
+    
+    titulo = ""
+    if busca_titulo:
+        atalhos_filtrados = {k: v for k, v in ATALHOS.items() if busca_titulo.upper() in k}
+        if atalhos_filtrados:
+            titulo_atalho = st.selectbox(
+                "Atalhos encontrados:",
+                options=list(atalhos_filtrados.keys()),
+                format_func=lambda x: f"{x} — {atalhos_filtrados[x]}",
+                key=f"ta_{v}",
+                label_visibility="collapsed"
+            )
+            titulo = atalhos_filtrados[titulo_atalho]
+        else:
+            st.warning("Nenhum atalho encontrado!")
+    else:
+        st.caption("👉 Digite acima para ver os atalhos disponíveis")
+    
+    if titulo:
+        st.caption(f"📌 Selecionado: **{titulo}**")
+    
+    # ===== FORMULÁRIO (DENTRO DO FORM) =====
     with st.form(f"cad_{v}"):
         tipo = st.selectbox("Tipo *", TIPOS, key=f"t_{v}")
         
-        st.write("**Título ***")
-        busca_titulo = st.text_input(
-            "Digite para filtrar atalhos jurídicos",
-            value="",
-            placeholder="Ex: PET, CONT, MANIF...",
-            key=f"busca_{v}",
-            label_visibility="collapsed"
-        )
-        
-        titulo = ""
-        if busca_titulo:
-            atalhos_filtrados = {k: v for k, v in ATALHOS.items() if busca_titulo.upper() in k}
-            if atalhos_filtrados:
-                titulo_atalho = st.selectbox(
-                    "Atalhos encontrados:",
-                    options=list(atalhos_filtrados.keys()),
-                    format_func=lambda x: f"{x} — {atalhos_filtrados[x]}",
-                    key=f"ta_{v}",
-                    label_visibility="collapsed"
-                )
-                titulo = atalhos_filtrados[titulo_atalho]
-            else:
-                st.warning("Nenhum atalho encontrado!")
-        else:
-            st.caption("👉 Digite acima para ver os atalhos disponíveis")
-        
-        if titulo:
-            st.caption(f"📌 Selecionado: **{titulo}**")
-        
         responsavel = st.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"r_{v}")
         c1, c2 = st.columns(2)
-        data_interna = c1.date_input("Prazo Interno", format="DD/MM/YYYY", key=f"i_{v}")
+        data_interna = c1.date_input("Prazo Interno", value=None, format="DD/MM/YYYY", key=f"i_{v}")
         data_fatal = c2.date_input("Data Fatal *", format="DD/MM/YYYY", key=f"f_{v}")
         
         prioridade = st.select_slider("Prioridade", PRIORIDADES, value="Normal", key=f"pr_{v}")
@@ -477,8 +532,8 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
     # ===== FILTRAR PROCESSOS =====
     if busca:
         processos_filtrados = processos_unicos[
-            (processos_unicos["numero"].str.contains(busca, case=False, na=False)) |
-            (processos_unicos["cliente"].str.contains(busca, case=False, na=False))
+            (processos_unicos["numero"].str.contains(busca, case=False, na=False, regex=False)) |
+            (processos_unicos["cliente"].str.contains(busca, case=False, na=False, regex=False))
         ]
     else:
         processos_filtrados = processos_unicos
@@ -678,12 +733,23 @@ def main() -> None:
         tabela_status(df_prazos[~df_prazos["arquivado"]])
     
     with tab2:
-        arquivados = df_prazos[df_prazos["arquivado"]]
-        if arquivados.empty:
-            st.info("Nenhum arquivado.")
+        st.subheader("📋 Relatório de Prazos")
+        
+        prazos_concluidos = df_prazos[df_prazos["concluido"]]
+        prazos_arquivados = df_prazos[df_prazos["arquivado"]]
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("✅ Concluídos", len(prazos_concluidos))
+        col2.metric("📦 Arquivados", len(prazos_arquivados))
+        col3.metric("🟢 Total", len(df_prazos))
+        
+        st.divider()
+        st.markdown("**Prazos Concluídos:**")
+        if prazos_concluidos.empty:
+            st.info("Nenhum prazo concluído ainda.")
         else:
-            st.write(f"**{len(arquivados)} prazos arquivados:**")
-            st.dataframe(arquivados[["titulo", "data_fatal", "responsavel"]], use_container_width=True, hide_index=True)
+            cols_viz = ["titulo", "cliente", "data_fatal", "responsavel"]
+            st.dataframe(prazos_concluidos[cols_viz], use_container_width=True, hide_index=True)
     
     with tab3:
         st.subheader("🔄 Desarquivar Prazos")
