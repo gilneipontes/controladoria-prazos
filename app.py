@@ -270,10 +270,12 @@ def tabela_status(df: pd.DataFrame) -> None:
                         st.rerun()
         
         elif st.session_state.modo_modal == "confirmar_arquivar":
-            st.warning(f"Arquivar: **{prazo['titulo']}**?")
+            st.warning("⚠️ Tem certeza que deseja arquivar?")
+            st.write(f"**Cliente:** {prazo['cliente']}")
+            st.write(f"**Título (Prazo):** {prazo['titulo']}")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("✅ SIM", use_container_width=True, type="primary"):
+                if st.button("✅ SIM, Arquivar", use_container_width=True, type="primary"):
                     arquivar_prazo(id_prazo)
                     # LIMPAR CACHE COMPLETAMENTE
                     carregar_prazos.clear()
@@ -283,7 +285,7 @@ def tabela_status(df: pd.DataFrame) -> None:
                     st.session_state.editor_v += 1
                     st.rerun()
             with c2:
-                if st.button("❌ NÃO", use_container_width=True):
+                if st.button("❌ NÃO, Cancelar", use_container_width=True):
                     st.session_state.modal_aberta = False
                     st.rerun()
 
