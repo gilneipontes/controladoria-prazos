@@ -213,63 +213,26 @@ def enriquecer(df: pd.DataFrame) -> pd.DataFrame:
     df["situacao"] = df["faixa"].map(FAIXAS)
     return df
 
-
-def gerar_excel_pauta(df_prazos: pd.DataFrame):
-    """Gera Excel com pauta de prazos"""
-    import tempfile
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+def gerar_csv_pauta(df_prazos: pd.DataFrame):
+    """Gera CSV simples com pauta de prazos"""
+    if df_prazos.empty:
+        return pd.DataFrame()
     
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Pauta"
-    
+    # Preparar dados
     data_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+    df_export = df_prazos[["data_fatal", "titulo", "cliente", "responsavel", "prioridade"]].copy()
+    df_export["dias_para_vencer"] = (df_export["data_fatal"] - data_hoje).dt.days
+    df_export["data_fatal"] = df_export["data_fatal"].dt.strftime("%d/%m/%Y")
+    df_export = df_export.rename(columns={
+        "data_fatal": "Data Fatal",
+        "titulo": "Título",
+        "cliente": "Cliente",
+        "responsavel": "Responsável",
+        "prioridade": "Prioridade",
+        "dias_para_vencer": "Dias para Vencer"
+    })
     
-    # Cabeçalho
-    ws['A1'] = "CONTROLADORIA JURÍDICA - PAUTA DE PRAZOS"
-    ws['A1'].font = Font(size=14, bold=True, color="FFFFFF")
-    ws['A1'].fill = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
-    ws.merge_cells('A1:E1')
-    
-    ws['A2'] = f"Data: {data_hoje.strftime('%d/%m/%Y')}"
-    ws.merge_cells('A2:E2')
-    
-    # Cabeçalhos das colunas
-    headers = ["DATA FATAL", "TÍTULO", "CLIENTE", "RESPONSÁVEL", "PRIORIDADE", "DIAS PARA VENCER"]
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=4, column=col)
-        cell.value = header
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill(start_color="c7302d", end_color="c7302d", fill_type="solid")
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-    
-    # Dados
-    row = 5
-    if not df_prazos.empty:
-        df_sorted = df_prazos.sort_values("data_fatal")
-        for _, p in df_sorted.iterrows():
-            dias = (p['data_fatal'] - hoje).days
-            ws.cell(row=row, column=1).value = p['data_fatal'].strftime("%d/%m/%Y")
-            ws.cell(row=row, column=2).value = p['titulo']
-            ws.cell(row=row, column=3).value = p['cliente']
-            ws.cell(row=row, column=4).value = p['responsavel']
-            ws.cell(row=row, column=5).value = p['prioridade']
-            ws.cell(row=row, column=6).value = f"{dias} dia{'s' if dias != 1 else ''}"
-            row += 1
-    
-    # Ajustar largura das colunas
-    ws.column_dimensions['A'].width = 15
-    ws.column_dimensions['B'].width = 25
-    ws.column_dimensions['C'].width = 25
-    ws.column_dimensions['D'].width = 15
-    ws.column_dimensions['E'].width = 12
-    ws.column_dimensions['F'].width = 15
-    
-    # Salvar em arquivo temporário
-    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-        wb.save(tmp.name)
-        return tmp.name
+    return df_export
 
 def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
     if df.empty:
@@ -1034,17 +997,20 @@ def main() -> None:
         st.divider()
         st.subheader("📥 Exportar Pauta")
         
-        if st.button("📊 Exportar como Excel", use_container_width=True):
-            # Gerar Excel
-            excel_path = gerar_excel_pauta(prazos_ativos)
-            with open(excel_path, "rb") as f:
-                st.download_button(
-                    label="⬇️ Baixar Excel",
-                    data=f.read(),
-                    file_name=f"pauta_prazos_{data_hoje.strftime('%d_%m_%Y')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
+        # Preparar dados para download
+        df_export = gerar_csv_pauta(prazos_ativos)
+        
+        if not df_export.empty:
+            csv = df_export.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button(
+                label="📊 Baixar Pauta em CSV",
+                data=csv,
+                file_name=f"pauta_prazos_{data_hoje.strftime('%d_%m_%Y')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        else:
+            st.info("Sem dados para exportar")
     
         st.subheader("🔄 Desarquivar Prazos")
         arquivados = df_prazos[df_prazos["arquivado"]]
