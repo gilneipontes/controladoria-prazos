@@ -227,7 +227,7 @@ def tabela_status(df: pd.DataFrame) -> None:
     ]
     vis = (
         df_vis.assign(_p=df_vis["prioridade"].map(ORDEM_PRIORIDADE))
-        .sort_values(["data_fatal", "_p"])[colunas_vis]
+        .sort_values(["dias_uteis"])[colunas_vis]
         .set_index("id")
         .rename(columns={
             "data_interna_fmt": "Prazo Interno",
@@ -643,7 +643,7 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                 if prazos_abertos.empty:
                     st.info("✅ Nenhum prazo em aberto!")
                 else:
-                    prazos_abertos = enriquecer(prazos_abertos).sort_values("data_fatal")
+                    prazos_abertos = enriquecer(prazos_abertos).sort_values("dias_uteis")
                     
                     for p_idx, prazo in prazos_abertos.iterrows():
                         mostra_card_prazo(prazo)
