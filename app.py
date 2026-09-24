@@ -326,12 +326,28 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
     v = st.session_state.form_v
     with st.form(f"cad_{v}"):
         processos_ativos = processos_df[processos_df["ativo"]]
-        processo = st.selectbox("Nº Processo *", processos_ativos["numero"].values, key=f"p_{v}")
+        
+        # ===== SELEÇÃO DE PROCESSO (COMEÇA VAZIO) =====
+        processo = st.selectbox(
+            "Nº Processo *",
+            options=[None] + list(processos_ativos["numero"].values),
+            format_func=lambda x: "" if x is None else x,
+            key=f"p_{v}"
+        )
+        
+        # ===== MOSTRAR CLIENTE E PARTE ADVERSÁRIA (quando selecionado) =====
         if processo:
             cliente = processos_ativos[processos_ativos["numero"] == processo]["cliente"].values[0]
-            st.text_input("Cliente", value=cliente, disabled=True, key=f"cli_{v}")
+            parte_adversaria = processos_ativos[processos_ativos["numero"] == processo]["parte_contraria"].values[0]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.text_input("Cliente", value=cliente, disabled=True, key=f"cli_{v}")
+            with col2:
+                st.text_input("Parte Adversária", value=parte_adversaria, disabled=True, key=f"adv_{v}")
         else:
             cliente = ""
+            parte_adversaria = ""
         
         tipo = st.selectbox("Tipo *", TIPOS, key=f"t_{v}")
         
