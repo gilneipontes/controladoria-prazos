@@ -213,6 +213,154 @@ def enriquecer(df: pd.DataFrame) -> pd.DataFrame:
     df["situacao"] = df["faixa"].map(FAIXAS)
     return df
 
+def gerar_pdf_pauta(df_prazos: pd.DataFrame):
+    """Gera PDF com pauta de prazos"""
+    from io import BytesIO
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    
+    # Estilos
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(name='CustomTitle', parent=styles['Heading1'], fontSize=16, textColor=colors.HexColor('#1f4788'), spaceAfter=12)
+    heading_style = ParagraphStyle(name='CustomHeading', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#c7302d'), spaceAfter=8)
+    
+    # Elementos
+    elements = []
+    
+    # Título
+    elements.append(Paragraph("CONTROLADORIA JURÍDICA - PAUTA DE PRAZOS", title_style))
+    hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+    elements.append(Paragraph(f"Data: {hoje.strftime('%d de %B de %Y')}", styles['Normal']))
+    elements.append(Spacer(1, 0.3*inch))
+    
+    if df_prazos.empty:
+        elements.append(Paragraph("✅ Nenhum prazo ativo no momento.", styles['Normal']))
+    else:
+        # Separar por período
+        prazos_hoje = df_prazos[df_prazos["data_fatal"] == hoje]
+        semana = hoje + pd.Timedelta(days=7)
+        prazos_semana = df_prazos[(df_prazos["data_fatal"] > hoje) & (df_prazos["data_fatal"] <= semana)]
+        
+        # HOJE
+        if not prazos_hoje.empty:
+            elements.append(Paragraph("🔴 HOJE", heading_style))
+            data_hoje = [["TÍTULO", "CLIENTE", "RESPONSÁVEL", "PRIORIDADE"]]
+            for _, p in prazos_hoje.iterrows():
+                data_hoje.append([
+                    p['titulo'],
+                    p['cliente'][:30],  # Limitar a 30 caracteres
+                    p['responsavel'],
+                    p['prioridade']
+                ])
+            table = Table(data_hoje, colWidths=[1.8*inch, 1.5*inch, 1.2*inch, 0.8*inch])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#c7302d')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ]))
+            elements.append(table)
+            elements.append(Spacer(1, 0.2*inch))
+        
+        # PRÓXIMOS 7 DIAS
+        if not prazos_semana.empty:
+            elements.append(Paragraph("🟠 PRÓXIMOS 7 DIAS", heading_style))
+            data_semana = [["TÍTULO", "CLIENTE", "DATA FATAL", "RESPONSÁVEL"]]
+            for _, p in prazos_semana.iterrows():
+                data_semana.append([
+                    p['titulo'],
+                    p['cliente'][:25],
+                    p['data_fatal'].strftime('%d/%m'),
+                    p['responsavel']
+                ])
+            table = Table(data_semana, colWidths=[1.8*inch, 1.5*inch, 1*inch, 1.2*inch])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ff9900')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ]))
+            elements.append(table)
+    
+    # Gerar PDF
+    doc.build(elements)
+    buffer.seek(0)
+    
+    # Salvar em arquivo temporário
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(buffer.getvalue())
+        return tmp.name
+
+def gerar_excel_pauta(df_prazos: pd.DataFrame):
+    """Gera Excel com pauta de prazos"""
+    import tempfile
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Pauta"
+    
+    hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+    
+    # Cabeçalho
+    ws['A1'] = "CONTROLADORIA JURÍDICA - PAUTA DE PRAZOS"
+    ws['A1'].font = Font(size=14, bold=True, color="FFFFFF")
+    ws['A1'].fill = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
+    ws.merge_cells('A1:E1')
+    
+    ws['A2'] = f"Data: {hoje.strftime('%d/%m/%Y')}"
+    ws.merge_cells('A2:E2')
+    
+    # Cabeçalhos das colunas
+    headers = ["DATA FATAL", "TÍTULO", "CLIENTE", "RESPONSÁVEL", "PRIORIDADE", "DIAS PARA VENCER"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col)
+        cell.value = header
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="c7302d", end_color="c7302d", fill_type="solid")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    
+    # Dados
+    row = 5
+    if not df_prazos.empty:
+        df_sorted = df_prazos.sort_values("data_fatal")
+        for _, p in df_sorted.iterrows():
+            dias = (p['data_fatal'] - hoje).days
+            ws.cell(row=row, column=1).value = p['data_fatal'].strftime("%d/%m/%Y")
+            ws.cell(row=row, column=2).value = p['titulo']
+            ws.cell(row=row, column=3).value = p['cliente']
+            ws.cell(row=row, column=4).value = p['responsavel']
+            ws.cell(row=row, column=5).value = p['prioridade']
+            ws.cell(row=row, column=6).value = f"{dias} dia{'s' if dias != 1 else ''}"
+            row += 1
+    
+    # Ajustar largura das colunas
+    ws.column_dimensions['A'].width = 15
+    ws.column_dimensions['B'].width = 25
+    ws.column_dimensions['C'].width = 25
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 12
+    ws.column_dimensions['F'].width = 15
+    
+    # Salvar em arquivo temporário
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        wb.save(tmp.name)
+        return tmp.name
+
 def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
     if df.empty:
         st.info("Nenhum registro.")
@@ -876,7 +1024,7 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos)
     
-    tab1, tab2, tab3, tab4 = st.tabs(["📅 Prazos", "📋 Relatório", "🔄 Desarquivar", "📋 Processos"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📅 Prazos", "📋 Relatório", "📋 Pauta", "🔄 Desarquivar", "📋 Processos"])
     
     with tab1:
         tabela_status(df_prazos[~df_prazos["arquivado"]], df_processos)
@@ -919,6 +1067,91 @@ def main() -> None:
                 st.rerun()
     
     with tab3:
+        st.subheader("📋 Pauta de Prazos")
+        
+        # Filtrar prazos não arquivados e não concluídos
+        prazos_ativos = df_prazos[~df_prazos["arquivado"] & ~df_prazos["concluido"]].copy()
+        
+        if prazos_ativos.empty:
+            st.info("✅ Nenhum prazo ativo no momento!")
+        else:
+            # Calcular datas
+            hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+            semana = pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=7)
+            
+            # Filtrar por período
+            prazos_hoje = prazos_ativos[prazos_ativos["data_fatal"] == hoje]
+            prazos_semana = prazos_ativos[(prazos_ativos["data_fatal"] > hoje) & (prazos_ativos["data_fatal"] <= semana)]
+            prazos_futuro = prazos_ativos[prazos_ativos["data_fatal"] > semana]
+            
+            # Exibir HOJE
+            if not prazos_hoje.empty:
+                st.markdown("### 🔴 **HOJE** (" + hoje.strftime("%d/%m/%Y") + ")")
+                for _, p in prazos_hoje.iterrows():
+                    col1, col2 = st.columns([3, 1])
+                    col1.markdown(f"""
+                    **{p['titulo']}** | {p['cliente']} / {p.get('parte_contraria', 'N/A')}
+                    
+                    Responsável: {p['responsavel']} | Prioridade: {p['prioridade']}
+                    """)
+                st.divider()
+            
+            # Exibir PRÓXIMOS 7 DIAS
+            if not prazos_semana.empty:
+                st.markdown("### 🟠 **PRÓXIMOS 7 DIAS**")
+                for _, p in prazos_semana.iterrows():
+                    dias_faltam = (p['data_fatal'] - hoje).days
+                    col1, col2 = st.columns([3, 1])
+                    col1.markdown(f"""
+                    **{p['titulo']}** | {p['cliente']} ({dias_faltam} dia{'s' if dias_faltam != 1 else ''})
+                    
+                    Data Fatal: {p['data_fatal'].strftime('%d/%m/%Y')} | Responsável: {p['responsavel']}
+                    """)
+                st.divider()
+            
+            # Exibir FUTURO
+            if not prazos_futuro.empty:
+                st.markdown("### 🟡 **FUTURO** (após 7 dias)")
+                for _, p in prazos_futuro.iloc[:10].iterrows():  # Mostrar apenas os 10 primeiros
+                    col1, col2 = st.columns([3, 1])
+                    col1.markdown(f"""
+                    **{p['titulo']}** | {p['cliente']}
+                    
+                    Data Fatal: {p['data_fatal'].strftime('%d/%m/%Y')} | Responsável: {p['responsavel']}
+                    """)
+        
+        # Botões de exportação
+        st.divider()
+        st.subheader("📥 Exportar Pauta")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📄 Exportar como PDF", use_container_width=True):
+                # Gerar PDF
+                pdf_path = gerar_pdf_pauta(prazos_ativos)
+                with open(pdf_path, "rb") as f:
+                    st.download_button(
+                        label="⬇️ Baixar PDF",
+                        data=f.read(),
+                        file_name=f"pauta_prazos_{hoje.strftime('%d_%m_%Y')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+        
+        with col2:
+            if st.button("📊 Exportar como Excel", use_container_width=True):
+                # Gerar Excel
+                excel_path = gerar_excel_pauta(prazos_ativos)
+                with open(excel_path, "rb") as f:
+                    st.download_button(
+                        label="⬇️ Baixar Excel",
+                        data=f.read(),
+                        file_name=f"pauta_prazos_{hoje.strftime('%d_%m_%Y')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+    
         st.subheader("🔄 Desarquivar Prazos")
         arquivados = df_prazos[df_prazos["arquivado"]]
         
@@ -941,7 +1174,7 @@ def main() -> None:
                 st.success("✅ Prazo restaurado!")
                 st.rerun()
     
-    with tab4:
+    with tab5:
         gerenciar_processos(df_processos, df_prazos)
 
 if __name__ == "__main__":
