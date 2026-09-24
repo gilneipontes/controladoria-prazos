@@ -1621,27 +1621,27 @@ def main() -> None:
     
     with tab2:
         st.subheader("📋 Relatório de Prazos")
-        
+
         prazos_concluidos = df_prazos[df_prazos["concluido"]]
         prazos_arquivados = df_prazos[df_prazos["arquivado"]]
-        
+
         col1, col2, col3 = st.columns(3)
         col1.metric("✅ Concluídos", len(prazos_concluidos))
         col2.metric("📦 Arquivados", len(prazos_arquivados))
         col3.metric("🟢 Total", len(df_prazos))
-        
+
         st.divider()
         st.markdown("**Prazos Concluídos:**")
         if prazos_concluidos.empty:
             st.info("Nenhum prazo concluído ainda.")
         else:
-            cols_viz = ["titulo", "cliente", "data_fatal", "responsavel"]
-            st.dataframe(prazos_concluidos[cols_viz], use_container_width=True, hide_index=True)
-            
+            # ===== MOSTRAR PRAZOS CONCLUÍDOS COM DETALHES =====
+            tabela_status(prazos_concluidos, df_processos, prefix="tab_concluidos")
+
             # ===== BOTÃO PARA REATIVAR PRAZO CONCLUÍDO =====
             st.divider()
             st.subheader("🔄 Reativar Prazo")
-            
+
             col1, col2 = st.columns([2, 1])
             id_reativar = col1.selectbox(
                 "Selecione um prazo concluído para reativar:",
@@ -1649,7 +1649,7 @@ def main() -> None:
                 format_func=lambda x: f"{prazos_concluidos[prazos_concluidos['id'] == x]['cliente'].values[0]} | {prazos_concluidos[prazos_concluidos['id'] == x]['titulo'].values[0]} | {prazos_concluidos[prazos_concluidos['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
                 key="sel_reativar"
             )
-            
+
             if col2.button("🔄 Reativar", use_container_width=True, type="secondary"):
                 atualizar_campos({id_reativar: {"concluido": False, "concluido_em": None}})
                 st.session_state.aviso = "✅ Prazo reativado!"
