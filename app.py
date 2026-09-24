@@ -563,6 +563,8 @@ def tabela_status(df: pd.DataFrame) -> None:
         st.session_state.id_modal = None
     if "modo_modal" not in st.session_state:
         st.session_state.modo_modal = None  # None, "editar" ou "confirmar_arquivar"
+    if "ultima_mudanca_processada" not in st.session_state:
+        st.session_state.ultima_mudanca_processada = None
 
     colunas_vis = [
         "id", "concluido", "situacao", "titulo", "processo", "cliente", "data_fatal",
@@ -579,7 +581,7 @@ def tabela_status(df: pd.DataFrame) -> None:
         vis,
         key=f"editor_{st.session_state.editor_v}",
         hide_index=True,
-        disabled=["situacao", "dias_uteis", "tipo", "responsavel"],
+        disabled=["situacao", "dias_uteis", "tipo", "responsavel", "concluido"],
         column_config={
             "concluido": st.column_config.CheckboxColumn(
                 "✅",
@@ -607,12 +609,15 @@ def tabela_status(df: pd.DataFrame) -> None:
 
     # ===== DETECTAR CLIQUE NO CHECKBOX =====
     for idx in editado.index:
+        id_linha = int(idx)
         if editado.loc[idx, "concluido"] != vis.loc[idx, "concluido"]:
-            # Checkbox mudou! Abre a modal
-            st.session_state.modal_aberta = True
-            st.session_state.id_modal = int(idx)
-            st.session_state.modo_modal = None  # Volta pra menu principal
-            st.rerun()
+            # Checkbox mudou! Mas só processa se não foi já processado
+            if st.session_state.ultima_mudanca_processada != id_linha:
+                st.session_state.modal_aberta = True
+                st.session_state.id_modal = id_linha
+                st.session_state.modo_modal = None
+                st.session_state.ultima_mudanca_processada = id_linha  # Marca como processado
+                st.rerun()
 
     # ===== MODAL/DIALOG =====
     if st.session_state.modal_aberta and st.session_state.id_modal:
@@ -641,6 +646,7 @@ def tabela_status(df: pd.DataFrame) -> None:
                     st.session_state.modal_aberta = False
                     st.session_state.id_modal = None
                     st.session_state.modo_modal = None
+                    st.session_state.ultima_mudanca_processada = None  # Limpar flag
                     st.rerun()
 
         # MODO EDITAR
@@ -723,6 +729,7 @@ def tabela_status(df: pd.DataFrame) -> None:
                         st.session_state.modal_aberta = False
                         st.session_state.id_modal = None
                         st.session_state.modo_modal = None
+                        st.session_state.ultima_mudanca_processada = None  # Limpar flag
                         st.session_state.editor_v += 1
                         st.rerun()
                     except Exception as exc:
@@ -730,6 +737,7 @@ def tabela_status(df: pd.DataFrame) -> None:
             
             if voltar_editar:
                 st.session_state.modo_modal = None
+                st.session_state.ultima_mudanca_processada = None  # Limpar flag
                 st.rerun()
 
         # MODO CONFIRMAR ARQUIVAMENTO
@@ -747,6 +755,7 @@ def tabela_status(df: pd.DataFrame) -> None:
                         st.session_state.modal_aberta = False
                         st.session_state.id_modal = None
                         st.session_state.modo_modal = None
+                        st.session_state.ultima_mudanca_processada = None  # Limpar flag
                         st.session_state.editor_v += 1
                         st.rerun()
                     except Exception as exc:
@@ -755,6 +764,7 @@ def tabela_status(df: pd.DataFrame) -> None:
             with col2:
                 if st.button("❌ NÃO, Cancelar", use_container_width=True):
                     st.session_state.modo_modal = None
+                    st.session_state.ultima_mudanca_processada = None  # Limpar flag
                     st.rerun()
             
             with col3:
