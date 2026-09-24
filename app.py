@@ -271,9 +271,9 @@ def tabela_status(df: pd.DataFrame) -> None:
     
     with c2:
         if st.button("✅ Concluído", use_container_width=True, type="primary"):
-            atualizar_campos({id_sel: {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()}})
-            st.session_state.aviso = "✅ Prazo marcado como concluído!"
-            st.session_state.editor_v += 1
+            st.session_state.id_modal = id_sel
+            st.session_state.modo_modal = "concluir_com_obs"
+            st.session_state.modal_aberta = True
             st.rerun()
     
     with c3:
@@ -367,6 +367,44 @@ def tabela_status(df: pd.DataFrame) -> None:
                 if st.button("❌ NÃO, Cancelar", use_container_width=True):
                     st.session_state.modal_aberta = False
                     st.rerun()
+        
+        elif st.session_state.modo_modal == "concluir_com_obs":
+            st.warning("📝 Adicione anotações sobre este prazo antes de concluir")
+            st.write(f"**Cliente:** {prazo['cliente']}")
+            st.write(f"**Título (Prazo):** {prazo['titulo']}")
+            
+            with st.form(f"form_concluir_{id_prazo}"):
+                anotacoes = st.text_area(
+                    "O que foi feito neste prazo?",
+                    placeholder="Ex: Petição inicial enviada com documentos anexados...",
+                    height=120,
+                    key=f"anol_{id_prazo}"
+                )
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.form_submit_button("✅ Concluir com Anotações", type="primary", use_container_width=True):
+                        # Concatena anotações com observações antigas (se houver)
+                        obs_antiga = prazo['descricao'] or ""
+                        if obs_antiga:
+                            obs_nova = f"{obs_antiga}\n\n✅ CONCLUÍDO: {anotacoes}"
+                        else:
+                            obs_nova = f"✅ CONCLUÍDO: {anotacoes}"
+                        
+                        atualizar_campos({id_prazo: {
+                            "concluido": True,
+                            "concluido_em": dt.datetime.now(TZ).isoformat(),
+                            "descricao": obs_nova
+                        }})
+                        st.session_state.aviso = "✅ Prazo concluído com anotações!"
+                        st.session_state.modal_aberta = False
+                        st.session_state.editor_v += 1
+                        st.rerun()
+                
+                with c2:
+                    if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                        st.session_state.modal_aberta = False
+                        st.rerun()
         
         elif st.session_state.modo_modal == "confirmar_excluir":
             st.error("🔴 ATENÇÃO: Excluir é permanente!")
