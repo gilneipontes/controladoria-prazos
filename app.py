@@ -464,8 +464,37 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
     # ===== REMOVER DUPLICATAS =====
     processos_unicos = processos_ativos.drop_duplicates(subset=["numero"], keep="first").sort_values("numero")
     
+    # ===== BARRA DE BUSCA =====
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        busca = st.text_input(
+            "🔍 Buscar por número de processo ou nome do cliente:",
+            placeholder="Ex: 5014993 ou HELENA",
+            key="busca_processo",
+            label_visibility="collapsed"
+        )
+    
+    # ===== FILTRAR PROCESSOS =====
+    if busca:
+        processos_filtrados = processos_unicos[
+            (processos_unicos["numero"].str.contains(busca, case=False, na=False)) |
+            (processos_unicos["cliente"].str.contains(busca, case=False, na=False))
+        ]
+    else:
+        processos_filtrados = processos_unicos
+    
+    # ===== RESUMO =====
+    with col2:
+        st.metric("Resultados", len(processos_filtrados))
+    
+    if processos_filtrados.empty:
+        st.warning(f"❌ Nenhum processo encontrado com '{busca}'")
+        return
+    
+    st.caption(f"Clique para expandir e ver todos os prazos do processo:")
+    
     # ===== EXPANDIR CADA PROCESSO =====
-    for idx, proc in processos_unicos.iterrows():
+    for idx, proc in processos_filtrados.iterrows():
         todos_prazos = df_prazos[df_prazos["processo"] == proc["numero"]]
         prazos_abertos = todos_prazos[~todos_prazos["concluido"] & ~todos_prazos["arquivado"]]
         prazos_concluidos = todos_prazos[todos_prazos["concluido"]]
