@@ -1,6 +1,11 @@
 """
 Controladoria Jurídica - VERSÃO FINAL COM 4 ABAS
 """
+# ============================================
+# CONTROLADORIA JURÍDICA - SISTEMA DE PRAZOS
+# Versão: 2.1 - Atualizado: 24/09/2026
+# ============================================
+
 from __future__ import annotations
 
 import datetime as dt
