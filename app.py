@@ -209,7 +209,7 @@ def tabela_status(df: pd.DataFrame) -> None:
     id_sel = col1.selectbox(
         "Selecione:",
         options=df_ativos["id"].values,
-        format_func=lambda x: f"{df_ativos[df_ativos['id'] == x]['titulo'].values[0]} | {df_ativos[df_ativos['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
+        format_func=lambda x: f"{df_ativos[df_ativos['id'] == x]['cliente'].values[0]} | {df_ativos[df_ativos['id'] == x]['titulo'].values[0]} | {df_ativos[df_ativos['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
         key="sel_prazo"
     )
 
@@ -297,14 +297,43 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         processo = st.selectbox("Nº Processo *", processos_ativos["numero"].values, key=f"p_{v}")
         if processo:
             cliente = processos_ativos[processos_ativos["numero"] == processo]["cliente"].values[0]
-            st.text_input("Cliente", value=cliente, disabled=True)
+            st.text_input("Cliente", value=cliente, disabled=True, key=f"cli_{v}")
         else:
             cliente = ""
         
         tipo = st.selectbox("Tipo *", TIPOS, key=f"t_{v}")
-        titulo_atalho = st.selectbox("Título *", list(sorted(ATALHOS.keys())), format_func=lambda x: f"{x} — {ATALHOS[x]}", key=f"ta_{v}")
-        titulo = ATALHOS[titulo_atalho]
-        st.caption(f"📌 {titulo}")
+        
+        # ===== CAMPO DE BUSCA DE TÍTULO (vazio inicialmente) =====
+        st.write("**Título (Atalhos) ***")
+        busca_titulo = st.text_input(
+            "Digite para filtrar atalhos jurídicos",
+            value="",
+            placeholder="Ex: PET, CONT, MANIF...",
+            key=f"busca_{v}",
+            label_visibility="collapsed"
+        )
+        
+        # Filtrar atalhos conforme digita
+        if busca_titulo:
+            atalhos_filtrados = {k: v for k, v in ATALHOS.items() if busca_titulo.upper() in k}
+            if atalhos_filtrados:
+                titulo_atalho = st.selectbox(
+                    "Atalhos encontrados:",
+                    options=list(atalhos_filtrados.keys()),
+                    format_func=lambda x: f"{x} — {atalhos_filtrados[x]}",
+                    key=f"ta_{v}",
+                    label_visibility="collapsed"
+                )
+                titulo = atalhos_filtrados[titulo_atalho]
+            else:
+                st.warning("Nenhum atalho encontrado!")
+                titulo = ""
+        else:
+            st.caption("👉 Digite acima para ver os atalhos disponíveis")
+            titulo = ""
+        
+        if titulo:
+            st.caption(f"📌 Selecionado: **{titulo}**")
         
         responsavel = st.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"r_{v}")
         c1, c2 = st.columns(2)
@@ -315,8 +344,8 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         st.text_area("Observações", key=f"d_{v}")
         
         if st.form_submit_button("💾 Salvar", type="primary"):
-            if not processo or not data_fatal:
-                st.error("Preencha processo e data fatal!")
+            if not processo or not data_fatal or not titulo:
+                st.error("Preencha processo, data fatal e título!")
             elif data_interna and data_interna > data_fatal:
                 st.error("Prazo interno deve ser ≤ data fatal!")
             else:
@@ -333,7 +362,7 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                     "arquivado": False,
                 })
                 st.session_state.aviso = f"✅ Prazo salvo!"
-                st.session_state.form_v += 1
+                st.session_state.form_v += 1  # ← Incrementa para resetar TODOS os keys do form
                 st.rerun()
 
 def main() -> None:
@@ -365,15 +394,15 @@ def main() -> None:
         elif aba == "Novo Processo":
             st.subheader("⚖️ Novo Processo")
             with st.form("proc"):
-                numero = st.text_input("Nº CNJ *", placeholder="0000000-00.0000.0.00.0000")
-                cliente = st.text_input("Cliente *")
-                parte = st.text_input("Parte Adversária *")
-                descricao = st.text_area("Descrição")
+                numero = st.text_input("Nº CNJ *", placeholder="0000000-00.0000.0.00.0000", key=f"pnumero_{v}")
+                cliente = st.text_input("Cliente *", key=f"pcliente_{v}")
+                parte = st.text_input("Parte Adversária *", key=f"pparte_{v}")
+                descricao = st.text_area("Descrição", key=f"pdesc_{v}")
                 if st.form_submit_button("Salvar", type="primary"):
                     if numero and cliente and parte:
                         inserir_processo({"numero": numero, "cliente": cliente, "parte_contraria": parte, "descricao": descricao or None, "ativo": True})
                         st.success("✅ Salvo!")
-                        st.session_state.form_v += 1
+                        st.session_state.form_v += 1  # Incrementa para resetar todos os keys
                         st.rerun()
                     else:
                         st.error("Preencha todos!")
@@ -426,7 +455,7 @@ def main() -> None:
             id_des = col1.selectbox(
                 "Selecione para desarquivar:",
                 options=arquivados["id"].values,
-                format_func=lambda x: f"{arquivados[arquivados['id'] == x]['titulo'].values[0]} | {arquivados[arquivados['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
+                format_func=lambda x: f"{arquivados[arquivados['id'] == x]['cliente'].values[0]} | {arquivados[arquivados['id'] == x]['titulo'].values[0]} | {arquivados[arquivados['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
                 key="sel_des"
             )
             
