@@ -1333,7 +1333,7 @@ def mostra_card_prazo(prazo) -> None:
             st.markdown(f"**📝 Observações:**")
             st.caption(prazo['descricao'])
 
-def tabela_audiencias(df: pd.DataFrame) -> None:
+def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
     """Exibe tabela de audiências agendadas"""
     if df.empty:
         st.info("Nenhuma audiência cadastrada.")
@@ -1389,12 +1389,12 @@ def tabela_audiencias(df: pd.DataFrame) -> None:
         "Clique na audiência para ver detalhes:",
         options=range(len(opcoes_display)),
         format_func=lambda x: opcoes_display[x],
-        key="sel_audiencia_idx"
+        key=f"sel_audiencia_idx_{prefix}"
     )
 
-    if col2.button("📂 Ver Detalhes", use_container_width=True, type="primary"):
-        if st.session_state.get("sel_audiencia_idx", 0) > 0:
-            id_sel = opcoes_ids[st.session_state.sel_audiencia_idx]
+    if col2.button("📂 Ver Detalhes", use_container_width=True, type="primary", key=f"btn_aud_det_{prefix}"):
+        if st.session_state.get(f"sel_audiencia_idx_{prefix}", 0) > 0:
+            id_sel = opcoes_ids[st.session_state.get(f"sel_audiencia_idx_{prefix}", 0)]
             st.session_state.id_audiencia_modal = id_sel
             st.session_state.modo_audiencia_modal = "detalhes"
             st.session_state.audiencia_modal_aberta = True
@@ -1581,34 +1581,8 @@ def main() -> None:
                     else:
                         st.error("Preencha todos!")
         else:
-            st.subheader("📊 Dashboard")
-
-            # ===== PRAZOS =====
-            st.write("**📋 PRAZOS**")
-            if not df_prazos.empty:
-                df_prazos_temp = enriquecer(df_prazos)
-                pend = df_prazos_temp[~df_prazos_temp["concluido"] & ~df_prazos_temp["arquivado"]]
-                col1, col2, col3 = st.columns(3)
-                col1.metric("🔴 Vencidos", len(pend[pend["faixa"] == "Vencido"]))
-                col2.metric("🟠 Hoje", len(pend[pend["faixa"] == "Hoje"]))
-                col3.metric("📋 Pendentes", len(pend))
-            else:
-                st.info("Nenhum prazo registrado.")
-
-            st.divider()
-
-            # ===== AUDIÊNCIAS =====
-            st.write("**📅 AUDIÊNCIAS**")
-            if not df_audiencias.empty:
-                aud_agendadas = len(df_audiencias[df_audiencias["status"] == "Agendada"])
-                aud_realizadas = len(df_audiencias[df_audiencias["status"] == "Realizada"])
-                aud_canceladas = len(df_audiencias[df_audiencias["status"] == "Cancelada"])
-                col1, col2, col3 = st.columns(3)
-                col1.metric("📅 Agendadas", aud_agendadas)
-                col2.metric("✅ Realizadas", aud_realizadas)
-                col3.metric("❌ Canceladas", aud_canceladas)
-            else:
-                st.info("Nenhuma audiência registrada.")
+            # ===== DASHBOARD COMPLETO =====
+            dashboard_completo(df_prazos, df_audiencias, df_processos)
 
     st.title("⚖️ Controladoria Jurídica")
     st.caption(f"Hoje: {hoje():%d/%m/%Y}")
