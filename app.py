@@ -1612,7 +1612,7 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos)
     
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📅 Prazos", "📋 Relatório", "📋 Pauta", "🔄 Desarquivar", "📋 Processos", "📅 Audiências"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🗂️ Processos", "📅 Audiências"])
 
     with tab1:
         # Mostrar apenas prazos ATIVOS (não concluídos e não arquivados)
