@@ -1446,13 +1446,33 @@ def main() -> None:
                         st.error("Preencha todos!")
         else:
             st.subheader("📊 Dashboard")
+
+            # ===== PRAZOS =====
+            st.write("**📋 PRAZOS**")
             if not df_prazos.empty:
-                df_prazos = enriquecer(df_prazos)
-                pend = df_prazos[~df_prazos["concluido"] & ~df_prazos["arquivado"]]
+                df_prazos_temp = enriquecer(df_prazos)
+                pend = df_prazos_temp[~df_prazos_temp["concluido"] & ~df_prazos_temp["arquivado"]]
                 col1, col2, col3 = st.columns(3)
                 col1.metric("🔴 Vencidos", len(pend[pend["faixa"] == "Vencido"]))
                 col2.metric("🟠 Hoje", len(pend[pend["faixa"] == "Hoje"]))
                 col3.metric("📋 Pendentes", len(pend))
+            else:
+                st.info("Nenhum prazo registrado.")
+
+            st.divider()
+
+            # ===== AUDIÊNCIAS =====
+            st.write("**📅 AUDIÊNCIAS**")
+            if not df_audiencias.empty:
+                aud_agendadas = len(df_audiencias[df_audiencias["status"] == "Agendada"])
+                aud_realizadas = len(df_audiencias[df_audiencias["status"] == "Realizada"])
+                aud_canceladas = len(df_audiencias[df_audiencias["status"] == "Cancelada"])
+                col1, col2, col3 = st.columns(3)
+                col1.metric("📅 Agendadas", aud_agendadas)
+                col2.metric("✅ Realizadas", aud_realizadas)
+                col3.metric("❌ Canceladas", aud_canceladas)
+            else:
+                st.info("Nenhuma audiência registrada.")
 
     st.title("⚖️ Controladoria Jurídica")
     st.caption(f"Hoje: {hoje():%d/%m/%Y}")
