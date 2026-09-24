@@ -218,25 +218,30 @@ def enriquecer(df: pd.DataFrame) -> pd.DataFrame:
     df["situacao"] = df["faixa"].map(FAIXAS)
     return df
 
-def gerar_csv_pauta(df_prazos: pd.DataFrame):
-    """Gera CSV simples com pauta de prazos"""
+def gerar_csv_pauta(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
+    """Gera CSV com pauta de prazos e descrição dos processos"""
     if df_prazos.empty:
         return pd.DataFrame()
     
     # Preparar dados
-    df_export = df_prazos[["cliente", "processo", "titulo", "data_fatal", "descricao"]].copy()
+    df_export = df_prazos[["cliente", "processo", "titulo", "data_fatal"]].copy()
     
     # Extrair primeiro nome do cliente
     df_export["cliente_primeiro"] = df_export["cliente"].apply(lambda x: x.split()[0] if pd.notna(x) else "")
     
+    # Se temos dados de processos, fazer merge para trazer descrição
+    if df_processos is not None:
+        processos_desc = df_processos[["numero", "descricao"]].copy()
+        df_export = df_export.merge(processos_desc, left_on="processo", right_on="numero", how="left")
+        df_export["descricao"] = df_export["descricao"].fillna("-")
+    else:
+        df_export["descricao"] = "-"
+    
     # Reorganizar colunas na ordem desejada
     df_export = df_export[["cliente_primeiro", "processo", "titulo", "data_fatal", "descricao"]]
     
-    # Converter data_fatal para string
-    df_export["data_fatal"] = df_export["data_fatal"].astype(str)
-    
-    # Preencher descricao vazia com "-"
-    df_export["descricao"] = df_export["descricao"].fillna("-")
+    # Converter data_fatal para string com formato DD/MM/YYYY
+    df_export["data_fatal"] = df_export["data_fatal"].dt.strftime("%d/%m/%Y") if hasattr(df_export["data_fatal"], 'dt') else df_export["data_fatal"].astype(str)
     
     # Renomear colunas
     df_export = df_export.rename(columns={
@@ -1013,7 +1018,7 @@ def main() -> None:
         st.subheader("📥 Exportar Pauta")
         
         # Preparar dados para download
-        df_export = gerar_csv_pauta(prazos_ativos)
+        df_export = gerar_csv_pauta(prazos_ativos, df_processos)
         
         if not df_export.empty:
             csv = df_export.to_csv(index=False, encoding='utf-8-sig', sep=';')
