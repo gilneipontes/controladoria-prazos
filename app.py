@@ -292,13 +292,6 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None) -> None:
         opcoes_display.append(f"{row['cliente']} | {row['titulo']} | {row['data_fatal'].strftime('%d/%m/%Y')}")
         opcoes_ids.append(row['id'])
     
-    # Resetar seletor APENAS quando a modal FECHA (transição de aberta para fechada)
-    if st.session_state.modal_estava_aberta and not st.session_state.modal_aberta:
-        st.session_state.sel_prazo_idx = 0
-    
-    # Atualizar flag para próxima execução
-    st.session_state.modal_estava_aberta = st.session_state.modal_aberta
-    
     id_sel_idx = col1.selectbox(
         "Clique no prazo para ver detalhes:",
         options=range(len(opcoes_display)),
@@ -887,6 +880,11 @@ def main() -> None:
     df_prazos = enriquecer(df_prazos)
     
     tab1, tab2, tab3, tab4 = st.tabs(["📅 Prazos", "📋 Relatório", "🔄 Desarquivar", "📋 Processos"])
+    
+    # ===== RESETAR SELETOR QUANDO MODAL FECHA =====
+    if st.session_state.modal_estava_aberta and not st.session_state.modal_aberta:
+        st.session_state.sel_prazo_idx = 0
+    st.session_state.modal_estava_aberta = st.session_state.modal_aberta
     
     with tab1:
         tabela_status(df_prazos[~df_prazos["arquivado"]], df_processos)
