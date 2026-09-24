@@ -66,6 +66,8 @@ def init_estado() -> None:
     st.session_state.setdefault("form_v", 0)
     st.session_state.setdefault("editor_v", 0)
     st.session_state.setdefault("aviso", None)
+    st.session_state.setdefault("deletar_confirmado", False)
+    st.session_state.setdefault("id_deletar_selecionado", None)
 
 
 # ───────────────────────── 2. Acesso ─────────────────────────
@@ -337,23 +339,32 @@ def tabela_status(df: pd.DataFrame) -> None:
 
     st.divider()
     st.subheader("🗑️ Deletar prazo")
+    
     col1, col2, col3 = st.columns([2, 1, 1])
-    id_para_deletar = col1.selectbox(
+    
+    id_selecionado = col1.selectbox(
         "Selecione o prazo para deletar",
         options=df["id"].values,
         format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} ({x})",
-        key="select_delete"
+        key="select_delete_prazo"
     )
-    if col2.button("🗑️ Deletar", type="secondary"):
-        if col3.button("✅ Confirmar"):
+    
+    st.session_state.id_deletar_selecionado = id_selecionado
+    
+    if col2.button("🗑️ Deletar", type="secondary", key="btn_deletar"):
+        st.session_state.deletar_confirmado = False
+        st.rerun()
+    
+    if col3.button("✅ Confirmar", type="primary", key="btn_confirmar"):
+        if st.session_state.id_deletar_selecionado:
             try:
-                deletar_prazo(id_para_deletar)
+                deletar_prazo(st.session_state.id_deletar_selecionado)
+                st.session_state.aviso = "Prazo deletado!"
+                st.session_state.editor_v += 1
+                st.session_state.id_deletar_selecionado = None
+                st.rerun()
             except Exception as exc:
                 st.error(f"Não foi deletado. Detalhe: {exc}")
-                return
-            st.session_state.aviso = "Prazo deletado!"
-            st.session_state.editor_v += 1
-            st.rerun()
 
 
 def main() -> None:
