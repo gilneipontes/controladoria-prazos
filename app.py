@@ -218,23 +218,19 @@ def gerar_csv_pauta(df_prazos: pd.DataFrame):
     if df_prazos.empty:
         return pd.DataFrame()
     
-    # Preparar dados
-    data_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+    # Preparar dados simples
     df_export = df_prazos[["data_fatal", "titulo", "cliente", "responsavel", "prioridade"]].copy()
     
-    # Calcular dias ANTES de converter data para string
-    df_export["dias_para_vencer"] = (df_export["data_fatal"] - pd.to_datetime(data_hoje)).dt.days
+    # Converter data_fatal para string
+    df_export["data_fatal"] = df_export["data_fatal"].astype(str)
     
-    # DEPOIS converter data_fatal para string
-    df_export["data_fatal"] = df_export["data_fatal"].dt.strftime("%d/%m/%Y")
-    
+    # Renomear colunas
     df_export = df_export.rename(columns={
         "data_fatal": "Data Fatal",
         "titulo": "Título",
         "cliente": "Cliente",
         "responsavel": "Responsável",
-        "prioridade": "Prioridade",
-        "dias_para_vencer": "Dias para Vencer"
+        "prioridade": "Prioridade"
     })
     
     return df_export
