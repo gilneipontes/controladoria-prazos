@@ -1,6 +1,5 @@
 """
-Controladoria Jurídica - VERSÃO SIMPLIFICADA COM BOTÕES
-Sem detecção de checkbox (mais confiável)
+Controladoria Jurídica - VERSÃO FINAL COM 4 ABAS
 """
 from __future__ import annotations
 
@@ -40,8 +39,6 @@ FERIADOS = np.array([
     "2026-05-01", "2026-06-04", "2026-09-07", "2026-10-12", "2026-11-02",
     "2026-11-15", "2026-11-20", "2026-12-25",
 ], dtype="datetime64[D]")
-
-CNJ_REGEX = re.compile(r"^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$")
 
 COLUNAS_PRAZOS = [
     "id", "created_at", "tipo", "titulo", "processo", "cliente", "responsavel",
@@ -155,16 +152,16 @@ def inserir_processo(registro: dict) -> None:
     supabase().table(TABELA_PROCESSOS).insert(registro).execute()
     carregar_processos.clear()
 
-def atualizar_processo(id_processo: int, campos: dict) -> None:
-    if campos:
-        supabase().table(TABELA_PROCESSOS).update(campos).eq("id", id_processo).execute()
-    carregar_processos.clear()
-
 def atualizar_campos(atualizacoes: dict[int, dict]) -> None:
     for id_prazo, campos in atualizacoes.items():
         if campos:
             supabase().table(TABELA_PRAZOS).update(campos).eq("id", id_prazo).execute()
     carregar_prazos.clear()
+
+def atualizar_processo(id_processo: int, campos: dict) -> None:
+    if campos:
+        supabase().table(TABELA_PROCESSOS).update(campos).eq("id", id_processo).execute()
+    carregar_processos.clear()
 
 def arquivar_prazo(id_prazo: int) -> None:
     supabase().table(TABELA_PRAZOS).update({"arquivado": True}).eq("id", id_prazo).execute()
@@ -188,13 +185,11 @@ def enriquecer(df: pd.DataFrame) -> pd.DataFrame:
     df["situacao"] = df["faixa"].map(FAIXAS)
     return df
 
-# ===== TABELA SIMPLIFICADA =====
 def tabela_status(df: pd.DataFrame) -> None:
     if df.empty:
         st.info("Nenhum registro.")
         return
 
-    # Formatar datas para o formato brasileiro
     df_vis = df.copy()
     df_vis["data_interna_fmt"] = df_vis["data_interna"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
     df_vis["data_fatal_fmt"] = df_vis["data_fatal"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
@@ -261,7 +256,6 @@ def tabela_status(df: pd.DataFrame) -> None:
             st.session_state.modal_aberta = True
             st.rerun()
 
-    # ===== MODAL =====
     if st.session_state.modal_aberta and st.session_state.id_modal:
         id_prazo = st.session_state.id_modal
         prazo = df[df["id"] == id_prazo].iloc[0]
@@ -310,7 +304,6 @@ def tabela_status(df: pd.DataFrame) -> None:
             with c1:
                 if st.button("✅ SIM, Arquivar", use_container_width=True, type="primary"):
                     arquivar_prazo(id_prazo)
-                    # LIMPAR CACHE COMPLETAMENTE
                     carregar_prazos.clear()
                     carregar_processos.clear()
                     st.session_state.aviso = "✅ Arquivado!"
@@ -331,7 +324,6 @@ def tabela_status(df: pd.DataFrame) -> None:
             with c1:
                 if st.button("🗑️ SIM, Excluir", use_container_width=True, type="primary"):
                     excluir_prazo(id_prazo)
-                    # LIMPAR CACHE COMPLETAMENTE
                     carregar_prazos.clear()
                     carregar_processos.clear()
                     st.session_state.aviso = "✅ Prazo excluído!"
@@ -349,7 +341,6 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
     
     processos_ativos = processos_df[processos_df["ativo"]].sort_values("numero")
     
-    # ===== BUSCA DE PROCESSO (TEXTO PARA DIGITAR) =====
     st.write("**Nº Processo ***")
     busca = st.text_input(
         "Digite o número do processo",
@@ -363,7 +354,6 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
     cliente = ""
     parte_adversaria = ""
     
-    # Filtrar processos conforme digita
     if busca:
         processos_filtrados = processos_ativos[
             processos_ativos["numero"].str.contains(busca, case=False)
@@ -372,7 +362,6 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         if not processos_filtrados.empty:
             st.caption(f"📋 {len(processos_filtrados)} processo(s) encontrado(s):")
             
-            # Mostrar selectbox APENAS com os filtrados
             processo = st.selectbox(
                 "Selecione:",
                 options=processos_filtrados["numero"].values,
@@ -383,7 +372,6 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         else:
             st.warning(f"❌ Nenhum processo encontrado com '{busca}'")
     
-    # ===== MOSTRAR CLIENTE E PARTE ADVERSÁRIA (quando selecionado) =====
     if processo:
         cliente = processos_ativos[processos_ativos["numero"] == processo]["cliente"].values[0]
         parte_adversaria = processos_ativos[processos_ativos["numero"] == processo]["parte_contraria"].values[0]
@@ -398,11 +386,9 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         
         st.success(f"✅ Processo selecionado: **{processo}**")
     
-    # ===== FORMULÁRIO =====
     with st.form(f"cad_{v}"):
         tipo = st.selectbox("Tipo *", TIPOS, key=f"t_{v}")
         
-        # ===== CAMPO DE BUSCA DE TÍTULO =====
         st.write("**Título ***")
         busca_titulo = st.text_input(
             "Digite para filtrar atalhos jurídicos",
@@ -413,7 +399,6 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         )
         
         titulo = ""
-        # Filtrar atalhos conforme digita
         if busca_titulo:
             atalhos_filtrados = {k: v for k, v in ATALHOS.items() if busca_titulo.upper() in k}
             if atalhos_filtrados:
@@ -464,25 +449,20 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                 st.rerun()
 
 def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
-    """Gerenciar processos cadastrados e visualizar prazos relacionados"""
-    
     if df_processos.empty:
         st.info("Nenhum processo cadastrado.")
         return
     
     st.subheader("📋 Processos Cadastrados")
     
-    # ===== TABELA DE PROCESSOS =====
     processos_ativos = df_processos[df_processos["ativo"]]
     
     if processos_ativos.empty:
         st.info("Nenhum processo ativo.")
         return
     
-    # Contar prazos por processo
     df_prazos_ativos = df_prazos[~df_prazos["arquivado"]]
     
-    # Criar tabela com informações
     dados_processos = []
     for idx, proc in processos_ativos.iterrows():
         qtd_prazos = len(df_prazos_ativos[df_prazos_ativos["processo"] == proc["numero"]])
@@ -498,7 +478,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
     df_view = pd.DataFrame(dados_processos).set_index("id")
     st.dataframe(df_view, use_container_width=True, hide_index=False)
     
-    # ===== SELECIONAR PROCESSO PARA EDITAR =====
     st.divider()
     st.subheader("⚙️ Editar Processo")
     
@@ -534,7 +513,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                 if st.form_submit_button("❌ Cancelar", use_container_width=True):
                     st.info("Cancelado")
         
-        # ===== MOSTRAR PRAZOS RELACIONADOS =====
         st.divider()
         st.subheader("📅 Prazos Relacionados")
         
@@ -546,10 +524,8 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
         if prazos_relacionados.empty:
             st.info("Nenhum prazo ativo para este processo.")
         else:
-            # Enriquecer dados dos prazos
             prazos_relacionados = enriquecer(prazos_relacionados)
             
-            # Formatar datas
             prazos_viz = prazos_relacionados[[
                 "situacao", "titulo", "data_interna", "data_fatal", "responsavel", "prioridade"
             ]].copy()
@@ -571,6 +547,8 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
             })
             
             st.dataframe(prazos_viz, use_container_width=True, hide_index=True)
+
+def main() -> None:
     init_estado()
     if not acesso_liberado():
         st.stop()
@@ -608,7 +586,7 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                     if numero and cliente and parte:
                         inserir_processo({"numero": numero, "cliente": cliente, "parte_contraria": parte, "descricao": descricao or None, "ativo": True})
                         st.success("✅ Salvo!")
-                        st.session_state.form_v += 1  # Incrementa para resetar todos os keys
+                        st.session_state.form_v += 1
                         st.rerun()
                     else:
                         st.error("Preencha todos!")
@@ -666,7 +644,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
             )
             
             if col2.button("🔄 Desarquivar", use_container_width=True, type="secondary"):
-                # Desarchiva
                 supabase().table(TABELA_PRAZOS).update({"arquivado": False}).eq("id", id_des).execute()
                 carregar_prazos.clear()
                 st.success("✅ Prazo restaurado!")
