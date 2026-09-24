@@ -1007,7 +1007,7 @@ def main() -> None:
         df_export = gerar_csv_pauta(prazos_ativos)
         
         if not df_export.empty:
-            csv = df_export.to_csv(index=False, encoding='utf-8-sig')
+            csv = df_export.to_csv(index=False, encoding='utf-8-sig', sep=';')
             st.download_button(
                 label="📊 Baixar Pauta em CSV",
                 data=csv,
