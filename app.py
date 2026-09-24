@@ -2,12 +2,12 @@
 Controladoria Jurídica — Dr. Gilnei Coelho Pontes & Dra. Jéssica
 Stack: Streamlit + Supabase
 
-Estrutura:
-  1. Configuração e constantes
-  2. Acesso (senha opcional via st.secrets)
-  3. Camada de dados (Supabase: prazos + processos)
-  4. Regras de negócio (urgência, dias úteis, validação)
-  5. Interface (3 abas na sidebar + 3 abas no conteúdo principal)
+NOVA ESTRUTURA DA SIDEBAR:
+1. Nº Processo (autocomplete) → puxa Cliente + Parte Adversária
+2. Cliente e Parte Adversária (preenchidas automaticamente)
+3. Tipo de Prazo (Prazo Processual, Data Fatal, Tarefa Operacional, Admin)
+4. Título (seleção de atalhos jurídicos)
+5. Responsável, Datas, Prioridade, Observações
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ TABELA_PRAZOS = "prazos"
 TABELA_PROCESSOS = "processos"
 
 RESPONSAVEIS = ["Dr. Gilnei", "Dra. Jéssica"]
-TIPOS = ["Prazo processual", "Data fatal", "Tarefa operacional"]
+TIPOS = ["Prazo Processual", "Data Fatal", "Tarefa Operacional", "Admin"]
 PRIORIDADES = ["Baixa", "Normal", "Alta"]
 ORDEM_PRIORIDADE = {"Alta": 0, "Normal": 1, "Baixa": 2}
 
@@ -234,56 +234,135 @@ def validar(titulo: str, processo: str, data_fatal, data_interna) -> list[str]:
 # ───────────────────────── 5. SIDEBAR COM 3 ABAS ─────────────────────────
 
 def sidebar_controle_prazos(processos_df: pd.DataFrame) -> None:
-    """Aba 1: Controle de Prazos"""
+    """Aba 1: Controle de Prazos - NOVA ESTRUTURA
+    
+    Ordem:
+    1. Nº Processo (autocomplete)
+    2. Cliente e Parte Adversária (auto-puxadas)
+    3. Tipo de Prazo
+    4. Título (atalhos jurídicos)
+    5. Responsável, Datas, Prioridade, Observações
+    """
     st.subheader("📋 Novo Prazo")
     
     v = st.session_state.form_v
+    
     with st.form(f"cadastro_{v}", border=False):
-        tipo = st.selectbox("Tipo", TIPOS, key=f"tipo_{v}")
-        
-        st.write("**Usar atalho?**")
-        atalhoselecionado = st.selectbox(
-            "Selecione um atalho",
-            options=["-- Nenhum --"] + list(sorted(ATALHOS.keys())),
-            key=f"atalho_{v}",
-        )
-        
-        titulo = st.text_input(
-            "Título *", 
-            value=ATALHOS[atalhoselecionado] if atalhoselecionado != "-- Nenhum --" else "",
-            key=f"titulo_{v}"
-        )
-        
+        # ===== 1. NÚMERO DO PROCESSO (autocomplete) =====
         processos_ativos = processos_df[processos_df["ativo"]]
-        if not processos_ativos.empty:
-            processo_selecionado = st.selectbox(
-                "Processo *",
-                options=processos_ativos["numero"].values,
-                key=f"processo_sel_{v}"
-            )
-            cliente = processos_ativos[processos_ativos["numero"] == processo_selecionado]["cliente"].values[0]
+        processos_lista = list(processos_ativos["numero"].values) if not processos_ativos.empty else []
+        
+        processo_selecionado = st.selectbox(
+            "Nº do Processo *",
+            options=processos_lista,
+            key=f"processo_sel_{v}",
+            help="Selecione o número CNJ do processo"
+        )
+        
+        # ===== 2. CLIENTE E PARTE ADVERSÁRIA (puxadas automaticamente) =====
+        if processo_selecionado and not processos_ativos.empty:
+            info_processo = processos_ativos[processos_ativos["numero"] == processo_selecionado].iloc[0]
+            cliente = info_processo["cliente"]
+            parte_contraria = info_processo["parte_contraria"]
         else:
-            processo_selecionado = ""
             cliente = ""
+            parte_contraria = ""
         
-        responsavel = st.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"resp_{v}")
         c1, c2 = st.columns(2)
-        data_fatal = c1.date_input("Data fatal *", value=None, format="DD/MM/YYYY", key=f"fatal_{v}")
-        data_interna = c2.date_input("Prazo interno", value=None, format="DD/MM/YYYY", key=f"int_{v}")
+        c1.text_input(
+            "Cliente",
+            value=cliente,
+            disabled=True,
+            key=f"cliente_readonly_{v}",
+            help="Preenchido automaticamente"
+        )
+        c2.text_input(
+            "Parte Adversária",
+            value=parte_contraria,
+            disabled=True,
+            key=f"adversaria_readonly_{v}",
+            help="Preenchido automaticamente"
+        )
         
-        prioridade = st.select_slider("Prioridade", PRIORIDADES, value="Normal", key=f"prio_{v}")
-        descricao = st.text_area("Observações", key=f"desc_{v}")
-        enviar = st.form_submit_button("Salvar prazo", type="primary")
+        # ===== 3. TIPO DE PRAZO =====
+        tipo = st.selectbox(
+            "Tipo de Prazo *",
+            TIPOS,
+            key=f"tipo_{v}",
+            help="Escolha o tipo de prazo"
+        )
+        
+        # ===== 4. TÍTULO (baseado em ATALHOS) =====
+        st.write("**Título (Atalhos Jurídicos)**")
+        titulo_atalho = st.selectbox(
+            "Selecione o título/atalho *",
+            options=list(sorted(ATALHOS.keys())),
+            format_func=lambda x: f"{x} — {ATALHOS[x]}",
+            key=f"titulo_atalho_{v}",
+            help="Clique para ver todas as opções disponíveis"
+        )
+        
+        titulo = ATALHOS[titulo_atalho]
+        st.caption(f"📌 **{titulo}**")
+        
+        # ===== 5. RESPONSÁVEL =====
+        responsavel = st.radio(
+            "Responsável *",
+            RESPONSAVEIS,
+            horizontal=True,
+            key=f"resp_{v}"
+        )
+        
+        # ===== 6. DATAS =====
+        c1, c2 = st.columns(2)
+        data_fatal = c1.date_input(
+            "Data Fatal *",
+            value=None,
+            format="DD/MM/YYYY",
+            key=f"fatal_{v}"
+        )
+        data_interna = c2.date_input(
+            "Prazo Interno",
+            value=None,
+            format="DD/MM/YYYY",
+            key=f"int_{v}"
+        )
+        
+        # ===== 7. PRIORIDADE =====
+        prioridade = st.select_slider(
+            "Prioridade",
+            PRIORIDADES,
+            value="Normal",
+            key=f"prio_{v}"
+        )
+        
+        # ===== 8. OBSERVAÇÕES =====
+        descricao = st.text_area(
+            "Observações",
+            key=f"desc_{v}",
+            height=80
+        )
+        
+        enviar = st.form_submit_button("💾 Salvar Prazo", type="primary")
 
     if not enviar:
         return
 
-    erros = validar(titulo, processo_selecionado, data_fatal, data_interna)
+    # Validações
+    erros = []
+    if not processo_selecionado:
+        erros.append("Selecione o número do processo.")
+    if not data_fatal:
+        erros.append("Informe a data fatal.")
+    if data_fatal and data_interna and data_interna > data_fatal:
+        erros.append("O prazo interno precisa ser igual ou anterior à data fatal.")
+    
     if erros:
         for e in erros:
             st.error(e)
         return
 
+    # Salvar registro
     registro = {
         "tipo": tipo,
         "titulo": titulo.strip(),
@@ -298,11 +377,11 @@ def sidebar_controle_prazos(processos_df: pd.DataFrame) -> None:
     }
     try:
         inserir_prazo(registro)
-        st.session_state.aviso = f"Prazo salvo: {titulo}"
+        st.session_state.aviso = f"✅ Prazo salvo: {titulo}"
         st.session_state.form_v += 1
         st.rerun()
     except Exception as exc:
-        st.error(f"Erro: {exc}")
+        st.error(f"❌ Erro ao salvar: {exc}")
 
 
 def sidebar_cadastro_processo() -> None:
@@ -330,7 +409,7 @@ def sidebar_cadastro_processo() -> None:
             "Descrição / Observações",
             key=f"proc_desc_{v}"
         )
-        enviar = st.form_submit_button("Salvar Processo", type="primary")
+        enviar = st.form_submit_button("💾 Salvar Processo", type="primary")
 
     if not enviar:
         return
@@ -359,41 +438,56 @@ def sidebar_cadastro_processo() -> None:
     }
     try:
         inserir_processo(registro)
-        st.session_state.aviso = f"Processo salvo: {numero}"
+        st.session_state.aviso = f"✅ Processo salvo: {numero}"
         st.session_state.form_v += 1
         st.rerun()
     except Exception as exc:
-        st.error(f"Erro: {exc}")
+        st.error(f"❌ Erro ao salvar: {exc}")
 
 
 def sidebar_dashboard(df_prazos: pd.DataFrame) -> None:
-    """Aba 3: Dashboard Rápido"""
+    """Aba 3: Dashboard - Visão Geral Rápida"""
     st.subheader("📊 Dashboard - Visão Geral")
+    
+    if df_prazos.empty:
+        st.info("Nenhum prazo cadastrado.")
+        return
     
     df = enriquecer(df_prazos)
     pendentes = df[~df["concluido"] & ~df["arquivado"]]
     
-    st.write("**Hoje:**")
+    if pendentes.empty:
+        st.success("✅ Nenhum prazo pendente!")
+        return
+    
+    # Hoje
+    st.write("**📅 HOJE**")
     vence_hoje = pendentes[pendentes["faixa"] == "Hoje"]
-    st.metric("⏰ Vencem HOJE", len(vence_hoje))
+    col1, col2 = st.columns([1, 2])
+    col1.metric("⏰ Vencem", len(vence_hoje))
     
     if not vence_hoje.empty:
-        st.write("_Prazos que vencem hoje:_")
-        for idx, row in vence_hoje.iterrows():
-            st.write(f"🔴 **{row['titulo']}** ({row['responsavel']})")
+        with col2:
+            st.write("_Prazos que vencem hoje:_")
+            for idx, row in vence_hoje.iterrows():
+                st.write(f"🔴 **{row['titulo']}** ({row['responsavel']})")
     
     st.divider()
     
-    st.write("**Próximos 7 dias:**")
+    # Próximos 7 dias
+    st.write("**📆 PRÓXIMOS 7 DIAS**")
     vence_7 = pendentes[pendentes["faixa"].isin(["Até 3 dias", "Até 7 dias"])]
-    st.metric("📅 Próximos 7 dias", len(vence_7))
+    st.metric("Próximos 7 dias", len(vence_7))
     
     st.divider()
     
-    st.write("**Geral:**")
+    # Geral
+    st.write("**📊 GERAL**")
+    col1, col2, col3 = st.columns(3)
     vencidos = pendentes[pendentes["faixa"] == "Vencido"]
-    st.metric("🔴 Vencidos", len(vencidos))
-    st.metric("📋 Pendentes", len(pendentes))
+    col1.metric("🔴 Vencidos", len(vencidos))
+    col2.metric("📋 Pendentes", len(pendentes))
+    col3.metric("✅ Concluídos", len(df[df["concluido"] & ~df["arquivado"]]))
 
 
 # ───────────────────────── 6. INTERFACE PRINCIPAL ─────────────────────────
@@ -440,12 +534,12 @@ def painel_metricas(df: pd.DataFrame, resp: list[str]) -> None:
     pend = df[~df["concluido"] & ~df["arquivado"] & df["responsavel"].isin(resp)]
     vencidos = int((pend["faixa"] == "Vencido").sum())
     c = st.columns(4)
-    c[0].metric("Vencidos", vencidos)
-    c[1].metric("Vencem hoje", int((pend["faixa"] == "Hoje").sum()))
-    c[2].metric("Próximos 7 dias", int(pend["faixa"].isin(["Até 3 dias", "Até 7 dias"]).sum()))
-    c[3].metric("Pendentes", len(pend))
+    c[0].metric("🔴 Vencidos", vencidos)
+    c[1].metric("🟠 Hoje", int((pend["faixa"] == "Hoje").sum()))
+    c[2].metric("🔵 Próx. 7d", int(pend["faixa"].isin(["Até 3 dias", "Até 7 dias"]).sum()))
+    c[3].metric("📋 Pendentes", len(pend))
     if vencidos:
-        st.error(f"{vencidos} prazo(s) vencido(s) sem conclusão. Filtre por urgência para revisar.")
+        st.error(f"⚠️ {vencidos} prazo(s) vencido(s)! Ação necessária.")
 
 
 def tabela_status(df: pd.DataFrame) -> None:
@@ -469,17 +563,17 @@ def tabela_status(df: pd.DataFrame) -> None:
         hide_index=True,
         disabled=["situacao", "dias_uteis", "tipo", "responsavel"],
         column_config={
-            "concluido": st.column_config.CheckboxColumn("Feito", help="Marque para concluir"),
+            "concluido": st.column_config.CheckboxColumn("✅", help="Marque para concluir"),
             "situacao": "Situação",
             "titulo": st.column_config.TextColumn("Título", width="medium"),
             "processo": st.column_config.TextColumn("Processo", width="small"),
             "cliente": st.column_config.TextColumn("Cliente", width="small"),
-            "data_fatal": st.column_config.DateColumn("Data fatal", format="DD/MM/YYYY"),
-            "data_interna": st.column_config.DateColumn("Prazo interno", format="DD/MM/YYYY"),
-            "dias_uteis": st.column_config.NumberColumn("Dias úteis"),
+            "data_fatal": st.column_config.DateColumn("Data Fatal", format="DD/MM/YYYY"),
+            "data_interna": st.column_config.DateColumn("Prazo Interno", format="DD/MM/YYYY"),
+            "dias_uteis": st.column_config.NumberColumn("D.Úteis"),
             "tipo": "Tipo",
-            "responsavel": "Responsável",
-            "prioridade": st.column_config.SelectboxColumn("Prioridade", options=PRIORIDADES),
+            "responsavel": "Resp.",
+            "prioridade": st.column_config.SelectboxColumn("Prio.", options=PRIORIDADES),
             "descricao": st.column_config.TextColumn("Observações", width="large"),
         },
     )
@@ -514,15 +608,15 @@ def tabela_status(df: pd.DataFrame) -> None:
 
     if mudancas:
         c1, c2 = st.columns([3, 1])
-        c1.warning(f"Alterações não salvas: {len(mudancas)} prazo(s) modificado(s).")
-        if c2.button("Salvar tudo", type="primary"):
+        c1.warning(f"⚠️ Alterações não salvas: {len(mudancas)} prazo(s).")
+        if c2.button("💾 Salvar tudo", type="primary"):
             try:
                 atualizar_campos(mudancas)
-                st.session_state.aviso = "Prazos salvos!"
+                st.session_state.aviso = "✅ Prazos salvos!"
                 st.session_state.editor_v += 1
                 st.rerun()
             except Exception as exc:
-                st.error(f"Erro: {exc}")
+                st.error(f"❌ Erro: {exc}")
                 return
 
     st.divider()
@@ -533,7 +627,7 @@ def tabela_status(df: pd.DataFrame) -> None:
     id_selecionado = col1.selectbox(
         "Selecione o prazo para arquivar",
         options=df["id"].values,
-        format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} | Proc: {df[df['id'] == x]['processo'].values[0] or '-'} | Data: {df[df['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
+        format_func=lambda x: f"{df[df['id'] == x]['titulo'].values[0]} | {df[df['id'] == x]['processo'].values[0] or '-'} | {df[df['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
         key="select_arquivar_prazo"
     )
     
@@ -546,12 +640,12 @@ def tabela_status(df: pd.DataFrame) -> None:
         if st.session_state.id_arquivar_selecionado:
             try:
                 arquivar_prazo(st.session_state.id_arquivar_selecionado)
-                st.session_state.aviso = "Prazo arquivado!"
+                st.session_state.aviso = "✅ Prazo arquivado!"
                 st.session_state.editor_v += 1
                 st.session_state.id_arquivar_selecionado = None
                 st.rerun()
             except Exception as exc:
-                st.error(f"Erro: {exc}")
+                st.error(f"❌ Erro: {exc}")
 
 
 def relatorio_arquivados(df: pd.DataFrame) -> None:
@@ -591,18 +685,18 @@ def aba_desarquivar(df: pd.DataFrame) -> None:
     id_desarquivar = col1.selectbox(
         "Selecione o prazo para desarquivar",
         options=arquivados["id"].values,
-        format_func=lambda x: f"{arquivados[arquivados['id'] == x]['titulo'].values[0]} | Proc: {arquivados[arquivados['id'] == x]['processo'].values[0] or '-'} | Data: {arquivados[arquivados['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
+        format_func=lambda x: f"{arquivados[arquivados['id'] == x]['titulo'].values[0]} | {arquivados[arquivados['id'] == x]['processo'].values[0] or '-'} | {arquivados[arquivados['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
         key="select_desarquivar"
     )
     
     if col2.button("🔄 Desarquivar", type="secondary", key="btn_desarquivar"):
         try:
             desarquivar_prazo(id_desarquivar)
-            st.session_state.aviso = "Prazo desarquivado!"
+            st.session_state.aviso = "✅ Prazo desarquivado!"
             st.session_state.editor_v += 1
             st.rerun()
         except Exception as exc:
-            st.error(f"Erro: {exc}")
+            st.error(f"❌ Erro: {exc}")
 
 
 def main() -> None:
@@ -614,7 +708,7 @@ def main() -> None:
         df_prazos = carregar_prazos()
         df_processos = carregar_processos()
     except Exception as exc:
-        st.error(f"Erro ao conectar: {exc}")
+        st.error(f"❌ Erro ao conectar ao Supabase: {exc}")
         st.stop()
 
     # ===== SIDEBAR COM 3 ABAS =====
@@ -622,7 +716,7 @@ def main() -> None:
         st.title("⚖️ Controladoria")
         
         aba = st.radio(
-            "Escolha uma opção:",
+            "📌 Escolha uma opção:",
             ["Controle de Prazos", "Cadastro de Novo Processo", "Dashboard"],
             key="aba_sidebar"
         )
@@ -644,14 +738,14 @@ def main() -> None:
 
     # ===== CONTEÚDO PRINCIPAL =====
     st.title("⚖️ Controladoria Jurídica")
-    st.caption(f"Hoje é {hoje():%d/%m/%Y} (horário de Brasília)")
+    st.caption(f"📅 Hoje é {hoje():%d/%m/%Y} (horário de Brasília)")
 
     if st.session_state.aviso:
         st.toast(st.session_state.aviso, icon="✅")
         st.session_state.aviso = None
 
     if df_prazos.empty:
-        st.info("Nenhum prazo cadastrado ainda.")
+        st.info("Nenhum prazo cadastrado ainda. Use a sidebar para adicionar!")
         st.stop()
 
     df_prazos = enriquecer(df_prazos)
@@ -660,12 +754,12 @@ def main() -> None:
     
     with tab1:
         topo = st.container()
-        with st.expander("Filtros", expanded=True):
+        with st.expander("🔍 Filtros", expanded=True):
             filtrado, resp = aplicar_filtros(df_prazos)
         with topo:
             painel_metricas(df_prazos, resp)
 
-        st.subheader(f"Prazos e tarefas ({len(filtrado)})")
+        st.subheader(f"📋 Prazos e tarefas ({len(filtrado)})")
         tabela_status(filtrado)
     
     with tab2:
