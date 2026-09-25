@@ -1,9 +1,11 @@
 """
-Controladoria Jurídica - VERSÃO FINAL COM 4 ABAS
+Controladoria Jurídica - SEMANA 1 COMPLETA
+PASSOS 2, 3, 4, 5, 6 - IMPLEMENTADOS
 """
 # ============================================
 # CONTROLADORIA JURÍDICA - SISTEMA DE PRAZOS
-# Versão: 2.1 - Atualizado: 24/09/2026
+# Versão: 3.0 - SEMANA 1 COMPLETA - 25/09/2026
+# PASSOS IMPLEMENTADOS: 2, 3, 4, 5, 6
 # ============================================
 
 from __future__ import annotations
@@ -140,24 +142,24 @@ def init_estado() -> None:
     st.session_state.setdefault("id_modal", None)
     st.session_state.setdefault("modo_modal", None)
     st.session_state.setdefault("sel_prazo_idx", 0)
-    st.session_state.setdefault("aba_selecionada", "Novo Prazo")  # Controlar qual aba abrir
-    # Note: Audiência modal states are now scoped to each prefix and initialized in tabela_audiencias()
+    st.session_state.setdefault("aba_selecionada", "Novo Prazo")
+    # ===== PASSO 4 E 5: FILTROS POR RESPONSÁVEL =====
+    st.session_state.setdefault("filtro_tab1", "Todos")
+    st.session_state.setdefault("filtro_tab2", "Todos")
+    st.session_state.setdefault("filtro_gerenciar", "Todos")
 
 def acesso_liberado() -> bool:
     senha_correta = st.secrets.get("APP_PASSWORD")
 
-    # ===== AVISAR SE SENHA NÃO ESTÁ CONFIGURADA =====
     if not senha_correta:
         st.title("⚖️ Controladoria Jurídica")
         st.error("🔴 ERRO: APP_PASSWORD não configurada em .streamlit/secrets.toml")
         st.info("Configure a senha no arquivo secrets.toml e redeploy o app.")
         st.stop()
 
-    # ===== SE JÁ AUTENTICADO, LIBERA =====
     if st.session_state.get("autenticado"):
         return True
 
-    # ===== TELA DE LOGIN =====
     st.title("⚖️ Controladoria Jurídica")
     with st.form("login"):
         senha = st.text_input("Senha de acesso", type="password")
@@ -257,17 +259,12 @@ def enriquecer(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def gerar_csv_pauta(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
-    """Gera CSV com pauta de prazos e descrição dos processos"""
     if df_prazos.empty:
         return pd.DataFrame()
 
-    # Preparar dados
     df_export = df_prazos[["cliente", "processo", "titulo", "data_fatal"]].copy()
-
-    # Extrair primeiro nome do cliente
     df_export["cliente_primeiro"] = df_export["cliente"].apply(lambda x: x.split()[0] if pd.notna(x) else "")
 
-    # Se temos dados de processos, fazer merge para trazer descrição
     if df_processos is not None:
         processos_desc = df_processos[["numero", "descricao"]].copy()
         df_export = df_export.merge(processos_desc, left_on="processo", right_on="numero", how="left")
@@ -275,16 +272,13 @@ def gerar_csv_pauta(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
     else:
         df_export["descricao"] = "-"
 
-    # Reorganizar colunas na ordem desejada
     df_export = df_export[["cliente_primeiro", "processo", "titulo", "data_fatal", "descricao"]]
 
-    # Converter data_fatal para string com formato DD/MM/YYYY
     try:
         df_export["data_fatal"] = pd.to_datetime(df_export["data_fatal"]).dt.strftime("%d/%m/%Y")
     except:
         df_export["data_fatal"] = df_export["data_fatal"].astype(str)
 
-    # Renomear colunas
     df_export = df_export.rename(columns={
         "cliente_primeiro": "Cliente",
         "processo": "Nº Processo",
@@ -296,7 +290,6 @@ def gerar_csv_pauta(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
     return df_export
 
 def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
-    """Gera Excel bonito com pauta de prazos formatado"""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     import tempfile
@@ -304,13 +297,9 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
     if df_prazos.empty:
         return None
 
-    # Preparar dados
     df_export = df_prazos[["cliente", "processo", "titulo", "data_fatal"]].copy()
-
-    # Extrair primeiro nome do cliente
     df_export["cliente"] = df_export["cliente"].apply(lambda x: x.split()[0] if pd.notna(x) else "")
 
-    # Se temos dados de processos, fazer merge para trazer descrição
     if df_processos is not None:
         processos_desc = df_processos[["numero", "descricao"]].copy()
         df_export = df_export.merge(processos_desc, left_on="processo", right_on="numero", how="left")
@@ -318,21 +307,17 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
     else:
         df_export["descricao"] = "-"
 
-    # Converter data_fatal para string com formato DD/MM/YYYY
     try:
         df_export["data_fatal"] = pd.to_datetime(df_export["data_fatal"]).dt.strftime("%d/%m/%Y")
     except:
         df_export["data_fatal"] = df_export["data_fatal"].astype(str)
 
-    # Reordenar colunas
     df_export = df_export[["cliente", "processo", "titulo", "data_fatal", "descricao"]]
 
-    # Criar workbook
     wb = Workbook()
     ws = wb.active
     ws.title = "Pauta"
 
-    # Definir estilos
     header_fill = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=12)
     border = Border(
@@ -344,7 +329,6 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
     center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-    # Cabeçalhos
     headers = ["Cliente", "Nº Processo", "Título", "Data Fatal", "Descrição"]
     for col_num, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_num)
@@ -354,7 +338,6 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
         cell.alignment = center_align
         cell.border = border
 
-    # Dados
     for row_num, (idx, row) in enumerate(df_export.iterrows(), 2):
         ws.cell(row=row_num, column=1).value = row["cliente"]
         ws.cell(row=row_num, column=1).alignment = left_align
@@ -376,20 +359,17 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
         ws.cell(row=row_num, column=5).alignment = left_align
         ws.cell(row=row_num, column=5).border = border
 
-    # Ajustar largura das colunas
     ws.column_dimensions['A'].width = 15
     ws.column_dimensions['B'].width = 30
     ws.column_dimensions['C'].width = 25
     ws.column_dimensions['D'].width = 15
     ws.column_dimensions['E'].width = 35
 
-    # Salvar em arquivo temporário
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         wb.save(tmp.name)
         return tmp.name
 
 def gerar_audiencias_excel(df_audiencias: pd.DataFrame):
-    """Gera Excel bonito com agenda de audiências formatado"""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     import tempfile
@@ -397,10 +377,8 @@ def gerar_audiencias_excel(df_audiencias: pd.DataFrame):
     if df_audiencias.empty:
         return None
 
-    # Preparar dados
     df_export = df_audiencias[["processo", "autor", "reu", "sala", "data_audiencia", "hora_inicio", "hora_termino", "formato", "tipo", "status"]].copy()
 
-    # Converter datas e horas para string
     try:
         df_export["data_audiencia"] = pd.to_datetime(df_export["data_audiencia"]).dt.strftime("%d/%m/%Y")
     except:
@@ -409,12 +387,10 @@ def gerar_audiencias_excel(df_audiencias: pd.DataFrame):
     df_export["hora_inicio"] = df_export["hora_inicio"].astype(str)
     df_export["hora_termino"] = df_export["hora_termino"].astype(str)
 
-    # Criar workbook
     wb = Workbook()
     ws = wb.active
     ws.title = "Audiências"
 
-    # Definir estilos
     header_fill = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=12)
     border = Border(
@@ -426,7 +402,6 @@ def gerar_audiencias_excel(df_audiencias: pd.DataFrame):
     center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-    # Cabeçalhos
     headers = ["Nº Processo", "Autor", "Réu", "Sala", "Data", "Início", "Término", "Formato", "Tipo", "Status"]
     for col_num, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_num)
@@ -436,7 +411,6 @@ def gerar_audiencias_excel(df_audiencias: pd.DataFrame):
         cell.alignment = center_align
         cell.border = border
 
-    # Dados
     for row_num, (idx, row) in enumerate(df_export.iterrows(), 2):
         ws.cell(row=row_num, column=1).value = row["processo"]
         ws.cell(row=row_num, column=1).alignment = left_align
@@ -478,7 +452,6 @@ def gerar_audiencias_excel(df_audiencias: pd.DataFrame):
         ws.cell(row=row_num, column=10).alignment = center_align
         ws.cell(row=row_num, column=10).border = border
 
-    # Ajustar largura das colunas
     ws.column_dimensions['A'].width = 20
     ws.column_dimensions['B'].width = 20
     ws.column_dimensions['C'].width = 20
@@ -490,19 +463,21 @@ def gerar_audiencias_excel(df_audiencias: pd.DataFrame):
     ws.column_dimensions['I'].width = 15
     ws.column_dimensions['J'].width = 15
 
-    # Salvar em arquivo temporário
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         wb.save(tmp.name)
         return tmp.name
 
 def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: str = "main", filtro_responsavel: str = None) -> None:
+    """
+    PASSO 2: Coluna "Dias Úteis" ✅
+    PASSO 3: Filtro por responsável ✅
+    """
     if df.empty:
         st.info("Nenhum registro.")
         return
 
     df_vis = df.copy()
 
-    # ===== INICIALIZAR ESTADO MODAL SCOPED AO PREFIX =====
     modal_key_aberta = f"prazo_modal_{prefix}_aberta"
     modal_key_id = f"prazo_modal_{prefix}_id"
     modal_key_modo = f"prazo_modal_{prefix}_modo"
@@ -510,26 +485,21 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
     st.session_state.setdefault(modal_key_aberta, False)
     st.session_state.setdefault(modal_key_id, None)
     st.session_state.setdefault(modal_key_modo, None)
-    # ===== FILTRO POR RESPONSÁVEL =====
+
+    # ===== PASSO 3: FILTRO POR RESPONSÁVEL =====
     if filtro_responsavel and filtro_responsavel != "Todos":
         df_vis = df_vis[df_vis["responsavel"] == filtro_responsavel]
 
     if df_vis.empty:
         st.info(f"Nenhum registro para {filtro_responsavel if filtro_responsavel else 'este filtro'}.")
         return
-    # ===== EXTRAIR PRIMEIRO NOME DO CLIENTE =====
+
     df_vis["cliente_primeiro"] = df_vis["cliente"].apply(lambda x: x.split()[0] if x else "")
 
-    # ===== ADICIONAR PARTE CONTRÁRIA (SE HOUVER PROCESSOS) =====
     if processos_df is not None:
-        # Remover duplicatas do processos antes de fazer merge
         processos_parte = processos_df[["numero", "parte_contraria"]].drop_duplicates(subset=["numero"], keep="first").copy()
         df_vis = df_vis.merge(processos_parte, left_on="processo", right_on="numero", how="left")
-
-        # Extrair primeiro nome da parte contrária
         df_vis["parte_primeiro"] = df_vis["parte_contraria"].apply(lambda x: x.split()[0] if pd.notna(x) and x else "")
-
-        # Concatenar cliente + parte
         df_vis["cliente_parte"] = df_vis.apply(
             lambda row: f"{row['cliente_primeiro']} / {row['parte_primeiro']}" if row['parte_primeiro'] else row['cliente_primeiro'],
             axis=1
@@ -540,8 +510,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
     df_vis["data_interna_fmt"] = df_vis["data_interna"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
     df_vis["data_fatal_fmt"] = df_vis["data_fatal"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
 
-    # ===== REMOVER D.ÚTEIS, TIPO E RESPONSÁVEL =====
-    # ===== REMOVER DUPLICATAS DE EXIBIÇÃO =====
+    # ===== PASSO 2: COLUNA DIAS ÚTEIS =====
     colunas_vis = [
         "id", "situacao", "titulo", "processo", "cliente_parte",
         "data_interna_fmt", "data_fatal_fmt", "dias_uteis",
@@ -577,20 +546,35 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
         st.info("Nenhum prazo ativo.")
         return
 
+    # ===== PASSO 3: FILTRO POR RESPONSÁVEL NA SEÇÃO GERENCIAR =====
+    filtro_gerenciar_key = f"filtro_gerenciar_{prefix}"
+    st.session_state.setdefault(filtro_gerenciar_key, "Todos")
+
+    st.write("**Filtrar por responsável:**")
+    filtro_resp_gerenciar = st.selectbox(
+        "Selecione um responsável",
+        ["Todos"] + RESPONSAVEIS,
+        key=f"select_filtro_gerenciar_{prefix}",
+        label_visibility="collapsed"
+    )
+    st.session_state[filtro_gerenciar_key] = filtro_resp_gerenciar
+
+    df_ativos_filtrado = df_ativos.copy()
+    if filtro_resp_gerenciar and filtro_resp_gerenciar != "Todos":
+        df_ativos_filtrado = df_ativos_filtrado[df_ativos_filtrado["responsavel"] == filtro_resp_gerenciar]
+
     col1, col2 = st.columns([2, 1])
 
-    # ===== CRIAR OPÇÕES SIMPLES =====
-    if df_ativos.empty:
-        st.info("Nenhum prazo ativo.")
-        return
-
-    # Criar lista de strings para exibir
     opcoes_display = ["📌 Selecione um prazo..."]
     opcoes_ids = [None]
 
-    for _, row in df_ativos.iterrows():
+    for _, row in df_ativos_filtrado.iterrows():
         opcoes_display.append(f"{row['cliente']} | {row['titulo']} | {row['data_fatal'].strftime('%d/%m/%Y')}")
         opcoes_ids.append(row['id'])
+
+    if len(opcoes_display) == 1:
+        st.info(f"Nenhum prazo para {filtro_resp_gerenciar if filtro_resp_gerenciar != 'Todos' else 'exibir'}.")
+        return
 
     id_sel_idx = col1.selectbox(
         "Clique no prazo para ver detalhes:",
@@ -600,7 +584,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
     )
 
     if col2.button("📂 Ver Detalhes", use_container_width=True, type="primary", key=f"btn_det_prazo_{prefix}"):
-        if st.session_state.get(f"sel_prazo_idx_{prefix}", 0) > 0:  # Índice 0 é a opção vazia
+        if st.session_state.get(f"sel_prazo_idx_{prefix}", 0) > 0:
             id_sel = opcoes_ids[st.session_state.get(f"sel_prazo_idx_{prefix}", 0)]
             st.session_state[modal_key_id] = id_sel
             st.session_state[modal_key_modo] = "detalhes"
@@ -616,11 +600,9 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
         st.divider()
         st.subheader(f"⚙️ {prazo['titulo']}")
 
-        # ===== MODAL DE DETALHES DO PRAZO =====
         if st.session_state.get(modal_key_modo) == "detalhes":
             st.info("📋 Detalhes Completos do Prazo")
 
-            # Buscar parte contrária e descrição do processo
             parte_contraria = ""
             descricao_processo = ""
             if processos_df is not None and prazo['processo']:
@@ -649,7 +631,6 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
 
             st.write(f"**Tipo:** {prazo['tipo']}")
 
-            # ===== DESCRIÇÃO/OBSERVAÇÕES EXISTENTES =====
             if prazo['descricao']:
                 st.divider()
                 st.subheader("📌 Observações Anteriores")
@@ -708,7 +689,6 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
 
         elif st.session_state.get(modal_key_modo) == "editar":
             with st.form(f"form_{prefix}_{id_prazo}"):
-                # ===== EDITAR TODOS OS CAMPOS =====
                 novo_titulo = st.text_input("Título", value=prazo["titulo"], key=f"edit_titulo_{prefix}_{id_prazo}")
 
                 col1, col2 = st.columns(2)
@@ -723,7 +703,6 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
 
                 nova_descricao = st.text_area("Observações", value=prazo["descricao"] or "", key=f"edit_desc_{prefix}_{id_prazo}")
 
-                # ===== PREVIEW DE SITUAÇÃO (TEMPO REAL) =====
                 if nova_fatal:
                     dias = (np.datetime64(nova_fatal) - np.datetime64(hoje())).astype(int)
                     if dias < 0:
@@ -770,7 +749,6 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                     carregar_processos.clear()
                     st.session_state.aviso = "✅ Arquivado!"
                     st.session_state[modal_key_aberta] = False
-
                     st.session_state.editor_v += 1
                     st.rerun()
             with c2:
@@ -794,7 +772,6 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                 c1, c2 = st.columns(2)
                 with c1:
                     if st.form_submit_button("✅ Concluir com Anotações", type="primary", use_container_width=True):
-                        # Concatena anotações com observações antigas (se houver)
                         obs_antiga = prazo['descricao'] or ""
                         if obs_antiga:
                             obs_nova = f"{obs_antiga}\n\n✅ CONCLUÍDO: {anotacoes}"
@@ -808,7 +785,6 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                         }})
                         st.session_state.aviso = "✅ Prazo concluído com anotações!"
                         st.session_state[modal_key_aberta] = False
-
                         st.session_state.editor_v += 1
                         st.rerun()
 
@@ -830,7 +806,6 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                     carregar_processos.clear()
                     st.session_state.aviso = "✅ Prazo excluído!"
                     st.session_state[modal_key_aberta] = False
-
                     st.session_state.editor_v += 1
                     st.rerun()
             with c2:
@@ -839,6 +814,9 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                     st.rerun()
 
 def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
+    """
+    PASSO 6: Impedir duplicação de prazos ✅
+    """
     st.subheader("📋 Novo Prazo")
     v = st.session_state.form_v
 
@@ -889,7 +867,6 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
 
         st.success(f"✅ Processo selecionado: **{processo}**")
 
-    # ===== BUSCA DE ATALHOS (FORA DO FORM - TEMPO REAL) =====
     st.write("**Título ***")
     busca_titulo = st.text_input(
         "Digite para filtrar atalhos jurídicos",
@@ -919,7 +896,6 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
     if titulo:
         st.caption(f"📌 Selecionado: **{titulo}**")
 
-    # ===== FORMULÁRIO (DENTRO DO FORM) =====
     with st.form(f"cad_{v}"):
         tipo = st.selectbox("Tipo *", TIPOS, index=0, key=f"t_{v}")
 
@@ -937,36 +913,44 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
             elif data_interna and data_interna > data_fatal:
                 st.error("Prazo interno deve ser ≤ data fatal!")
             else:
-                inserir_prazo({
-                    "tipo": tipo,
-                    "titulo": titulo,
-                    "processo": processo,
-                    "cliente": cliente,
-                    "responsavel": responsavel,
-                    "data_fatal": data_fatal.isoformat(),
-                    "data_interna": data_interna.isoformat() if data_interna else None,
-                    "prioridade": prioridade,
-                    "descricao": st.session_state.get(f"d_{v}") or None,
-                    "arquivado": False,
-                })
-                # ===== LIMPAR FORMULÁRIO =====
-                st.session_state.form_v += 1
-                st.session_state.aviso = "✅ Prazo salvo com sucesso!"
-                st.rerun()
+                # ===== PASSO 6: VERIFICAR DUPLICAÇÃO =====
+                df_prazos = carregar_prazos()
+                prazo_existe = df_prazos[
+                    (df_prazos["processo"] == processo) &
+                    (df_prazos["titulo"] == titulo) &
+                    (~df_prazos["concluido"]) &
+                    (~df_prazos["arquivado"])
+                ]
+
+                if not prazo_existe.empty:
+                    data_venc = prazo_existe.iloc[0]["data_fatal"].strftime("%d/%m/%Y")
+                    st.error(f"⚠️ Este prazo já existe! Vencimento: {data_venc}")
+                else:
+                    inserir_prazo({
+                        "tipo": tipo,
+                        "titulo": titulo,
+                        "processo": processo,
+                        "cliente": cliente,
+                        "responsavel": responsavel,
+                        "data_fatal": data_fatal.isoformat(),
+                        "data_interna": data_interna.isoformat() if data_interna else None,
+                        "prioridade": prioridade,
+                        "descricao": st.session_state.get(f"d_{v}") or None,
+                        "arquivado": False,
+                    })
+                    st.session_state.form_v += 1
+                    st.session_state.aviso = "✅ Prazo salvo com sucesso!"
+                    st.rerun()
 
 def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_processos: pd.DataFrame) -> None:
-    """Dashboard interativo com métricas clicáveis"""
     st.markdown("# 📊 DASHBOARD CONTROLADORIA")
     st.divider()
 
-    # ===== INICIALIZAR ESTADO =====
     st.session_state.setdefault("dashboard_filtro", None)
 
-    # ===== ENRIQUECER DADOS =====
     if not df_prazos.empty:
         df_prazos = enriquecer(df_prazos)
 
-    # ===== CALCULAR MÉTRICAS PRAZOS =====
     pend = df_prazos[~df_prazos["concluido"] & ~df_prazos["arquivado"]] if not df_prazos.empty else pd.DataFrame()
     vencidos = pend[pend["faixa"] == "Vencido"] if not pend.empty else pd.DataFrame()
     hoje_prazos = pend[pend["faixa"] == "Hoje"] if not pend.empty else pd.DataFrame()
@@ -975,7 +959,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
     aud_realizadas = df_audiencias[df_audiencias["status"] == "Realizada"] if not df_audiencias.empty else pd.DataFrame()
     aud_canceladas = df_audiencias[df_audiencias["status"] == "Cancelada"] if not df_audiencias.empty else pd.DataFrame()
 
-    # ===== LINHA 1: PRAZOS =====
     st.markdown("## 📋 PRAZOS")
     col1, col2, col3 = st.columns(3, gap="large")
 
@@ -1002,7 +985,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
 
     st.divider()
 
-    # ===== LINHA 2: AUDIÊNCIAS =====
     st.markdown("## 📅 AUDIÊNCIAS")
     col1, col2, col3 = st.columns(3, gap="large")
 
@@ -1029,7 +1011,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
 
     st.divider()
 
-    # ===== EXIBIR DETALHES SELECIONADOS =====
     if st.session_state.dashboard_filtro:
         filtro = st.session_state.dashboard_filtro
 
@@ -1042,7 +1023,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
 
         st.markdown("---")
 
-        # ===== PRAZOS VENCIDOS =====
         if filtro == "vencidos":
             st.subheader("🔴 Prazos Vencidos")
             if vencidos.empty:
@@ -1050,7 +1030,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
             else:
                 tabela_status(vencidos, df_processos, prefix="dash_vencidos")
 
-        # ===== PRAZOS HOJE =====
         elif filtro == "hoje":
             st.subheader("🟠 Prazos de Hoje")
             if hoje_prazos.empty:
@@ -1058,7 +1037,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
             else:
                 tabela_status(hoje_prazos, df_processos, prefix="dash_hoje")
 
-        # ===== PRAZOS PENDENTES =====
         elif filtro == "pendentes":
             st.subheader("📋 Prazos Pendentes")
             if pend.empty:
@@ -1066,7 +1044,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
             else:
                 tabela_status(pend, df_processos, prefix="dash_pendentes")
 
-        # ===== AUDIÊNCIAS AGENDADAS =====
         elif filtro == "agendadas":
             st.subheader("📅 Audiências Agendadas")
             if aud_agendadas.empty:
@@ -1074,7 +1051,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
             else:
                 tabela_audiencias(aud_agendadas, prefix="dash_agendadas")
 
-        # ===== AUDIÊNCIAS REALIZADAS =====
         elif filtro == "realizadas":
             st.subheader("✅ Audiências Realizadas")
             if aud_realizadas.empty:
@@ -1082,7 +1058,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
             else:
                 tabela_audiencias(aud_realizadas, prefix="dash_realizadas")
 
-        # ===== AUDIÊNCIAS CANCELADAS =====
         elif filtro == "canceladas":
             st.subheader("❌ Audiências Canceladas")
             if aud_canceladas.empty:
@@ -1091,7 +1066,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
                 tabela_audiencias(aud_canceladas, prefix="dash_canceladas")
 
 def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
-    """Formulário para nova audiência na barra lateral"""
     st.subheader("📅 Nova Audiência")
     v = st.session_state.form_v
 
@@ -1142,7 +1116,6 @@ def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
 
         st.success(f"✅ Processo selecionado: **{processo}**")
 
-    # ===== FORMULÁRIO =====
     with st.form(f"cad_aud_{v}"):
         col1, col2 = st.columns(2)
         with col1:
@@ -1186,7 +1159,6 @@ def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
                     "observacoes": obs or None,
                     "responsavel": responsavel
                 })
-                # ===== LIMPAR FORMULÁRIO =====
                 st.session_state.form_v += 1
                 st.session_state.aviso = "✅ Audiência salva com sucesso!"
                 st.rerun()
@@ -1204,10 +1176,8 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
         st.info("Nenhum processo ativo.")
         return
 
-    # ===== REMOVER DUPLICATAS =====
     processos_unicos = processos_ativos.drop_duplicates(subset=["numero"], keep="first").sort_values("numero")
 
-    # ===== BARRA DE BUSCA =====
     col1, col2 = st.columns([3, 1])
     with col1:
         busca = st.text_input(
@@ -1217,7 +1187,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
             label_visibility="collapsed"
         )
 
-    # ===== FILTRAR PROCESSOS =====
     if busca:
         processos_filtrados = processos_unicos[
             (processos_unicos["numero"].str.contains(busca, case=False, na=False, regex=False)) |
@@ -1226,7 +1195,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
     else:
         processos_filtrados = processos_unicos
 
-    # ===== RESUMO =====
     with col2:
         st.metric("Resultados", len(processos_filtrados))
 
@@ -1236,7 +1204,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
 
     st.caption(f"Clique para expandir e ver todos os prazos do processo:")
 
-    # ===== EXPANDIR CADA PROCESSO =====
     for idx, proc in processos_filtrados.iterrows():
         todos_prazos = df_prazos[df_prazos["processo"] == proc["numero"]]
         prazos_abertos = todos_prazos[~todos_prazos["concluido"] & ~todos_prazos["arquivado"]]
@@ -1251,7 +1218,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
 
         with st.expander(titulo_expander, expanded=False):
 
-            # ===== INFORMAÇÕES DO PROCESSO (COLAPSÁVEL) =====
             with st.expander("📋 Informações & Edição do Processo", expanded=True):
                 col1, col2 = st.columns(2)
 
@@ -1279,7 +1245,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                             st.success("✅ Processo atualizado!")
                             st.rerun()
 
-            # ===== ABAS DOS PRAZOS =====
             st.divider()
 
             tab_abertos, tab_concluidos, tab_arquivados = st.tabs([
@@ -1288,7 +1253,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                 f"📦 Arquivados ({qtd_arquivados})"
             ])
 
-            # ===== ABA: EM ABERTO =====
             with tab_abertos:
                 if prazos_abertos.empty:
                     st.info("✅ Nenhum prazo em aberto!")
@@ -1298,7 +1262,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                     for p_idx, prazo in prazos_abertos.iterrows():
                         mostra_card_prazo(prazo)
 
-            # ===== ABA: CONCLUÍDOS =====
             with tab_concluidos:
                 if prazos_concluidos.empty:
                     st.info("Nenhum prazo concluído ainda.")
@@ -1308,7 +1271,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                     for p_idx, prazo in prazos_concluidos.iterrows():
                         mostra_card_prazo(prazo)
 
-            # ===== ABA: ARQUIVADOS =====
             with tab_arquivados:
                 if prazos_arquivados.empty:
                     st.info("Nenhum prazo arquivado.")
@@ -1319,46 +1281,38 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                         mostra_card_prazo(prazo)
 
 def mostra_card_prazo(prazo) -> None:
-    """Mostra um card formatado de um prazo"""
     with st.container(border=True):
         col1, col2, col3, col4 = st.columns([0.8, 2, 1.2, 0.8])
 
-        # ===== SITUAÇÃO =====
         with col1:
             st.markdown(f"### {prazo['situacao']}")
 
-        # ===== TÍTULO E RESPONSÁVEL =====
         with col2:
             st.markdown(f"**{prazo['titulo']}**")
             st.caption(f"👤 {prazo['responsavel']}")
 
-        # ===== DATAS =====
         with col3:
             data_interna_str = prazo['data_interna'].strftime("%d/%m") if pd.notna(prazo['data_interna']) else "—"
             data_fatal_str = prazo['data_fatal'].strftime("%d/%m/%Y")
             st.text(f"📌 {data_interna_str}\n🔚 {data_fatal_str}")
 
-        # ===== PRIORIDADE =====
         with col4:
             prioridade_emoji = {"Alta": "🔴", "Normal": "🟡", "Baixa": "🟢"}
             emoji = prioridade_emoji.get(prazo['prioridade'], '⚪')
             st.markdown(f"**{emoji}**\n{prazo['prioridade']}")
 
-        # ===== OBSERVAÇÕES =====
         if prazo['descricao']:
             st.divider()
             st.markdown(f"**📝 Observações:**")
             st.caption(prazo['descricao'])
 
 def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
-    """Exibe tabela de audiências agendadas"""
     if df.empty:
         st.info("Nenhuma audiência cadastrada.")
         return
 
     df_vis = df.copy()
 
-    # ===== INICIALIZAR ESTADO MODAL SCOPED AO PREFIX =====
     modal_key_aberta = f"aud_modal_{prefix}_aberta"
     modal_key_id = f"aud_modal_{prefix}_id"
     modal_key_modo = f"aud_modal_{prefix}_modo"
@@ -1367,12 +1321,10 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
     st.session_state.setdefault(modal_key_id, None)
     st.session_state.setdefault(modal_key_modo, None)
 
-    # ===== FORMATAR DATAS E HORAS =====
     df_vis["data_fmt"] = df_vis["data_audiencia"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
     df_vis["hora_ini_fmt"] = df_vis["hora_inicio"].astype(str)
     df_vis["hora_fim_fmt"] = df_vis["hora_termino"].astype(str)
 
-    # ===== COLUNAS A EXIBIR =====
     colunas_vis = [
         "id", "processo", "autor", "reu", "sala", "data_fmt", "hora_ini_fmt", "hora_fim_fmt",
         "formato", "tipo", "status", "responsavel"
@@ -1403,7 +1355,6 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
 
     col1, col2 = st.columns([2, 1])
 
-    # ===== CRIAR OPÇÕES SIMPLES =====
     opcoes_display = ["📌 Selecione uma audiência..."]
     opcoes_ids = [None]
 
@@ -1428,7 +1379,6 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
         else:
             st.warning("⚠️ Selecione uma audiência primeiro!")
 
-    # ===== MODAL DE DETALHES =====
     if st.session_state.get(modal_key_aberta) and st.session_state.get(modal_key_id):
         id_audiencia = st.session_state[modal_key_id]
         audiencia = df[df["id"] == id_audiencia].iloc[0]
@@ -1602,14 +1552,12 @@ def main() -> None:
                 if st.form_submit_button("Salvar", type="primary"):
                     if numero and cliente and parte:
                         inserir_processo({"numero": numero, "cliente": cliente, "parte_contraria": parte, "descricao": descricao or None, "ativo": True})
-                        # ===== LIMPAR FORMULÁRIO =====
                         st.session_state.form_v += 1
                         st.session_state.aviso = "✅ Processo salvo com sucesso!"
                         st.rerun()
                     else:
                         st.error("Preencha todos!")
         else:
-            # ===== DASHBOARD COMPLETO =====
             dashboard_completo(df_prazos, df_audiencias, df_processos)
 
     st.title("⚖️ Controladoria Jurídica")
@@ -1628,11 +1576,20 @@ def main() -> None:
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🗂️ Processos", "📅 Audiências"])
 
     with tab1:
-        # Mostrar apenas prazos ATIVOS (não concluídos e não arquivados)
+        # ===== PASSO 4: FILTRO NA TAB 1 =====
+        st.write("**Filtrar por responsável:**")
+        filtro_tab1 = st.selectbox(
+            "Selecione",
+            ["Todos"] + RESPONSAVEIS,
+            key="filtro_ativos",
+            label_visibility="collapsed"
+        )
+
         prazos_ativos = df_prazos[~df_prazos["concluido"] & ~df_prazos["arquivado"]]
-        tabela_status(prazos_ativos, df_processos, prefix="tab_prazos")
+        tabela_status(prazos_ativos, df_processos, prefix="tab_prazos", filtro_responsavel=filtro_tab1)
 
     with tab2:
+        # ===== PASSO 5: FILTRO NA TAB 2 =====
         st.subheader("📋 Relatório de Prazos")
 
         prazos_concluidos = df_prazos[df_prazos["concluido"]]
@@ -1645,13 +1602,21 @@ def main() -> None:
 
         st.divider()
         st.markdown("**Prazos Concluídos:**")
+
+        # Filtro para concluídos
+        st.write("**Filtrar por responsável:**")
+        filtro_tab2 = st.selectbox(
+            "Selecione",
+            ["Todos"] + RESPONSAVEIS,
+            key="filtro_concluidos",
+            label_visibility="collapsed"
+        )
+
         if prazos_concluidos.empty:
             st.info("Nenhum prazo concluído ainda.")
         else:
-            # ===== MOSTRAR PRAZOS CONCLUÍDOS COM DETALHES =====
-            tabela_status(prazos_concluidos, df_processos, prefix="tab_concluidos")
+            tabela_status(prazos_concluidos, df_processos, prefix="tab_concluidos", filtro_responsavel=filtro_tab2)
 
-            # ===== BOTÃO PARA REATIVAR PRAZO CONCLUÍDO =====
             st.divider()
             st.subheader("🔄 Reativar Prazo")
 
@@ -1672,22 +1637,18 @@ def main() -> None:
     with tab3:
         st.subheader("📋 Pauta de Prazos")
 
-        # Filtrar prazos não arquivados e não concluídos
         prazos_ativos = df_prazos[~df_prazos["arquivado"] & ~df_prazos["concluido"]].copy()
 
-        # Calcular datas (ANTES de usar)
         data_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
         data_semana = pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=7)
 
         if prazos_ativos.empty:
             st.info("✅ Nenhum prazo ativo no momento!")
         else:
-            # Filtrar por período
             prazos_hoje = prazos_ativos[prazos_ativos["data_fatal"] == data_hoje]
             prazos_semana = prazos_ativos[(prazos_ativos["data_fatal"] > data_hoje) & (prazos_ativos["data_fatal"] <= data_semana)]
             prazos_futuro = prazos_ativos[prazos_ativos["data_fatal"] > data_semana]
 
-            # Exibir HOJE
             if not prazos_hoje.empty:
                 st.markdown("### 🔴 **HOJE** (" + data_hoje.strftime("%d/%m/%Y") + ")")
                 for _, p in prazos_hoje.iterrows():
@@ -1699,7 +1660,6 @@ def main() -> None:
                     """)
                 st.divider()
 
-            # Exibir PRÓXIMOS 7 DIAS
             if not prazos_semana.empty:
                 st.markdown("### 🟠 **PRÓXIMOS 7 DIAS**")
                 for _, p in prazos_semana.iterrows():
@@ -1712,10 +1672,9 @@ def main() -> None:
                     """)
                 st.divider()
 
-            # Exibir FUTURO
             if not prazos_futuro.empty:
                 st.markdown("### 🟡 **FUTURO** (após 7 dias)")
-                for _, p in prazos_futuro.iloc[:10].iterrows():  # Mostrar apenas os 10 primeiros
+                for _, p in prazos_futuro.iloc[:10].iterrows():
                     col1, col2 = st.columns([3, 1])
                     col1.markdown(f"""
                     **{p['titulo']}** | {p['cliente']}
@@ -1723,11 +1682,9 @@ def main() -> None:
                     Data Fatal: {p['data_fatal'].strftime('%d/%m/%Y')} | Responsável: {p['responsavel']}
                     """)
 
-        # Botões de exportação
         st.divider()
         st.subheader("📥 Exportar Pauta")
 
-        # Gerar Excel bonito
         excel_path = gerar_excel_bonito(prazos_ativos, df_processos)
 
         if excel_path:
@@ -1781,7 +1738,6 @@ def main() -> None:
         if df_audiencias.empty:
             st.info("Nenhuma audiência agendada.")
         else:
-            # Filtrar por status
             audiencias_agendadas = df_audiencias[df_audiencias["status"] == "Agendada"].sort_values("data_audiencia")
             audiencias_realizadas = df_audiencias[df_audiencias["status"] == "Realizada"].sort_values("data_audiencia", ascending=False)
             audiencias_canceladas = df_audiencias[df_audiencias["status"] == "Cancelada"].sort_values("data_audiencia", ascending=False)
@@ -1793,7 +1749,6 @@ def main() -> None:
 
             st.divider()
 
-            # Abas por status
             aud_tab1, aud_tab2, aud_tab3 = st.tabs([
                 f"📅 Agendadas ({len(audiencias_agendadas)})",
                 f"✅ Realizadas ({len(audiencias_realizadas)})",
@@ -1818,7 +1773,6 @@ def main() -> None:
                 else:
                     tabela_audiencias(audiencias_canceladas, prefix="tab_canceladas")
 
-            # Exportar
             st.divider()
             st.subheader("📥 Exportar Audiências")
 
