@@ -907,7 +907,13 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         prioridade = st.select_slider("Prioridade", PRIORIDADES, value="Normal", key=f"pr_{v}")
         st.text_area("Observações", value="", key=f"d_{v}")
 
-        if st.form_submit_button("💾 Salvar", type="primary"):
+        col_salvar, col_apagar = st.columns(2)
+
+        submit = False
+        with col_salvar:
+            submit = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
+
+        if submit:
             if not processo or not data_fatal or not titulo:
                 st.error("Preencha processo, data fatal e título!")
             elif data_interna and data_interna > data_fatal:
@@ -941,6 +947,13 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                     st.session_state.form_v += 1
                     st.session_state.aviso = "✅ Prazo salvo com sucesso!"
                     st.rerun()
+
+    # Botão de apagar/limpar fora do form
+    col_spacer, col_btn_limpar = st.columns([2, 1])
+    with col_btn_limpar:
+        if st.button("🗑️ Apagar", use_container_width=True, type="secondary"):
+            st.session_state.form_v += 1
+            st.rerun()
 
 def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_processos: pd.DataFrame) -> None:
     st.markdown("# 📊 DASHBOARD CONTROLADORIA")
