@@ -543,8 +543,10 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
     # ===== REMOVER D.ÚTEIS, TIPO E RESPONSÁVEL =====
     # ===== REMOVER DUPLICATAS DE EXIBIÇÃO =====
     colunas_vis = [
-        "id", "situacao", "titulo", "processo", "cliente_parte",
-        "data_interna_fmt", "data_fatal_fmt", "responsavel", "prioridade",
+    "id", "situacao", "titulo", "processo", "cliente_parte",
+    "data_interna_fmt", "data_fatal_fmt", "dias_uteis",
+    "responsavel", "prioridade",
+]
     ]
     vis = (
         df_vis.assign(_p=df_vis["prioridade"].map(ORDEM_PRIORIDADE))
