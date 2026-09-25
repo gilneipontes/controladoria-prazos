@@ -510,7 +510,13 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
     st.session_state.setdefault(modal_key_aberta, False)
     st.session_state.setdefault(modal_key_id, None)
     st.session_state.setdefault(modal_key_modo, None)
-
+    # ===== FILTRO POR RESPONSÁVEL =====
+    if filtro_responsavel and filtro_responsavel != "Todos":
+        df_vis = df_vis[df_vis["responsavel"] == filtro_responsavel]
+    
+    if df_vis.empty:
+        st.info(f"Nenhum registro para {filtro_responsavel if filtro_responsavel else 'este filtro'}.")
+        return
     # ===== EXTRAIR PRIMEIRO NOME DO CLIENTE =====
     df_vis["cliente_primeiro"] = df_vis["cliente"].apply(lambda x: x.split()[0] if x else "")
 
