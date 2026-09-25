@@ -495,7 +495,7 @@ def gerar_audiencias_excel(df_audiencias: pd.DataFrame):
         wb.save(tmp.name)
         return tmp.name
 
-def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: str = "main") -> None:
+def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: str = "main", filtro_responsavel: str = None) -> None:
     if df.empty:
         st.info("Nenhum registro.")
         return
