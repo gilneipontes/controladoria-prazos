@@ -1,0 +1,6 @@
+# NUNCA envie senhas/chaves para o GitHub
+.streamlit/secrets.toml
+.env
+__pycache__/
+*.pyc
+.venv/
