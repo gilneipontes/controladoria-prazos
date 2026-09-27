@@ -910,39 +910,39 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         c1, c2 = st.columns(2)
         with c1:
             if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
-            if not processo or not data_fatal or not titulo:
-                st.error("Preencha processo, data fatal e título!")
-            elif data_interna and data_interna > data_fatal:
-                st.error("Prazo interno deve ser ≤ data fatal!")
-            else:
-                # ===== PASSO 6: VERIFICAR DUPLICAÇÃO =====
-                df_prazos = carregar_prazos()
-                prazo_existe = df_prazos[
-                    (df_prazos["processo"] == processo) &
-                    (df_prazos["titulo"] == titulo) &
-                    (~df_prazos["concluido"]) &
-                    (~df_prazos["arquivado"])
-                ]
-
-                if not prazo_existe.empty:
-                    data_venc = prazo_existe.iloc[0]["data_fatal"].strftime("%d/%m/%Y")
-                    st.error(f"⚠️ Este prazo já existe! Vencimento: {data_venc}")
+                if not processo or not data_fatal or not titulo:
+                    st.error("Preencha processo, data fatal e título!")
+                elif data_interna and data_interna > data_fatal:
+                    st.error("Prazo interno deve ser ≤ data fatal!")
                 else:
-                    inserir_prazo({
-                        "tipo": tipo,
-                        "titulo": titulo,
-                        "processo": processo,
-                        "cliente": cliente,
-                        "responsavel": responsavel,
-                        "data_fatal": data_fatal.isoformat(),
-                        "data_interna": data_interna.isoformat() if data_interna else None,
-                        "prioridade": prioridade,
-                        "descricao": st.session_state.get(f"d_{v}") or None,
-                        "arquivado": False,
-                    })
-                    st.session_state.form_v += 1
-                    st.session_state.aviso = "✅ Prazo salvo com sucesso!"
-                    st.rerun()
+                    # ===== PASSO 6: VERIFICAR DUPLICAÇÃO =====
+                    df_prazos = carregar_prazos()
+                    prazo_existe = df_prazos[
+                        (df_prazos["processo"] == processo) &
+                        (df_prazos["titulo"] == titulo) &
+                        (~df_prazos["concluido"]) &
+                        (~df_prazos["arquivado"])
+                    ]
+
+                    if not prazo_existe.empty:
+                        data_venc = prazo_existe.iloc[0]["data_fatal"].strftime("%d/%m/%Y")
+                        st.error(f"⚠️ Este prazo já existe! Vencimento: {data_venc}")
+                    else:
+                        inserir_prazo({
+                            "tipo": tipo,
+                            "titulo": titulo,
+                            "processo": processo,
+                            "cliente": cliente,
+                            "responsavel": responsavel,
+                            "data_fatal": data_fatal.isoformat(),
+                            "data_interna": data_interna.isoformat() if data_interna else None,
+                            "prioridade": prioridade,
+                            "descricao": st.session_state.get(f"d_{v}") or None,
+                            "arquivado": False,
+                        })
+                        st.session_state.form_v += 1
+                        st.session_state.aviso = "✅ Prazo salvo com sucesso!"
+                        st.rerun()
         with c2:
             if st.form_submit_button("🗑️ Limpar", use_container_width=True):
                 st.session_state.form_v += 1
@@ -1148,28 +1148,28 @@ def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
         c1, c2 = st.columns(2)
         with c1:
             if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
-            if not processo or not data or not sala or not hora_ini or not hora_fim:
-                st.error("Preencha todos os campos obrigatórios!")
-            elif hora_ini >= hora_fim:
-                st.error("Hora início deve ser menor que hora término!")
-            else:
-                inserir_audiencia({
-                    "processo": processo,
-                    "autor": autor,
-                    "reu": reu,
-                    "sala": sala,
-                    "data_audiencia": data.isoformat(),
-                    "hora_inicio": hora_ini.isoformat(),
-                    "hora_termino": hora_fim.isoformat(),
-                    "formato": formato,
-                    "tipo": tipo,
-                    "status": "Agendada",
-                    "observacoes": obs or None,
-                    "responsavel": responsavel
-                })
-                st.session_state.form_v += 1
-                st.session_state.aviso = "✅ Audiência salva com sucesso!"
-                st.rerun()
+                if not processo or not data or not sala or not hora_ini or not hora_fim:
+                    st.error("Preencha todos os campos obrigatórios!")
+                elif hora_ini >= hora_fim:
+                    st.error("Hora início deve ser menor que hora término!")
+                else:
+                    inserir_audiencia({
+                        "processo": processo,
+                        "autor": autor,
+                        "reu": reu,
+                        "sala": sala,
+                        "data_audiencia": data.isoformat(),
+                        "hora_inicio": hora_ini.isoformat(),
+                        "hora_termino": hora_fim.isoformat(),
+                        "formato": formato,
+                        "tipo": tipo,
+                        "status": "Agendada",
+                        "observacoes": obs or None,
+                        "responsavel": responsavel
+                    })
+                    st.session_state.form_v += 1
+                    st.session_state.aviso = "✅ Audiência salva com sucesso!"
+                    st.rerun()
         with c2:
             if st.form_submit_button("🗑️ Limpar", use_container_width=True):
                 st.session_state.form_v += 1
