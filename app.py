@@ -1644,6 +1644,11 @@ def main() -> None:
                 # Usar o cliente selecionado para filtrar
                 cliente_busca = cliente_selecionado
                 st.session_state.busca_cliente_sidebar = cliente_selecionado
+
+                # Mensagem de sucesso
+                if cliente_busca:
+                    st.success(f"✅ Cliente selecionado: **{cliente_busca}**")
+                    st.info("👇 Role para baixo para ver os prazos e processos!")
             else:
                 st.warning(f"❌ Nenhum cliente encontrado com '{busca_temp}'")
                 cliente_busca = ""
