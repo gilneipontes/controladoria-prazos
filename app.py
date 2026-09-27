@@ -1543,6 +1543,108 @@ def remover_acentos(texto: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', str(texto))
                    if unicodedata.category(c) != 'Mn').lower()
 
+def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
+    """Gerencia visualização e busca de clientes."""
+    st.subheader("👤 Cadastro de Clientes")
+
+    if df_processos.empty:
+        st.info("Nenhum cliente cadastrado.")
+        return
+
+    processos_ativos = df_processos[df_processos["ativo"]].copy()
+
+    if processos_ativos.empty:
+        st.info("Nenhum cliente ativo.")
+        return
+
+    # Obter lista única de clientes com seus processos
+    clientes_unicos = sorted(processos_ativos["cliente"].dropna().unique())
+
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        busca_cliente = st.text_input(
+            "🔍 Buscar cliente por nome:",
+            placeholder="Digite 3+ letras...",
+            key="busca_cadastro_cliente",
+            label_visibility="collapsed"
+        )
+
+    # Filtrar clientes por nome (3+ caracteres)
+    if len(busca_cliente) >= 3:
+        busca_lower = busca_cliente.lower()
+        clientes_filtrados = [c for c in clientes_unicos if busca_lower in c.lower()]
+    else:
+        clientes_filtrados = clientes_unicos if len(busca_cliente) == 0 else []
+
+    with col2:
+        st.metric("Clientes", len(clientes_filtrados))
+
+    if not clientes_filtrados and busca_cliente:
+        st.warning(f"❌ Nenhum cliente encontrado com '{busca_cliente}'")
+        return
+
+    if len(busca_cliente) > 0 and len(busca_cliente) < 3:
+        st.caption("👉 Digite 3+ letras para buscar clientes")
+        return
+
+    st.caption("Clique para expandir e ver todos os processos do cliente:")
+
+    for cliente in clientes_filtrados:
+        processos_cliente = processos_ativos[processos_ativos["cliente"] == cliente].sort_values("numero")
+        total_processos = len(processos_cliente)
+
+        # Contar prazos por status
+        prazos_cliente = df_prazos[df_prazos["cliente"] == cliente]
+        prazos_abertos = prazos_cliente[~prazos_cliente["concluido"] & ~prazos_cliente["arquivado"]]
+        prazos_concluidos = prazos_cliente[prazos_cliente["concluido"]]
+
+        qtd_abertos = len(prazos_abertos)
+        qtd_concluidos = len(prazos_concluidos)
+
+        titulo_expander = f"👤 **{cliente}** | ⚖️ {total_processos} | 📋 {qtd_abertos} | ✅ {qtd_concluidos}"
+
+        with st.expander(titulo_expander, expanded=False):
+            st.markdown("**Processos do Cliente:**")
+
+            for idx, proc in processos_cliente.iterrows():
+                col1, col2, col3 = st.columns([2, 2, 1])
+
+                with col1:
+                    st.markdown(f"**{proc['numero']}**")
+
+                with col2:
+                    st.caption(f"⚔️ {proc['parte_contraria']}")
+
+                with col3:
+                    prazos_proc = df_prazos[df_prazos["processo"] == proc["numero"]]
+                    prazos_abertos_proc = prazos_proc[~prazos_proc["concluido"] & ~prazos_proc["arquivado"]]
+                    st.metric("Prazos", len(prazos_abertos_proc), label_visibility="collapsed")
+
+            st.divider()
+            st.markdown("**📝 Detalhes por Processo:**")
+
+            for idx, proc in processos_cliente.iterrows():
+                with st.expander(f"📌 {proc['numero']}", expanded=False):
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.markdown("**Informações:**")
+                        st.write(f"🔹 **Nº:** `{proc['numero']}`")
+                        st.write(f"👤 **Cliente:** {proc['cliente']}")
+                        st.write(f"⚔️ **Adversário:** {proc['parte_contraria']}")
+                        if proc["descricao"]:
+                            st.write(f"📌 **Descrição:** {proc['descricao']}")
+
+                    with col2:
+                        prazos_proc = df_prazos[df_prazos["processo"] == proc["numero"]]
+                        if not prazos_proc.empty:
+                            st.markdown("**Prazos Associados:**")
+                            for p_idx, prazo in prazos_proc.iterrows():
+                                status = "✅" if prazo["concluido"] else "📋"
+                                st.caption(f"{status} {prazo['titulo']}")
+                        else:
+                            st.info("Nenhum prazo associado")
+
 def limpar_busca_cliente() -> None:
     """Callback para limpar a busca de cliente."""
     st.session_state.busca_temp_text = ""
@@ -1605,9 +1707,10 @@ def main() -> None:
 
     with st.sidebar:
         st.title("⚖️ Controladoria")
-        aba = st.radio("Opção:", ["Novo Prazo", "Nova Audiência", "Novo Processo", "Dashboard"],
+        aba = st.radio("Opção:", ["Novo Prazo", "Nova Audiência", "Novo Processo", "Cadastro Cliente", "Dashboard"],
                       key="aba",
-                      index=["Novo Prazo", "Nova Audiência", "Novo Processo", "Dashboard"].index(st.session_state.aba_selecionada))
+                      index=["Novo Prazo", "Nova Audiência", "Novo Processo", "Cadastro Cliente", "Dashboard"].index(st.session_state.aba_selecionada))
+        st.session_state.aba_selecionada = aba
         st.divider()
 
         if st.button("🔄 Recarregar Dados", use_container_width=True):
@@ -1704,6 +1807,8 @@ def main() -> None:
                         st.rerun()
                     else:
                         st.error("Preencha todos!")
+        elif aba == "Cadastro Cliente":
+            gerenciar_clientes(df_processos, df_prazos)
         else:
             # ===== APLICAR FILTRO DE BUSCA NO DASHBOARD =====
             df_prazos_filtrados, df_audiencias_filtradas = buscar_por_cliente(
