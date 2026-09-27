@@ -1228,7 +1228,10 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
 
         titulo_expander = f"**{proc['numero']}** | {proc['cliente']} | 📋 {qtd_abertos}📋 ✅{qtd_concluidos} 📦{qtd_arquivados}"
 
-        with st.expander(titulo_expander, expanded=False):
+        # Verificar se este é o processo que deve abrir automaticamente
+        abrir_automatico = proc["numero"] == st.session_state.get("processo_abrir_automatico", None)
+
+        with st.expander(titulo_expander, expanded=abrir_automatico):
 
             with st.expander("📋 Informações & Edição do Processo", expanded=True):
                 col1, col2 = st.columns(2)
@@ -1645,10 +1648,15 @@ def main() -> None:
                 cliente_busca = cliente_selecionado
                 st.session_state.busca_cliente_sidebar = cliente_selecionado
 
+                # Salvar qual processo abrir automaticamente (primeiro da lista)
+                processos_cliente = df_processos[df_processos["cliente"].str.contains(cliente_selecionado, case=False, na=False)]
+                if not processos_cliente.empty:
+                    st.session_state.processo_abrir_automatico = processos_cliente.iloc[0]["numero"]
+
                 # Mensagem de sucesso
                 if cliente_busca:
                     st.success(f"✅ Cliente selecionado: **{cliente_busca}**")
-                    st.info("👇 Role para baixo para ver os prazos e processos!")
+                    st.info("👉 Os dados aparecem ao lado! Clique no processo para expandir.")
             else:
                 st.warning(f"❌ Nenhum cliente encontrado com '{busca_temp}'")
                 cliente_busca = ""
