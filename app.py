@@ -1599,7 +1599,7 @@ def main() -> None:
 
         st.divider()
 
-        # ===== BUSCA INTELIGENTE POR CLIENTE COM AUTOCOMPLETE =====
+        # ===== BUSCA INTELIGENTE COM SUGESTÕES DINÂMICAS =====
         st.markdown("### 🔍 BUSCA POR CLIENTE")
 
         # Obter lista única de clientes
@@ -1608,19 +1608,28 @@ def main() -> None:
         else:
             clientes_unicos = []
 
-        # Campo de seleção com placeholder (Streamlit 1.38+)
-        cliente_busca = st.selectbox(
-            "Selecione ou digite para filtrar:",
-            options=[""] + clientes_unicos,
-            index=0,
+        # Campo de texto para digitar
+        cliente_busca = st.text_input(
+            "Digite o nome...",
+            value="",
             key="busca_cliente_sidebar",
             label_visibility="collapsed",
-            placeholder="Digite para filtrar..."
+            placeholder="Digite para buscar..."
         )
 
-        # Se selecionou algo, usar para filtrar
-        if not cliente_busca:
-            cliente_busca = ""
+        # Mostrar sugestões APENAS quando digitar algo
+        if cliente_busca and cliente_busca.strip():
+            busca_lower = cliente_busca.lower().strip()
+            sugestoes = [c for c in clientes_unicos if busca_lower in c.lower()]
+
+            if sugestoes:
+                st.markdown("**Sugestões encontradas:**")
+                for sugestao in sugestoes[:5]:  # Mostrar até 5 sugestões
+                    if st.button(sugestao, key=f"cliente_{sugestao}", use_container_width=True):
+                        st.session_state.busca_cliente_sidebar = sugestao
+                        st.rerun()
+            else:
+                st.warning("❌ Nenhum cliente encontrado com essa busca")
 
         st.divider()
 
