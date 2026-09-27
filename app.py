@@ -1521,6 +1521,28 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
                     st.session_state[modal_key_modo] = "detalhes"
                     st.rerun()
 
+# ===== BUSCA POR CLIENTE =====
+def buscar_por_cliente(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, cliente_busca: str) -> tuple:
+    """
+    Filtra prazos e audiências por nome do cliente (busca parcial, case-insensitive)
+    """
+    if not cliente_busca or cliente_busca.strip() == "":
+        return df_prazos, df_audiencias
+
+    busca_lower = cliente_busca.lower().strip()
+
+    # Filtrar prazos
+    df_prazos_filtrados = df_prazos[
+        df_prazos["cliente"].str.lower().str.contains(busca_lower, na=False)
+    ] if not df_prazos.empty else pd.DataFrame()
+
+    # Filtrar audiências (busca no processo)
+    df_audiencias_filtradas = df_audiencias[
+        df_audiencias["processo"].str.lower().str.contains(busca_lower, na=False)
+    ] if not df_audiencias.empty else pd.DataFrame()
+
+    return df_prazos_filtrados, df_audiencias_filtradas
+
 def main() -> None:
     init_estado()
     if not acesso_liberado():
@@ -1549,6 +1571,17 @@ def main() -> None:
 
         st.divider()
 
+        # ===== BUSCA POR CLIENTE =====
+        st.markdown("### 🔍 BUSCA POR CLIENTE")
+        cliente_busca = st.text_input(
+            "Buscar cliente",
+            placeholder="Digite o nome...",
+            key="busca_cliente_sidebar",
+            label_visibility="collapsed"
+        )
+
+        st.divider()
+
         if aba == "Novo Prazo":
             sidebar_novo_prazo(df_processos)
         elif aba == "Nova Audiência":
@@ -1570,7 +1603,15 @@ def main() -> None:
                     else:
                         st.error("Preencha todos!")
         else:
-            dashboard_completo(df_prazos, df_audiencias, df_processos)
+            # ===== APLICAR FILTRO DE BUSCA NO DASHBOARD =====
+            df_prazos_filtrados, df_audiencias_filtradas = buscar_por_cliente(
+                df_prazos, df_audiencias, cliente_busca
+            )
+
+            if cliente_busca:
+                st.info(f"🔎 Filtrando por: **{cliente_busca}**")
+
+            dashboard_completo(df_prazos_filtrados, df_audiencias_filtradas, df_processos)
 
     st.title("⚖️ Controladoria Jurídica")
     st.caption(f"Hoje: {hoje():%d/%m/%Y}")
@@ -1579,11 +1620,21 @@ def main() -> None:
         st.toast(st.session_state.aviso)
         st.session_state.aviso = None
 
-    if df_prazos.empty:
+    # ===== APLICAR FILTRO DE BUSCA NAS TABS =====
+    df_prazos_filtrados, df_audiencias_filtradas = buscar_por_cliente(
+        df_prazos, df_audiencias, cliente_busca
+    )
+
+    if cliente_busca:
+        st.info(f"🔎 Filtrando por: **{cliente_busca}**")
+        if df_prazos_filtrados.empty:
+            st.warning("Nenhum prazo encontrado para este cliente.")
+            st.stop()
+    elif df_prazos.empty:
         st.info("Nenhum prazo.")
         st.stop()
 
-    df_prazos = enriquecer(df_prazos)
+    df_prazos = enriquecer(df_prazos_filtrados) if not df_prazos_filtrados.empty else pd.DataFrame()
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🗂️ Processos", "📅 Audiências"])
 
