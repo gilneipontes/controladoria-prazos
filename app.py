@@ -1599,21 +1599,28 @@ def main() -> None:
 
         st.divider()
 
-        # ===== BUSCA POR CLIENTE =====
+        # ===== BUSCA INTELIGENTE POR CLIENTE COM AUTOCOMPLETE =====
         st.markdown("### 🔍 BUSCA POR CLIENTE")
-        cliente_busca = st.text_input(
-            "Buscar cliente",
-            placeholder="Digite o nome...",
+
+        # Obter lista única de clientes
+        if not df_prazos.empty:
+            clientes_unicos = sorted([c for c in df_prazos["cliente"].dropna().unique() if c])
+        else:
+            clientes_unicos = []
+
+        # Campo de seleção com placeholder (Streamlit 1.38+)
+        cliente_busca = st.selectbox(
+            "Selecione ou digite para filtrar:",
+            options=[""] + clientes_unicos,
+            index=0,
             key="busca_cliente_sidebar",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            placeholder="Digite para filtrar..."
         )
 
-        # Debug: Mostrar clientes disponíveis se busca não encontrar
-        if cliente_busca and not df_prazos.empty:
-            clientes_unicos = sorted(df_prazos["cliente"].dropna().unique())
-            with st.expander("🔎 Clientes cadastrados", expanded=False):
-                for cliente in clientes_unicos:
-                    st.caption(f"• {cliente}")
+        # Se selecionou algo, usar para filtrar
+        if not cliente_busca:
+            cliente_busca = ""
 
         st.divider()
 
