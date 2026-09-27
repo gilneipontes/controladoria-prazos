@@ -907,7 +907,9 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
         prioridade = st.select_slider("Prioridade", PRIORIDADES, value="Normal", key=f"pr_{v}")
         st.text_area("Observações", value="", key=f"d_{v}")
 
-        if st.form_submit_button("💾 Salvar", type="primary"):
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
             if not processo or not data_fatal or not titulo:
                 st.error("Preencha processo, data fatal e título!")
             elif data_interna and data_interna > data_fatal:
@@ -941,6 +943,10 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                     st.session_state.form_v += 1
                     st.session_state.aviso = "✅ Prazo salvo com sucesso!"
                     st.rerun()
+        with c2:
+            if st.form_submit_button("🗑️ Limpar", use_container_width=True):
+                st.session_state.form_v += 1
+                st.rerun()
 
 def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_processos: pd.DataFrame) -> None:
     st.markdown("# 📊 DASHBOARD CONTROLADORIA")
@@ -1139,7 +1145,9 @@ def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
 
         obs = st.text_area("Observações", value="", placeholder="Ex: Traz documentação, etc...", key=f"aud_obs_{v}")
 
-        if st.form_submit_button("💾 Salvar", type="primary"):
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
             if not processo or not data or not sala or not hora_ini or not hora_fim:
                 st.error("Preencha todos os campos obrigatórios!")
             elif hora_ini >= hora_fim:
@@ -1161,6 +1169,10 @@ def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
                 })
                 st.session_state.form_v += 1
                 st.session_state.aviso = "✅ Audiência salva com sucesso!"
+                st.rerun()
+        with c2:
+            if st.form_submit_button("🗑️ Limpar", use_container_width=True):
+                st.session_state.form_v += 1
                 st.rerun()
 
 def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
