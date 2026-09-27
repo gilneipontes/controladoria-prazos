@@ -1609,48 +1609,46 @@ def main() -> None:
             clientes_unicos = []
 
         # Inicializar session_state para a busca
-        if "busca_cliente_texto" not in st.session_state:
-            st.session_state.busca_cliente_texto = ""
+        if "busca_temp_text" not in st.session_state:
+            st.session_state.busca_temp_text = ""
 
-        # Callback para atualizar em tempo real conforme digita
-        def atualizar_busca():
-            st.session_state.busca_cliente_texto = st.session_state.busca_input_temp
-
-        # Campo de texto com callback (sem precisar de ENTER!)
-        st.text_input(
-            "Digite para buscar",
-            value=st.session_state.busca_cliente_texto,
-            key="busca_input_temp",
-            on_change=atualizar_busca,
+        # Campo de texto para digitar (captura em tempo real)
+        busca_temp = st.text_input(
+            "Digite o nome...",
+            value=st.session_state.busca_temp_text,
+            key="busca_temp_text",
             label_visibility="collapsed",
-            placeholder="Digite aqui...",
+            placeholder="Digite 3+ letras para buscar...",
             max_chars=100
         )
 
-        cliente_busca = st.session_state.busca_cliente_texto
+        # Se digitou 3+ caracteres, mostrar selectbox com opções
+        if len(busca_temp) >= 3:
+            busca_lower = busca_temp.lower().strip()
 
-        # Filtrar sugestões TEMPO REAL (sem precisar Enter)
-        if cliente_busca and cliente_busca.strip():
-            busca_lower = cliente_busca.lower().strip()
-            # Priorizar: começa com a busca, depois contém a busca
+            # Filtrar clientes que começam com a busca, depois os que contêm
             sugestoes_inicio = [c for c in clientes_unicos if c.lower().startswith(busca_lower)]
             sugestoes_contem = [c for c in clientes_unicos if busca_lower in c.lower() and c not in sugestoes_inicio]
             sugestoes = sugestoes_inicio + sugestoes_contem
 
             if sugestoes:
-                st.markdown(f"**✅ {len(sugestoes)} cliente(s) encontrado(s):**")
-                for sugestao in sugestoes[:10]:  # Mostrar até 10 sugestões
-                    if st.button(
-                        f"→ {sugestao}",
-                        key=f"cliente_{sugestao}",
-                        use_container_width=True,
-                        type="secondary"
-                    ):
-                        st.session_state.busca_cliente_sidebar = sugestao
-                        st.session_state.busca_cliente_texto = sugestao
-                        st.rerun()
+                # Selectbox com as sugestões (dropdown automático)
+                cliente_selecionado = st.selectbox(
+                    "Selecione o cliente:",
+                    options=sugestoes,
+                    index=0,
+                    key="cliente_selecionado_dropdown",
+                    label_visibility="collapsed"
+                )
+
+                # Usar o cliente selecionado para filtrar
+                cliente_busca = cliente_selecionado
+                st.session_state.busca_cliente_sidebar = cliente_selecionado
             else:
-                st.caption(f"😞 Nenhum cliente com '{cliente_busca}' encontrado")
+                st.warning(f"❌ Nenhum cliente encontrado com '{busca_temp}'")
+                cliente_busca = ""
+        else:
+            cliente_busca = ""
 
         st.divider()
 
