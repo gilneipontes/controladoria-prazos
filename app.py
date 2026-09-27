@@ -959,6 +959,7 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                         st.rerun()
         with c2:
             if st.form_submit_button("🗑️ Limpar", use_container_width=True):
+                st.session_state.busca_proc_temp = ""
                 st.session_state.form_v += 1
                 st.rerun()
 
