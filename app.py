@@ -824,15 +824,11 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
 
     st.write("**Nº Processo ***")
 
-    # Inicializar session_state para busca de processo
-    if "busca_proc_temp" not in st.session_state:
-        st.session_state.busca_proc_temp = ""
-
     # Campo de texto para digitar (captura em tempo real)
     busca_proc = st.text_input(
         "Digite o número ou cliente",
-        value=st.session_state.busca_proc_temp,
-        key="busca_proc_temp",
+        value="",
+        key=f"busca_proc_{v}",
         label_visibility="collapsed",
         placeholder="Digite 3+ letras para buscar...",
         max_chars=100
@@ -959,7 +955,6 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
                         st.rerun()
         with c2:
             if st.form_submit_button("🗑️ Limpar", use_container_width=True):
-                st.session_state.busca_proc_temp = ""
                 st.session_state.form_v += 1
                 st.rerun()
 
