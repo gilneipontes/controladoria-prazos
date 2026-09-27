@@ -1608,37 +1608,49 @@ def main() -> None:
         else:
             clientes_unicos = []
 
-        # Campo de texto para digitar (atualiza em tempo real)
-        cliente_busca = st.text_input(
+        # Inicializar session_state para a busca
+        if "busca_cliente_texto" not in st.session_state:
+            st.session_state.busca_cliente_texto = ""
+
+        # Callback para atualizar em tempo real conforme digita
+        def atualizar_busca():
+            st.session_state.busca_cliente_texto = st.session_state.busca_input_temp
+
+        # Campo de texto com callback (sem precisar de ENTER!)
+        st.text_input(
             "Digite para buscar",
-            value="",
-            key="busca_cliente_sidebar",
+            value=st.session_state.busca_cliente_texto,
+            key="busca_input_temp",
+            on_change=atualizar_busca,
             label_visibility="collapsed",
             placeholder="Digite aqui...",
             max_chars=100
         )
 
-        # Filtrar sugestões conforme digita (tempo real)
+        cliente_busca = st.session_state.busca_cliente_texto
+
+        # Filtrar sugestões TEMPO REAL (sem precisar Enter)
         if cliente_busca and cliente_busca.strip():
             busca_lower = cliente_busca.lower().strip()
             # Priorizar: começa com a busca, depois contém a busca
             sugestoes_inicio = [c for c in clientes_unicos if c.lower().startswith(busca_lower)]
-            sugestoes_contem = [c for c in clientes_unicos if busca_lower in c.lower() and not c in sugestoes_inicio]
+            sugestoes_contem = [c for c in clientes_unicos if busca_lower in c.lower() and c not in sugestoes_inicio]
             sugestoes = sugestoes_inicio + sugestoes_contem
 
             if sugestoes:
-                st.markdown(f"**{len(sugestoes)} cliente(s) encontrado(s):**", help="Clique para selecionar")
+                st.markdown(f"**✅ {len(sugestoes)} cliente(s) encontrado(s):**")
                 for sugestao in sugestoes[:10]:  # Mostrar até 10 sugestões
                     if st.button(
-                        f"✅ {sugestao}",
+                        f"→ {sugestao}",
                         key=f"cliente_{sugestao}",
                         use_container_width=True,
                         type="secondary"
                     ):
                         st.session_state.busca_cliente_sidebar = sugestao
+                        st.session_state.busca_cliente_texto = sugestao
                         st.rerun()
             else:
-                st.info(f"😞 Nenhum cliente com '{cliente_busca}' encontrado")
+                st.caption(f"😞 Nenhum cliente com '{cliente_busca}' encontrado")
 
         st.divider()
 
