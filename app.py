@@ -1533,6 +1533,12 @@ def remover_acentos(texto: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', str(texto))
                    if unicodedata.category(c) != 'Mn').lower()
 
+def limpar_busca_cliente() -> None:
+    """Callback para limpar a busca de cliente."""
+    st.session_state.busca_temp_text = ""
+    st.session_state.busca_cliente_sidebar = ""
+    st.session_state.processo_abrir_automatico = None
+
 def buscar_por_cliente(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, cliente_busca: str) -> tuple:
     """
     Filtra prazos e audiências com busca INTELIGENTE e ROBUSTA:
@@ -1664,11 +1670,7 @@ def main() -> None:
             cliente_busca = ""
 
         # ===== BOTÃO LIMPAR BUSCA =====
-        if st.button("🗑️ Limpe", use_container_width=True):
-            st.session_state.busca_temp_text = ""
-            st.session_state.busca_cliente_sidebar = ""
-            st.session_state.processo_abrir_automatico = None
-            st.rerun()
+        st.button("🗑️ Limpe", use_container_width=True, on_click=limpar_busca_cliente)
 
         st.divider()
 
