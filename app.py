@@ -1521,25 +1521,40 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
                     st.session_state[modal_key_modo] = "detalhes"
                     st.rerun()
 
-# ===== BUSCA POR CLIENTE =====
+# ===== BUSCA INTELIGENTE POR CLIENTE, PROCESSO, TÍTULO E DESCRIÇÃO =====
 def buscar_por_cliente(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, cliente_busca: str) -> tuple:
     """
-    Filtra prazos e audiências por nome do cliente (busca parcial, case-insensitive)
+    Filtra prazos e audiências por nome do cliente, processo, título ou descrição (busca parcial, case-insensitive)
+    Busca em múltiplos campos para encontrar exatamente o que você procura!
     """
     if not cliente_busca or cliente_busca.strip() == "":
         return df_prazos, df_audiencias
 
     busca_lower = cliente_busca.lower().strip()
 
-    # Filtrar prazos
-    df_prazos_filtrados = df_prazos[
-        df_prazos["cliente"].str.lower().str.contains(busca_lower, na=False)
-    ] if not df_prazos.empty else pd.DataFrame()
+    # Filtrar prazos - busca em MÚLTIPLOS campos
+    if not df_prazos.empty:
+        mascara = (
+            df_prazos["cliente"].fillna("").str.lower().str.contains(busca_lower, na=False) |
+            df_prazos["processo"].fillna("").str.lower().str.contains(busca_lower, na=False) |
+            df_prazos["titulo"].fillna("").str.lower().str.contains(busca_lower, na=False) |
+            df_prazos["descricao"].fillna("").str.lower().str.contains(busca_lower, na=False)
+        )
+        df_prazos_filtrados = df_prazos[mascara]
+    else:
+        df_prazos_filtrados = pd.DataFrame()
 
-    # Filtrar audiências (busca no processo)
-    df_audiencias_filtradas = df_audiencias[
-        df_audiencias["processo"].str.lower().str.contains(busca_lower, na=False)
-    ] if not df_audiencias.empty else pd.DataFrame()
+    # Filtrar audiências - busca em MÚLTIPLOS campos
+    if not df_audiencias.empty:
+        mascara_aud = (
+            df_audiencias["processo"].fillna("").str.lower().str.contains(busca_lower, na=False) |
+            df_audiencias["autor"].fillna("").str.lower().str.contains(busca_lower, na=False) |
+            df_audiencias["reu"].fillna("").str.lower().str.contains(busca_lower, na=False) |
+            df_audiencias["observacoes"].fillna("").str.lower().str.contains(busca_lower, na=False)
+        )
+        df_audiencias_filtradas = df_audiencias[mascara_aud]
+    else:
+        df_audiencias_filtradas = pd.DataFrame()
 
     return df_prazos_filtrados, df_audiencias_filtradas
 
