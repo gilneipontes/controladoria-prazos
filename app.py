@@ -823,35 +823,49 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
     processos_ativos = processos_df[processos_df["ativo"]].sort_values("numero")
 
     st.write("**Nº Processo ***")
-    busca = st.text_input(
-        "Digite o número do processo",
-        value="",
-        placeholder="Ex: 5014993 ou 5028905",
-        key=f"busca_proc_{v}",
-        label_visibility="collapsed"
+
+    # Inicializar session_state para busca de processo
+    if "busca_proc_temp" not in st.session_state:
+        st.session_state.busca_proc_temp = ""
+
+    # Campo de texto para digitar (captura em tempo real)
+    busca_proc = st.text_input(
+        "Digite o número ou cliente",
+        value=st.session_state.busca_proc_temp,
+        key="busca_proc_temp",
+        label_visibility="collapsed",
+        placeholder="Digite 3+ letras para buscar...",
+        max_chars=100
     )
 
     processo = None
     cliente = ""
     parte_adversaria = ""
 
-    if busca:
+    # Se digitou 3+ caracteres, mostrar selectbox com opções
+    if len(busca_proc) >= 3:
+        busca_lower = busca_proc.lower().strip()
+
+        # Filtrar processos por NÚMERO ou CLIENTE
         processos_filtrados = processos_ativos[
-            processos_ativos["numero"].str.contains(busca, case=False, regex=False)
+            (processos_ativos["numero"].str.contains(busca_lower, case=False, na=False, regex=False)) |
+            (processos_ativos["cliente"].str.contains(busca_lower, case=False, na=False, regex=False))
         ]
 
         if not processos_filtrados.empty:
             st.caption(f"📋 {len(processos_filtrados)} processo(s) encontrado(s):")
 
+            # Selectbox com as opções (mostrando número e cliente)
             processo = st.selectbox(
                 "Selecione:",
                 options=processos_filtrados["numero"].values,
-                index=0 if len(processos_filtrados) > 0 else None,
+                format_func=lambda x: f"{x} — {processos_filtrados[processos_filtrados['numero']==x]['cliente'].values[0]}",
+                index=0,
                 label_visibility="collapsed",
                 key=f"sel_proc_{v}"
             )
         else:
-            st.warning(f"❌ Nenhum processo encontrado com '{busca}'")
+            st.warning(f"❌ Nenhum processo encontrado com '{busca_proc}'")
 
     if processo:
         cliente = processos_ativos[processos_ativos["numero"] == processo]["cliente"].values[0]
