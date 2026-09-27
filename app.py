@@ -1608,28 +1608,37 @@ def main() -> None:
         else:
             clientes_unicos = []
 
-        # Campo de texto para digitar
+        # Campo de texto para digitar (atualiza em tempo real)
         cliente_busca = st.text_input(
-            "Digite o nome...",
+            "Digite para buscar",
             value="",
             key="busca_cliente_sidebar",
             label_visibility="collapsed",
-            placeholder="Digite para buscar..."
+            placeholder="Digite aqui...",
+            max_chars=100
         )
 
-        # Mostrar sugestões APENAS quando digitar algo
+        # Filtrar sugestões conforme digita (tempo real)
         if cliente_busca and cliente_busca.strip():
             busca_lower = cliente_busca.lower().strip()
-            sugestoes = [c for c in clientes_unicos if busca_lower in c.lower()]
+            # Priorizar: começa com a busca, depois contém a busca
+            sugestoes_inicio = [c for c in clientes_unicos if c.lower().startswith(busca_lower)]
+            sugestoes_contem = [c for c in clientes_unicos if busca_lower in c.lower() and not c in sugestoes_inicio]
+            sugestoes = sugestoes_inicio + sugestoes_contem
 
             if sugestoes:
-                st.markdown("**Sugestões encontradas:**")
-                for sugestao in sugestoes[:5]:  # Mostrar até 5 sugestões
-                    if st.button(sugestao, key=f"cliente_{sugestao}", use_container_width=True):
+                st.markdown(f"**{len(sugestoes)} cliente(s) encontrado(s):**", help="Clique para selecionar")
+                for sugestao in sugestoes[:10]:  # Mostrar até 10 sugestões
+                    if st.button(
+                        f"✅ {sugestao}",
+                        key=f"cliente_{sugestao}",
+                        use_container_width=True,
+                        type="secondary"
+                    ):
                         st.session_state.busca_cliente_sidebar = sugestao
                         st.rerun()
             else:
-                st.warning("❌ Nenhum cliente encontrado com essa busca")
+                st.info(f"😞 Nenhum cliente com '{cliente_busca}' encontrado")
 
         st.divider()
 
