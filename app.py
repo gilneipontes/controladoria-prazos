@@ -1663,6 +1663,13 @@ def main() -> None:
         else:
             cliente_busca = ""
 
+        # ===== BOTÃO LIMPAR BUSCA =====
+        if st.button("🗑️ Limpe", use_container_width=True):
+            st.session_state.busca_temp_text = ""
+            st.session_state.busca_cliente_sidebar = ""
+            st.session_state.processo_abrir_automatico = None
+            st.rerun()
+
         st.divider()
 
         if aba == "Novo Prazo":
