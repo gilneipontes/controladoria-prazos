@@ -4,7 +4,7 @@ PASSOS 2, 3, 4, 5, 6 - IMPLEMENTADOS
 """
 # ============================================
 # CONTROLADORIA JURÍDICA - SISTEMA DE PRAZOS
-# Versão: 3.1 - 26/09/2026 (feriados automáticos, dashboard na tela principal, correções)
+# Versão: 3.0 - SEMANA 1 COMPLETA - 25/09/2026
 # PASSOS IMPLEMENTADOS: 2, 3, 4, 5, 6
 # ============================================
 
@@ -42,45 +42,27 @@ FAIXAS = {
     "Concluído": "✅ Concluído",
 }
 
-# ===== FERIADOS E RECESSO (calculados automaticamente para qualquer ano) =====
-# Feriados estaduais/municipais: formato (mês, dia). Ex.: 20/09 Revolução Farroupilha (RS)
-FERIADOS_LOCAIS = [(9, 20)]
-# Datas avulsas sem expediente no seu tribunal (ex.: "2026-11-30")
-FERIADOS_AVULSOS: list[str] = []
-
-
-def _pascoa(ano: int) -> dt.date:
-    a, b, c = ano % 19, ano // 100, ano % 100
-    d, e = b // 4, b % 4
-    f = (b + 8) // 25
-    g = (b - f + 1) // 3
-    h = (19 * a + b - d - g + 15) % 30
-    i, k = c // 4, c % 4
-    l = (32 + 2 * e + 2 * i - h - k) % 7
-    m = (a + 11 * h + 22 * l) // 451
-    return dt.date(ano, (h + l - 7 * m + 114) // 31, ((h + l - 7 * m + 114) % 31) + 1)
-
-
-def _gerar_feriados(ano_ini: int, ano_fim: int) -> np.ndarray:
-    datas: set[dt.date] = set()
-    for ano in range(ano_ini, ano_fim + 1):
-        p = _pascoa(ano)
-        fixos = [(1, 1), (4, 21), (5, 1), (9, 7), (10, 12), (11, 2), (11, 15), (11, 20), (12, 25)]
-        datas |= {dt.date(ano, m, d) for m, d in fixos + FERIADOS_LOCAIS}
-        datas |= {p - dt.timedelta(days=48), p - dt.timedelta(days=47),  # Carnaval
-                  p - dt.timedelta(days=2),                               # Sexta-feira Santa
-                  p + dt.timedelta(days=60)}                              # Corpus Christi
-        # Recesso forense 20/12 a 20/01 (art. 220 CPC / art. 775-A CLT)
-        d = dt.date(ano, 12, 20)
-        while d <= dt.date(ano + 1, 1, 20):
-            datas.add(d)
-            d += dt.timedelta(days=1)
-    datas |= {dt.date.fromisoformat(x) for x in FERIADOS_AVULSOS}
-    return np.array(sorted(datas), dtype="datetime64[D]")
-
-
-_ANO = dt.date.today().year
-FERIADOS = _gerar_feriados(_ANO - 2, _ANO + 5)
+FERIADOS = np.array([
+    # 2026
+    "2026-01-01", "2026-02-16", "2026-02-17", "2026-04-03", "2026-04-21",
+    "2026-05-01", "2026-06-04", "2026-09-07", "2026-10-12", "2026-11-02",
+    "2026-11-15", "2026-11-20", "2026-12-25",
+    # 2027
+    "2027-01-01", "2027-02-08", "2027-02-09", "2027-03-26", "2027-04-21",
+    "2027-05-01", "2027-06-03", "2027-09-07", "2027-10-12", "2027-11-02",
+    "2027-11-15", "2027-11-20", "2027-12-25",
+    # 2028
+    "2028-01-01", "2028-02-28", "2028-03-01", "2028-04-14", "2028-04-21",
+    "2028-05-01", "2028-05-30", "2028-09-07", "2028-10-12", "2028-11-02",
+    "2028-11-15", "2028-11-20", "2028-12-25",
+    # Recesso Forense (20/12 a 20/01 - Art. 220 CPC)
+    "2026-12-20", "2026-12-21", "2026-12-22", "2026-12-23", "2026-12-24", "2026-12-28", "2026-12-29", "2026-12-30", "2026-12-31",
+    "2027-01-04", "2027-01-05", "2027-01-06", "2027-01-07", "2027-01-08", "2027-01-11", "2027-01-12", "2027-01-13", "2027-01-14", "2027-01-15", "2027-01-18", "2027-01-19", "2027-01-20",
+    "2028-12-20", "2028-12-21", "2028-12-22", "2028-12-23", "2028-12-24", "2028-12-28", "2028-12-29", "2028-12-30", "2028-12-31",
+    "2029-01-04", "2029-01-05", "2029-01-06", "2029-01-07", "2029-01-08", "2029-01-11", "2029-01-12", "2029-01-13", "2029-01-14", "2029-01-15", "2029-01-18", "2029-01-19", "2029-01-20",
+    # Feriados Estaduais RS
+    "2026-09-20", "2027-09-20", "2028-09-20",
+], dtype="datetime64[D]")
 
 COLUNAS_PRAZOS = [
     "id", "created_at", "tipo", "titulo", "processo", "cliente", "responsavel",
@@ -200,7 +182,6 @@ def carregar_prazos() -> pd.DataFrame:
         df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
     df["concluido"] = df["concluido"].fillna(False).astype(bool)
     df["arquivado"] = df["arquivado"].fillna(False).astype(bool)
-    df["descricao"] = df["descricao"].astype(object).where(df["descricao"].notna(), "")
     return df
 
 @st.cache_data(ttl=60, show_spinner="Carregando processos…")
@@ -208,8 +189,6 @@ def carregar_processos() -> pd.DataFrame:
     resp = supabase().table(TABELA_PROCESSOS).select("*").order("numero").execute()
     df = pd.DataFrame(resp.data, columns=COLUNAS_PROCESSOS)
     df["ativo"] = df["ativo"].fillna(True).astype(bool)
-    for col in ("cliente", "parte_contraria", "descricao"):
-        df[col] = df[col].astype(object).where(df[col].notna(), "")
     return df
 
 @st.cache_data(ttl=60, show_spinner="Carregando audiências…")
@@ -220,7 +199,6 @@ def carregar_audiencias() -> pd.DataFrame:
             return pd.DataFrame(columns=COLUNAS_AUDIENCIAS)
         df = pd.DataFrame(resp.data, columns=COLUNAS_AUDIENCIAS)
         df["data_audiencia"] = pd.to_datetime(df["data_audiencia"], errors="coerce").dt.date
-        df["observacoes"] = df["observacoes"].astype(object).where(df["observacoes"].notna(), "")
         return df
     except Exception as e:
         st.error(f"Erro ao carregar audiências: {e}")
@@ -558,7 +536,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
         })
     )
 
-    st.dataframe(vis, width="stretch", hide_index=True)
+    st.dataframe(vis, use_container_width=True, hide_index=True)
 
     st.divider()
     st.subheader("⚙️ Gerenciar Prazo")
@@ -605,7 +583,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
         key=f"sel_prazo_idx_{prefix}"
     )
 
-    if col2.button("📂 Ver Detalhes", width="stretch", type="primary", key=f"btn_det_prazo_{prefix}"):
+    if col2.button("📂 Ver Detalhes", use_container_width=True, type="primary", key=f"btn_det_prazo_{prefix}"):
         if st.session_state.get(f"sel_prazo_idx_{prefix}", 0) > 0:
             id_sel = opcoes_ids[st.session_state.get(f"sel_prazo_idx_{prefix}", 0)]
             st.session_state[modal_key_id] = id_sel
@@ -617,9 +595,6 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
 
     if st.session_state.get(modal_key_aberta) and st.session_state.get(modal_key_id):
         id_prazo = st.session_state[modal_key_id]
-        if df[df["id"] == id_prazo].empty:
-            st.session_state[modal_key_aberta] = False
-            return
         prazo = df[df["id"] == id_prazo].iloc[0]
 
         st.divider()
@@ -673,7 +648,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                     key=f"dicas_{id_prazo}"
                 )
 
-                if st.form_submit_button("💾 Salvar Dicas", width="stretch", type="primary"):
+                if st.form_submit_button("💾 Salvar Dicas", use_container_width=True, type="primary"):
                     atualizar_campos({id_prazo: {"descricao": dicas}})
                     st.session_state.aviso = "✅ Dicas salvas!"
                     st.session_state.editor_v += 1
@@ -685,29 +660,29 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
             col1, col2, col3, col4 = st.columns(4)
 
             with col1:
-                if st.button("✏️ Editar Prazo", width="stretch", type="secondary", key=f"btn_edit_{prefix}_{id_prazo}"):
+                if st.button("✏️ Editar Prazo", use_container_width=True, type="secondary", key=f"btn_edit_{prefix}_{id_prazo}"):
                     st.session_state[modal_key_modo] = "editar"
                     st.rerun()
 
             with col2:
-                if st.button("✅ Concluído", width="stretch", type="primary", key=f"btn_concluido_{prefix}_{id_prazo}"):
+                if st.button("✅ Concluído", use_container_width=True, type="primary", key=f"btn_concluido_{prefix}_{id_prazo}"):
                     st.session_state[modal_key_modo] = "concluir_com_obs"
                     st.rerun()
 
             with col3:
-                if st.button("📦 Arquivar", width="stretch", type="secondary", key=f"btn_arquivar_{prefix}_{id_prazo}"):
+                if st.button("📦 Arquivar", use_container_width=True, type="secondary", key=f"btn_arquivar_{prefix}_{id_prazo}"):
                     st.session_state[modal_key_modo] = "confirmar_arquivar"
                     st.rerun()
 
             with col4:
-                if st.button("❌ Excluir", width="stretch", type="secondary", key=f"btn_excluir_{prefix}_{id_prazo}"):
+                if st.button("❌ Excluir", use_container_width=True, type="secondary", key=f"btn_excluir_{prefix}_{id_prazo}"):
                     st.session_state[modal_key_modo] = "confirmar_excluir"
                     st.rerun()
 
             st.divider()
             col_fechar = st.columns([3, 1])
             with col_fechar[1]:
-                if st.button("🔙 Fechar", width="stretch", type="secondary", key=f"btn_fechar_{prefix}_{id_prazo}"):
+                if st.button("🔙 Fechar", use_container_width=True, type="secondary", key=f"btn_fechar_{prefix}_{id_prazo}"):
                     st.session_state[modal_key_aberta] = False
                     st.session_state[modal_key_modo] = None
                     st.rerun()
@@ -744,7 +719,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
 
                 c1, c2 = st.columns(2)
                 with c1:
-                    if st.form_submit_button("💾 Salvar", type="primary", width="stretch"):
+                    if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
                         atualizar_campos({id_prazo: {
                             "titulo": novo_titulo,
                             "responsavel": novo_responsavel,
@@ -758,7 +733,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                         st.session_state.editor_v += 1
                         st.rerun()
                 with c2:
-                    if st.form_submit_button("❌ Cancelar", width="stretch"):
+                    if st.form_submit_button("❌ Cancelar", use_container_width=True):
                         st.session_state[modal_key_modo] = "detalhes"
                         st.rerun()
 
@@ -768,7 +743,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
             st.write(f"**Título (Prazo):** {prazo['titulo']}")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("✅ SIM, Arquivar", width="stretch", type="primary", key=f"btn_sim_arq_{prefix}_{id_prazo}"):
+                if st.button("✅ SIM, Arquivar", use_container_width=True, type="primary", key=f"btn_sim_arq_{prefix}_{id_prazo}"):
                     arquivar_prazo(id_prazo)
                     carregar_prazos.clear()
                     carregar_processos.clear()
@@ -777,7 +752,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                     st.session_state.editor_v += 1
                     st.rerun()
             with c2:
-                if st.button("❌ NÃO, Cancelar", width="stretch", key=f"btn_nao_arq_{prefix}_{id_prazo}"):
+                if st.button("❌ NÃO, Cancelar", use_container_width=True, key=f"btn_nao_arq_{prefix}_{id_prazo}"):
                     st.session_state[modal_key_modo] = "detalhes"
                     st.rerun()
 
@@ -796,7 +771,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
 
                 c1, c2 = st.columns(2)
                 with c1:
-                    if st.form_submit_button("✅ Concluir com Anotações", type="primary", width="stretch"):
+                    if st.form_submit_button("✅ Concluir com Anotações", type="primary", use_container_width=True):
                         obs_antiga = prazo['descricao'] or ""
                         if obs_antiga:
                             obs_nova = f"{obs_antiga}\n\n✅ CONCLUÍDO: {anotacoes}"
@@ -814,7 +789,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                         st.rerun()
 
                 with c2:
-                    if st.form_submit_button("❌ Cancelar", width="stretch"):
+                    if st.form_submit_button("❌ Cancelar", use_container_width=True):
                         st.session_state[modal_key_modo] = "detalhes"
                         st.rerun()
 
@@ -825,7 +800,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
             st.caption("⚠️ Esta ação NÃO pode ser desfeita!")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("🗑️ SIM, Excluir", width="stretch", type="primary", key=f"btn_sim_exc_{prefix}_{id_prazo}"):
+                if st.button("🗑️ SIM, Excluir", use_container_width=True, type="primary", key=f"btn_sim_exc_{prefix}_{id_prazo}"):
                     excluir_prazo(id_prazo)
                     carregar_prazos.clear()
                     carregar_processos.clear()
@@ -834,7 +809,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                     st.session_state.editor_v += 1
                     st.rerun()
             with c2:
-                if st.button("❌ NÃO, Cancelar", width="stretch", key=f"btn_nao_exc_{prefix}_{id_prazo}"):
+                if st.button("❌ NÃO, Cancelar", use_container_width=True, key=f"btn_nao_exc_{prefix}_{id_prazo}"):
                     st.session_state[modal_key_modo] = "detalhes"
                     st.rerun()
 
@@ -990,22 +965,22 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
     with col1:
         with st.container(border=True):
             st.markdown("### 🔴 VENCIDOS")
-            st.metric("vencidos", len(vencidos), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_vencidos", width="stretch"):
+            st.metric("", len(vencidos), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_vencidos", use_container_width=True):
                 st.session_state.dashboard_filtro = "vencidos"
 
     with col2:
         with st.container(border=True):
             st.markdown("### 🟠 HOJE")
-            st.metric("hoje_prazos", len(hoje_prazos), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_hoje", width="stretch"):
+            st.metric("", len(hoje_prazos), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_hoje", use_container_width=True):
                 st.session_state.dashboard_filtro = "hoje"
 
     with col3:
         with st.container(border=True):
             st.markdown("### 📋 PENDENTES")
-            st.metric("pend", len(pend), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_pendentes", width="stretch"):
+            st.metric("", len(pend), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_pendentes", use_container_width=True):
                 st.session_state.dashboard_filtro = "pendentes"
 
     st.divider()
@@ -1016,22 +991,22 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
     with col1:
         with st.container(border=True):
             st.markdown("### 📅 AGENDADAS")
-            st.metric("aud_agendadas", len(aud_agendadas), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_agendadas", width="stretch"):
+            st.metric("", len(aud_agendadas), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_agendadas", use_container_width=True):
                 st.session_state.dashboard_filtro = "agendadas"
 
     with col2:
         with st.container(border=True):
             st.markdown("### ✅ REALIZADAS")
-            st.metric("aud_realizadas", len(aud_realizadas), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_realizadas", width="stretch"):
+            st.metric("", len(aud_realizadas), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_realizadas", use_container_width=True):
                 st.session_state.dashboard_filtro = "realizadas"
 
     with col3:
         with st.container(border=True):
             st.markdown("### ❌ CANCELADAS")
-            st.metric("aud_canceladas", len(aud_canceladas), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_canceladas", width="stretch"):
+            st.metric("", len(aud_canceladas), label_visibility="collapsed")
+            if st.button("Ver Detalhes", key="btn_canceladas", use_container_width=True):
                 st.session_state.dashboard_filtro = "canceladas"
 
     st.divider()
@@ -1042,7 +1017,7 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
         st.markdown("---")
         col_voltar = st.columns([3, 1])
         with col_voltar[1]:
-            if st.button("🔙 Voltar", width="stretch", key="btn_voltar_dash"):
+            if st.button("🔙 Voltar", use_container_width=True, key="btn_voltar_dash"):
                 st.session_state.dashboard_filtro = None
                 st.rerun()
 
@@ -1261,7 +1236,7 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                         nova_parte = st.text_input("Parte Adversária", value=proc["parte_contraria"], key=f"parte_{proc['id']}")
                         nova_desc = st.text_area("Descrição", value=proc["descricao"] or "", height=100, key=f"desc_{proc['id']}")
 
-                        if st.form_submit_button("💾 Salvar Alterações", type="primary", width="stretch"):
+                        if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
                             atualizar_processo(proc["id"], {
                                 "cliente": novo_cliente,
                                 "parte_contraria": nova_parte,
@@ -1369,7 +1344,7 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
         "responsavel": "Responsável"
     })
 
-    st.dataframe(vis, width="stretch", hide_index=True)
+    st.dataframe(vis, use_container_width=True, hide_index=True)
 
     st.divider()
     st.subheader("⚙️ Gerenciar Audiência")
@@ -1384,7 +1359,7 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
     opcoes_ids = [None]
 
     for _, row in df.iterrows():
-        opcoes_display.append(f"{row['processo']} | {row['data_audiencia'].strftime('%d/%m/%Y')} {str(row['hora_inicio'])[:5]} | {row['sala']}")
+        opcoes_display.append(f"{row['processo']} | {row['data_audiencia'].strftime('%d/%m/%Y %H:%M')} | {row['sala']}")
         opcoes_ids.append(row['id'])
 
     id_sel_idx = col1.selectbox(
@@ -1394,7 +1369,7 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
         key=f"sel_audiencia_idx_{prefix}"
     )
 
-    if col2.button("📂 Ver Detalhes", width="stretch", type="primary", key=f"btn_aud_det_{prefix}"):
+    if col2.button("📂 Ver Detalhes", use_container_width=True, type="primary", key=f"btn_aud_det_{prefix}"):
         if st.session_state.get(f"sel_audiencia_idx_{prefix}", 0) > 0:
             id_sel = opcoes_ids[st.session_state.get(f"sel_audiencia_idx_{prefix}", 0)]
             st.session_state[modal_key_id] = id_sel
@@ -1406,9 +1381,6 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
 
     if st.session_state.get(modal_key_aberta) and st.session_state.get(modal_key_id):
         id_audiencia = st.session_state[modal_key_id]
-        if df[df["id"] == id_audiencia].empty:
-            st.session_state[modal_key_aberta] = False
-            return
         audiencia = df[df["id"] == id_audiencia].iloc[0]
 
         st.divider()
@@ -1448,33 +1420,33 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
             col1, col2, col3, col4 = st.columns(4)
 
             with col1:
-                if st.button("✏️ Editar", width="stretch", type="secondary", key=f"btn_edit_aud_{prefix}_{id_audiencia}"):
+                if st.button("✏️ Editar", use_container_width=True, type="secondary", key=f"btn_edit_aud_{prefix}_{id_audiencia}"):
                     st.session_state[modal_key_modo] = "editar"
                     st.rerun()
 
             with col2:
-                if st.button("✅ Realizada", width="stretch", type="primary", key=f"btn_realizada_{prefix}_{id_audiencia}"):
+                if st.button("✅ Realizada", use_container_width=True, type="primary", key=f"btn_realizada_{prefix}_{id_audiencia}"):
                     atualizar_audiencia(id_audiencia, {"status": "Realizada"})
                     st.session_state.aviso = "✅ Audiência marcada como realizada!"
                     st.session_state[modal_key_aberta] = False
                     st.rerun()
 
             with col3:
-                if st.button("❌ Cancelar", width="stretch", type="secondary", key=f"btn_cancelar_{prefix}_{id_audiencia}"):
+                if st.button("❌ Cancelar", use_container_width=True, type="secondary", key=f"btn_cancelar_{prefix}_{id_audiencia}"):
                     atualizar_audiencia(id_audiencia, {"status": "Cancelada"})
                     st.session_state.aviso = "⚠️ Audiência cancelada!"
                     st.session_state[modal_key_aberta] = False
                     st.rerun()
 
             with col4:
-                if st.button("🗑️ Excluir", width="stretch", type="secondary", key=f"btn_excluir_{prefix}_{id_audiencia}"):
+                if st.button("🗑️ Excluir", use_container_width=True, type="secondary", key=f"btn_excluir_{prefix}_{id_audiencia}"):
                     st.session_state[modal_key_modo] = "confirmar_excluir"
                     st.rerun()
 
             st.divider()
             col_fechar = st.columns([3, 1])
             with col_fechar[1]:
-                if st.button("🔙 Fechar", width="stretch", type="secondary", key=f"btn_fechar_{prefix}_{id_audiencia}"):
+                if st.button("🔙 Fechar", use_container_width=True, type="secondary", key=f"btn_fechar_{prefix}_{id_audiencia}"):
                     st.session_state[modal_key_aberta] = False
                     st.rerun()
 
@@ -1502,7 +1474,7 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
 
                 c1, c2 = st.columns(2)
                 with c1:
-                    if st.form_submit_button("💾 Salvar", type="primary", width="stretch"):
+                    if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
                         atualizar_audiencia(id_audiencia, {
                             "data_audiencia": nova_data.isoformat(),
                             "hora_inicio": nova_hora_ini.isoformat(),
@@ -1516,7 +1488,7 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
                         st.session_state[modal_key_aberta] = False
                         st.rerun()
                 with c2:
-                    if st.form_submit_button("❌ Cancelar", width="stretch"):
+                    if st.form_submit_button("❌ Cancelar", use_container_width=True):
                         st.session_state[modal_key_modo] = "detalhes"
                         st.rerun()
 
@@ -1527,13 +1499,13 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
             st.caption("⚠️ Esta ação NÃO pode ser desfeita!")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("🗑️ SIM, Excluir", width="stretch", type="primary", key=f"btn_sim_excluir_{prefix}_{id_audiencia}"):
+                if st.button("🗑️ SIM, Excluir", use_container_width=True, type="primary", key=f"btn_sim_excluir_{prefix}_{id_audiencia}"):
                     excluir_audiencia(id_audiencia)
                     st.session_state.aviso = "✅ Audiência excluída!"
                     st.session_state[modal_key_aberta] = False
                     st.rerun()
             with c2:
-                if st.button("❌ NÃO, Cancelar", width="stretch", key=f"btn_nao_excluir_{prefix}_{id_audiencia}"):
+                if st.button("❌ NÃO, Cancelar", use_container_width=True, key=f"btn_nao_excluir_{prefix}_{id_audiencia}"):
                     st.session_state[modal_key_modo] = "detalhes"
                     st.rerun()
 
@@ -1557,7 +1529,7 @@ def main() -> None:
                       index=["Novo Prazo", "Nova Audiência", "Novo Processo", "Dashboard"].index(st.session_state.aba_selecionada))
         st.divider()
 
-        if st.button("🔄 Recarregar Dados", width="stretch"):
+        if st.button("🔄 Recarregar Dados", use_container_width=True):
             carregar_prazos.clear()
             carregar_processos.clear()
             carregar_audiencias.clear()
@@ -1578,9 +1550,7 @@ def main() -> None:
                 parte = st.text_input("Parte Adversária *", value="", key=f"pparte_{v}")
                 descricao = st.text_area("Descrição", value="", key=f"pdesc_{v}")
                 if st.form_submit_button("Salvar", type="primary"):
-                    if numero.strip() in set(df_processos["numero"].astype(str).str.strip()):
-                        st.error("⚠️ Este número de processo já está cadastrado!")
-                    elif numero and cliente and parte:
+                    if numero and cliente and parte:
                         inserir_processo({"numero": numero, "cliente": cliente, "parte_contraria": parte, "descricao": descricao or None, "ativo": True})
                         st.session_state.form_v += 1
                         st.session_state.aviso = "✅ Processo salvo com sucesso!"
@@ -1588,7 +1558,7 @@ def main() -> None:
                     else:
                         st.error("Preencha todos!")
         else:
-            st.caption("📊 O dashboard está aberto na área principal →")
+            dashboard_completo(df_prazos, df_audiencias, df_processos)
 
     st.title("⚖️ Controladoria Jurídica")
     st.caption(f"Hoje: {hoje():%d/%m/%Y}")
@@ -1597,11 +1567,10 @@ def main() -> None:
         st.toast(st.session_state.aviso)
         st.session_state.aviso = None
 
-    if aba == "Dashboard":
-        dashboard_completo(df_prazos, df_audiencias, df_processos)
+    if df_prazos.empty:
+        st.info("Nenhum prazo.")
         st.stop()
 
-    # Banco vazio não bloqueia mais as abas de Processos e Audiências
     df_prazos = enriquecer(df_prazos)
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🗂️ Processos", "📅 Audiências"])
@@ -1659,7 +1628,7 @@ def main() -> None:
                 key="sel_reativar"
             )
 
-            if col2.button("🔄 Reativar", width="stretch", type="secondary"):
+            if col2.button("🔄 Reativar", use_container_width=True, type="secondary"):
                 atualizar_campos({id_reativar: {"concluido": False, "concluido_em": None}})
                 st.session_state.aviso = "✅ Prazo reativado!"
                 st.session_state.editor_v += 1
@@ -1669,8 +1638,6 @@ def main() -> None:
         st.subheader("📋 Pauta de Prazos")
 
         prazos_ativos = df_prazos[~df_prazos["arquivado"] & ~df_prazos["concluido"]].copy()
-        partes = dict(zip(df_processos["numero"], df_processos["parte_contraria"]))
-        prazos_ativos["parte_contraria"] = prazos_ativos["processo"].map(partes).fillna("—")
 
         data_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
         data_semana = pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=7)
@@ -1687,7 +1654,7 @@ def main() -> None:
                 for _, p in prazos_hoje.iterrows():
                     col1, col2 = st.columns([3, 1])
                     col1.markdown(f"""
-                    **{p['titulo']}** | {p['cliente']} / {p['parte_contraria']}
+                    **{p['titulo']}** | {p['cliente']} / {p.get('parte_contraria', 'N/A')}
 
                     Responsável: {p['responsavel']} | Prioridade: {p['prioridade']}
                     """)
@@ -1727,7 +1694,7 @@ def main() -> None:
                     data=f.read(),
                     file_name=f"pauta_prazos_{data_hoje.strftime('%d_%m_%Y')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    width="stretch"
+                    use_container_width=True
                 )
         else:
             st.info("Sem dados para exportar")
@@ -1748,7 +1715,7 @@ def main() -> None:
                 key="sel_des"
             )
 
-            if col2.button("🔄 Desarquivar", width="stretch", type="secondary"):
+            if col2.button("🔄 Desarquivar", use_container_width=True, type="secondary"):
                 supabase().table(TABELA_PRAZOS).update({"arquivado": False}).eq("id", id_des).execute()
                 carregar_prazos.clear()
                 st.success("✅ Prazo restaurado!")
@@ -1818,7 +1785,7 @@ def main() -> None:
                         data=f.read(),
                         file_name=f"audiencias_{hoje().strftime('%d_%m_%Y')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        width="stretch"
+                        use_container_width=True
                     )
 
 if __name__ == "__main__":
