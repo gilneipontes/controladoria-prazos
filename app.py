@@ -1521,20 +1521,33 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
                     st.session_state[modal_key_modo] = "detalhes"
                     st.rerun()
 
-# ===== BUSCA INTELIGENTE POR CLIENTE, PROCESSO, TÍTULO E DESCRIÇÃO =====
+# ===== BUSCA INTELIGENTE E ROBUSTA =====
+def remover_acentos(texto: str) -> str:
+    """Remove acentos para busca mais robusta"""
+    if pd.isna(texto):
+        return ""
+    import unicodedata
+    return ''.join(c for c in unicodedata.normalize('NFD', str(texto))
+                   if unicodedata.category(c) != 'Mn').lower()
+
 def buscar_por_cliente(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, cliente_busca: str) -> tuple:
     """
-    Filtra prazos e audiências por nome do cliente, processo, título ou descrição (busca parcial, case-insensitive)
-    Busca em múltiplos campos para encontrar exatamente o que você procura!
+    Filtra prazos e audiências com busca INTELIGENTE e ROBUSTA:
+    - Case-insensitive (maiúsculas/minúsculas)
+    - Remove acentos para comparação
+    - Busca parcial em múltiplos campos
+    - Trata espaços extras
     """
     if not cliente_busca or cliente_busca.strip() == "":
         return df_prazos, df_audiencias
 
     busca_lower = cliente_busca.lower().strip()
+    busca_sem_acentos = remover_acentos(busca_lower)
 
     # Filtrar prazos - busca em MÚLTIPLOS campos
     if not df_prazos.empty:
         mascara = (
+            df_prazos["cliente"].fillna("").apply(remover_acentos).str.contains(busca_sem_acentos, na=False, regex=True) |
             df_prazos["cliente"].fillna("").str.lower().str.contains(busca_lower, na=False) |
             df_prazos["processo"].fillna("").str.lower().str.contains(busca_lower, na=False) |
             df_prazos["titulo"].fillna("").str.lower().str.contains(busca_lower, na=False) |
@@ -1594,6 +1607,13 @@ def main() -> None:
             key="busca_cliente_sidebar",
             label_visibility="collapsed"
         )
+
+        # Debug: Mostrar clientes disponíveis se busca não encontrar
+        if cliente_busca and not df_prazos.empty:
+            clientes_unicos = sorted(df_prazos["cliente"].dropna().unique())
+            with st.expander("🔎 Clientes cadastrados", expanded=False):
+                for cliente in clientes_unicos:
+                    st.caption(f"• {cliente}")
 
         st.divider()
 
