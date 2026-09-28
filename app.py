@@ -1840,6 +1840,172 @@ def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.
                     with col2:
                         st.markdown(f"<div style='background-color: {status_color}; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px; font-weight: bold; color: white; margin-top: 10px;'>{aud['status']}</div>", unsafe_allow_html=True)
 
+def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+    """
+    PASSO 2.5: Relatório de Prazos Concluídos com Filtros e Export
+    """
+    st.markdown("# 📊 Relatório de Prazos Concluídos")
+    st.caption("Acompanhe e exporte os prazos finalizados")
+
+    if df_prazos.empty:
+        st.info("Nenhum prazo cadastrado.")
+        return
+
+    # Filtrar apenas concluídos
+    prazos_concluidos = df_prazos[df_prazos["concluido"] == True].copy()
+
+    if prazos_concluidos.empty:
+        st.warning("Nenhum prazo concluído ainda.")
+        return
+
+    st.divider()
+
+    # ===== FILTROS =====
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        data_inicio = st.date_input(
+            "📅 Data Início",
+            value=pd.Timestamp.now(tz="America/Sao_Paulo").date() - pd.Timedelta(days=30),
+            key="rel_data_inicio"
+        )
+
+    with col2:
+        data_fim = st.date_input(
+            "📅 Data Fim",
+            value=pd.Timestamp.now(tz="America/Sao_Paulo").date(),
+            key="rel_data_fim"
+        )
+
+    with col3:
+        responsaveis_unicos = ["Todos"] + sorted(df_prazos["responsavel"].dropna().unique().tolist())
+        filtro_responsavel = st.selectbox(
+            "👤 Responsável",
+            responsaveis_unicos,
+            key="rel_responsavel"
+        )
+
+    col4, col5 = st.columns(2)
+
+    with col4:
+        clientes_unicos = ["Todos"] + sorted(df_prazos["cliente"].dropna().unique().tolist())
+        filtro_cliente = st.selectbox(
+            "👤 Cliente",
+            clientes_unicos,
+            key="rel_cliente"
+        )
+
+    with col5:
+        st.empty()  # Espaçamento
+
+    st.divider()
+
+    # ===== APLICAR FILTROS =====
+    df_filtrado = prazos_concluidos.copy()
+
+    # Filtro de data
+    if pd.notna(data_inicio):
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"]).dt.date >= data_inicio]
+    if pd.notna(data_fim):
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"]).dt.date <= data_fim]
+
+    # Filtro de responsável
+    if filtro_responsavel != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["responsavel"] == filtro_responsavel]
+
+    # Filtro de cliente
+    if filtro_cliente != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["cliente"] == filtro_cliente]
+
+    # ===== MÉTRICAS =====
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("✅ Total Concluídos", len(df_filtrado))
+    col2.metric("📅 Período", f"{data_inicio.strftime('%d/%m')} a {data_fim.strftime('%d/%m')}")
+    col3.metric("👤 Responsável", filtro_responsavel if filtro_responsavel != "Todos" else "Todos")
+    col4.metric("🏢 Cliente", filtro_cliente if filtro_cliente != "Todos" else "Todos")
+
+    st.divider()
+
+    if df_filtrado.empty:
+        st.info("Nenhum prazo encontrado com os filtros aplicados.")
+        return
+
+    # ===== TABELA DE RESULTADOS =====
+    st.markdown("### 📋 Prazos Concluídos")
+
+    # Preparar dados para exibição
+    df_exibicao = df_filtrado[[
+        "titulo", "cliente", "processo", "responsavel",
+        "data_fatal", "concluido_em", "descricao", "prioridade"
+    ]].copy()
+
+    df_exibicao["data_fatal"] = pd.to_datetime(df_exibicao["data_fatal"]).dt.strftime("%d/%m/%Y")
+    df_exibicao["concluido_em"] = pd.to_datetime(df_exibicao["concluido_em"]).dt.strftime("%d/%m/%Y")
+
+    # Calcular dias para conclusão
+    dias_para_conclusao = []
+    for _, row in df_filtrado.iterrows():
+        try:
+            data_fatal = pd.to_datetime(row["data_fatal"]).date()
+            data_conc = pd.to_datetime(row["concluido_em"]).date()
+            dias = (data_conc - data_fatal).days
+            dias_para_conclusao.append(dias)
+        except:
+            dias_para_conclusao.append(None)
+
+    df_exibicao["Dias Levou"] = dias_para_conclusao
+
+    # Renomear colunas para exibição
+    df_exibicao = df_exibicao.rename(columns={
+        "titulo": "Prazo",
+        "cliente": "Cliente",
+        "processo": "Processo",
+        "responsavel": "Responsável",
+        "data_fatal": "Data Fatal",
+        "concluido_em": "Concluído em",
+        "descricao": "Descrição",
+        "prioridade": "Prioridade"
+    })
+
+    # Exibir tabela
+    st.dataframe(
+        df_exibicao,
+        use_container_width=True,
+        height=400,
+        hide_index=True
+    )
+
+    st.divider()
+
+    # ===== EXPORT EM EXCEL =====
+    st.markdown("### 📥 Exportar Relatório")
+
+    excel_path = gerar_excel_bonito(df_filtrado, df_processos)
+
+    if excel_path:
+        with open(excel_path, "rb") as f:
+            st.download_button(
+                label="📊 Baixar em Excel",
+                data=f.read(),
+                file_name=f"relatorio_concluidos_{data_inicio.strftime('%d_%m_%Y')}_a_{data_fim.strftime('%d_%m_%Y')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+    st.divider()
+
+    # ===== AÇÕES EM LOTE =====
+    st.markdown("### 🗑️ Arquivar Prazos Concluídos")
+    st.info("Arquive os prazos concluídos para manter a interface limpa. Você pode restaurá-los depois na aba 'Pauta'.")
+
+    if st.button("📦 Arquivar Todos Filtrados", use_container_width=True, type="secondary"):
+        ids_para_arquivar = df_filtrado["id"].tolist()
+        if ids_para_arquivar:
+            campos_atualizacao = {id_prazo: {"arquivado": True} for id_prazo in ids_para_arquivar}
+            atualizar_campos(campos_atualizacao)
+            st.session_state.aviso = f"✅ {len(ids_para_arquivar)} prazo(s) arquivado(s)!"
+            st.rerun()
+
 def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
     """Gerencia visualização de clientes (catálogo)."""
     st.subheader("👤 Cadastro de Clientes")
@@ -2204,9 +2370,10 @@ def main() -> None:
 
     with st.sidebar:
         st.title("⚖️ Controladoria")
-        aba = st.radio("Opção:", ["Novo Prazo", "Nova Audiência", "Novo Processo", "Cards", "Dashboard"],
+        opcoes_menu = ["Novo Prazo", "Nova Audiência", "Novo Processo", "Cards", "📊 Relatório", "Dashboard"]
+        aba = st.radio("Opção:", opcoes_menu,
                       key="aba",
-                      index=["Novo Prazo", "Nova Audiência", "Novo Processo", "Cards", "Dashboard"].index(st.session_state.aba_selecionada) if st.session_state.aba_selecionada in ["Novo Prazo", "Nova Audiência", "Novo Processo", "Cards", "Dashboard"] else 0)
+                      index=opcoes_menu.index(st.session_state.aba_selecionada) if st.session_state.aba_selecionada in opcoes_menu else 0)
         st.session_state.aba_selecionada = aba
         st.divider()
 
@@ -2307,6 +2474,9 @@ def main() -> None:
         elif aba == "Cards":
             # PASSO 2: Visão Cards Hierárquica (sem filtro global, mostra tudo por cliente)
             pass  # Renderizado no main area abaixo
+        elif aba == "📊 Relatório":
+            # PASSO 2.5: Relatório de Prazos Concluídos (renderizado no main area abaixo)
+            pass
         else:
             # ===== APLICAR FILTRO DE BUSCA NO DASHBOARD =====
             df_prazos_filtrados, df_audiencias_filtradas = buscar_por_cliente(
@@ -2328,6 +2498,11 @@ def main() -> None:
     # ===== PASSO 2: RENDERIZAR VISÃO CARDS HIERÁRQUICA =====
     if aba == "Cards":
         dashboard_cards_hierarquico(df_prazos, df_audiencias, df_processos)
+        st.stop()
+
+    # ===== PASSO 2.5: RENDERIZAR RELATÓRIO DE CONCLUÍDOS =====
+    if aba == "📊 Relatório":
+        relatorio_prazos_concluidos(df_prazos, df_processos)
         st.stop()
 
     # ===== APLICAR FILTRO DE BUSCA NAS TABS =====
