@@ -2943,80 +2943,8 @@ def main() -> None:
 
         st.divider()
 
-        # ===== BUSCA INTELIGENTE COM SUGESTÕES DINÂMICAS =====
-        st.markdown("### 🔍 BUSCA POR CLIENTE")
-
-        # Obter lista única de clientes
-        if not df_prazos.empty:
-            clientes_unicos = sorted([c for c in df_prazos["cliente"].dropna().unique() if c])
-        else:
-            clientes_unicos = []
-
-        # Inicializar session_state para a busca
-        if "busca_temp_text" not in st.session_state:
-            st.session_state.busca_temp_text = ""
-
-        # Campo de texto para digitar (o valor fica guardado na própria chave)
-        busca_temp = st.text_input(
-            "Digite o nome...",
-            key="busca_temp_text",
-            label_visibility="collapsed",
-            placeholder="Digite 3+ letras para buscar...",
-            max_chars=100
-        )
-
-        # Se digitou 3+ caracteres, mostrar selectbox com opções
-        if len(busca_temp) >= 3:
-            busca_lower = busca_temp.lower().strip()
-
-            # Filtrar clientes que começam com a busca, depois os que contêm
-            sugestoes_inicio = [c for c in clientes_unicos if c.lower().startswith(busca_lower)]
-            sugestoes_contem = [c for c in clientes_unicos if busca_lower in c.lower() and c not in sugestoes_inicio]
-            sugestoes = sugestoes_inicio + sugestoes_contem
-
-            if sugestoes:
-                # Começa sem seleção: o filtro só vale depois que o cliente é escolhido
-                if st.session_state.get("cliente_selecionado_dropdown") not in sugestoes:
-                    st.session_state.cliente_selecionado_dropdown = None
-
-                cliente_selecionado = st.selectbox(
-                    "Selecione o cliente:",
-                    options=sugestoes,
-                    index=None,
-                    placeholder="👆 Toque para escolher o cliente...",
-                    key="cliente_selecionado_dropdown",
-                    label_visibility="collapsed"
-                )
-
-                if cliente_selecionado:
-                    # Usar o cliente selecionado para filtrar
-                    cliente_busca = cliente_selecionado
-                    st.session_state.busca_cliente_sidebar = cliente_selecionado
-
-                    # Salvar qual processo abrir automaticamente (primeiro da lista)
-                    processos_cliente = df_processos[df_processos["cliente"].str.contains(cliente_selecionado, case=False, na=False, regex=False)]
-                    if not processos_cliente.empty:
-                        st.session_state.processo_abrir_automatico = processos_cliente.iloc[0]["numero"]
-
-                    st.success(f"✅ Cliente selecionado: **{cliente_busca}**")
-                    st.info("👉 Os dados aparecem na tela principal! Clique no processo para expandir.")
-
-                    # No celular, recolhe a barra lateral uma única vez por cliente escolhido
-                    if st.session_state.sidebar_recolhida_para != cliente_selecionado:
-                        st.session_state.sidebar_recolhida_para = cliente_selecionado
-                        recolher_sidebar_no_celular()
-                else:
-                    cliente_busca = ""
-            else:
-                st.warning(f"❌ Nenhum cliente encontrado com '{busca_temp}'")
-                cliente_busca = ""
-        else:
-            cliente_busca = ""
-
-        # ===== BOTÃO LIMPAR BUSCA =====
-        st.button("🗑️ Limpar Busca", use_container_width=True, on_click=limpar_busca_cliente)
-
-        st.divider()
+        # Busca por cliente removida da barra lateral (use 🗂️ Processos Cadastrados)
+        cliente_busca = ""
 
         if aba == "🏠 Início":
             # Tela principal com as abas (Ativos, Concluídos, Pauta...)
