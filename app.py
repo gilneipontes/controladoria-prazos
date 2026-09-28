@@ -832,7 +832,7 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
 
     processos_ativos = processos_df[processos_df["ativo"]].sort_values("numero")
 
-    st.write("**Nº Processo ***")
+    st.write("**Nº Processo** \\*")
 
     # Campo de texto com botão de LIMPAR
     col_busca, col_limpar = st.columns([9, 1])
@@ -895,7 +895,7 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
 
         st.success(f"✅ Processo selecionado: **{processo}**")
 
-    st.write("**Título ***")
+    st.write("**Título** \\*")
     busca_titulo = st.text_input(
         "Digite para filtrar atalhos jurídicos",
         value="",
@@ -1104,31 +1104,44 @@ def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
 
     processos_ativos = processos_df[processos_df["ativo"]].sort_values("numero")
 
-    st.write("**Nº Processo ***")
+    st.write("**Processo ou cliente** \\*")
     busca = st.text_input(
-        "Digite o número do processo",
+        "Digite o número do processo ou o nome do cliente",
         value="",
-        placeholder="Ex: 5014993 ou 5028905",
+        placeholder="Ex: 5014993 ou HELENA",
         key=f"busca_proc_aud_{v}",
         label_visibility="collapsed"
-    )
+    ).strip()
 
     processo = None
     autor = ""
     reu = ""
 
     if busca:
-        processos_filtrados = processos_ativos[
-            processos_ativos["numero"].str.contains(busca, case=False, regex=False)
-        ]
+        # Busca por NOME do cliente ou da parte contrária (ignora maiúsculas e acentos)
+        busca_sem_acentos = remover_acentos(busca)
+        mascara_nome = (
+            processos_ativos["cliente"].apply(remover_acentos).str.contains(busca_sem_acentos, na=False, regex=False) |
+            processos_ativos["parte_contraria"].apply(remover_acentos).str.contains(busca_sem_acentos, na=False, regex=False)
+        )
+
+        # Busca por NÚMERO (com ou sem pontos e traços)
+        mascara_numero = processos_ativos["numero"].fillna("").str.contains(busca, case=False, regex=False)
+        digitos = re.sub(r"\D", "", busca)
+        if len(digitos) >= 3:
+            mascara_numero = mascara_numero | processos_ativos["numero"].fillna("").str.replace(r"\D", "", regex=True).str.contains(digitos, regex=False)
+
+        processos_filtrados = processos_ativos[mascara_nome | mascara_numero]
 
         if not processos_filtrados.empty:
             st.caption(f"📋 {len(processos_filtrados)} processo(s) encontrado(s):")
 
+            clientes_por_numero = dict(zip(processos_filtrados["numero"], processos_filtrados["cliente"]))
             processo = st.selectbox(
                 "Selecione:",
                 options=processos_filtrados["numero"].values,
-                index=0 if len(processos_filtrados) > 0 else None,
+                format_func=lambda x: f"{x} — {clientes_por_numero.get(x, '')}",
+                index=0,
                 label_visibility="collapsed",
                 key=f"sel_proc_aud_{v}"
             )
