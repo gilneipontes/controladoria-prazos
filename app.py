@@ -1840,12 +1840,175 @@ def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.
                     with col2:
                         st.markdown(f"<div style='background-color: {status_color}; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px; font-weight: bold; color: white; margin-top: 10px;'>{aud['status']}</div>", unsafe_allow_html=True)
 
+def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+    """
+    Relatório de Prazos Ativos/Pendentes com Filtros e Export
+    """
+    st.markdown("### 📋 Prazos Ativos")
+    st.caption("Prazos pendentes a fazer")
+
+    if df_prazos.empty:
+        st.info("Nenhum prazo cadastrado.")
+        return
+
+    # Filtrar apenas ativos (não concluído e não arquivado)
+    prazos_ativos = df_prazos[(~df_prazos["concluido"]) & (~df_prazos["arquivado"])].copy()
+
+    if prazos_ativos.empty:
+        st.success("✅ Nenhum prazo pendente! Tudo em dia!")
+        return
+
+    st.divider()
+
+    # ===== FILTROS =====
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        data_inicio = st.date_input(
+            "📅 Data Início",
+            value=pd.Timestamp.now(tz="America/Sao_Paulo").date(),
+            key="rel_ativos_data_inicio"
+        )
+
+    with col2:
+        data_fim = st.date_input(
+            "📅 Data Fim",
+            value=pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=90),
+            key="rel_ativos_data_fim"
+        )
+
+    with col3:
+        responsaveis_unicos = ["Todos"] + sorted(df_prazos["responsavel"].dropna().unique().tolist())
+        filtro_responsavel = st.selectbox(
+            "👤 Responsável",
+            responsaveis_unicos,
+            key="rel_ativos_responsavel"
+        )
+
+    col4, col5 = st.columns(2)
+
+    with col4:
+        clientes_unicos = ["Todos"] + sorted(df_prazos["cliente"].dropna().unique().tolist())
+        filtro_cliente = st.selectbox(
+            "👤 Cliente",
+            clientes_unicos,
+            key="rel_ativos_cliente"
+        )
+
+    with col5:
+        urgencias = ["Todos", "🔴 Vencido", "🟠 Vence hoje", "🟡 Até 3 dias", "🔵 Até 7 dias", "🟢 Mais de 7 dias"]
+        filtro_urgencia = st.selectbox(
+            "⚡ Urgência",
+            urgencias,
+            key="rel_ativos_urgencia"
+        )
+
+    st.divider()
+
+    # ===== APLICAR FILTROS =====
+    df_filtrado = prazos_ativos.copy()
+
+    # Filtro de data
+    if pd.notna(data_inicio):
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["data_fatal"]).dt.date >= data_inicio]
+    if pd.notna(data_fim):
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["data_fatal"]).dt.date <= data_fim]
+
+    # Filtro de responsável
+    if filtro_responsavel != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["responsavel"] == filtro_responsavel]
+
+    # Filtro de cliente
+    if filtro_cliente != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["cliente"] == filtro_cliente]
+
+    # Filtro de urgência (requer enriquecer dados)
+    if filtro_urgencia != "Todos":
+        df_filtrado_enriquecido = enriquecer(df_filtrado)
+        faixas_mapeadas = {v: k for k, v in FAIXAS.items() if k != "Concluído"}
+        chave_faixa = [k for k, v in FAIXAS.items() if v == filtro_urgencia][0] if filtro_urgencia in FAIXAS.values() else None
+        if chave_faixa:
+            df_filtrado = df_filtrado_enriquecido[df_filtrado_enriquecido["faixa"] == chave_faixa]
+
+    # ===== MÉTRICAS =====
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📋 Total Ativos", len(df_filtrado))
+    col2.metric("📅 Período", f"{data_inicio.strftime('%d/%m')} a {data_fim.strftime('%d/%m')}")
+    col3.metric("👤 Responsável", filtro_responsavel if filtro_responsavel != "Todos" else "Todos")
+    col4.metric("🏢 Cliente", filtro_cliente if filtro_cliente != "Todos" else "Todos")
+
+    st.divider()
+
+    if df_filtrado.empty:
+        st.info("Nenhum prazo encontrado com os filtros aplicados.")
+        return
+
+    # ===== TABELA DE RESULTADOS =====
+    st.markdown("### 📋 Prazos Listados")
+
+    # Preparar dados para exibição
+    df_exibicao = df_filtrado[[
+        "titulo", "cliente", "processo", "responsavel",
+        "data_fatal", "descricao", "prioridade"
+    ]].copy()
+
+    df_exibicao["data_fatal"] = pd.to_datetime(df_exibicao["data_fatal"]).dt.strftime("%d/%m/%Y")
+
+    # Calcular dias faltando
+    dias_faltando = []
+    for _, row in df_filtrado.iterrows():
+        try:
+            data_fatal = pd.to_datetime(row["data_fatal"]).date()
+            hoje_date = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+            dias = (data_fatal - hoje_date).days
+            dias_faltando.append(dias)
+        except:
+            dias_faltando.append(None)
+
+    df_exibicao["Dias Faltam"] = dias_faltando
+
+    # Renomear colunas para exibição
+    df_exibicao = df_exibicao.rename(columns={
+        "titulo": "Prazo",
+        "cliente": "Cliente",
+        "processo": "Processo",
+        "responsavel": "Responsável",
+        "data_fatal": "Data Fatal",
+        "descricao": "Descrição",
+        "prioridade": "Prioridade"
+    })
+
+    # Exibir tabela
+    st.dataframe(
+        df_exibicao,
+        use_container_width=True,
+        height=400,
+        hide_index=True
+    )
+
+    st.divider()
+
+    # ===== EXPORT EM EXCEL =====
+    st.markdown("### 📥 Exportar Pauta")
+
+    excel_path = gerar_excel_bonito(df_filtrado, df_processos)
+
+    if excel_path:
+        with open(excel_path, "rb") as f:
+            st.download_button(
+                label="📊 Baixar Pauta em Excel",
+                data=f.read(),
+                file_name=f"pauta_ativos_{data_inicio.strftime('%d_%m_%Y')}_a_{data_fim.strftime('%d_%m_%Y')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
 def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
     """
     PASSO 2.5: Relatório de Prazos Concluídos com Filtros e Export
     """
-    st.markdown("# 📊 Relatório de Prazos Concluídos")
-    st.caption("Acompanhe e exporte os prazos finalizados")
+    st.markdown("### ✅ Prazos Concluídos")
+    st.caption("Histórico e análise de prazos finalizados")
 
     if df_prazos.empty:
         st.info("Nenhum prazo cadastrado.")
@@ -2005,6 +2168,152 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
             atualizar_campos(campos_atualizacao)
             st.session_state.aviso = f"✅ {len(ids_para_arquivar)} prazo(s) arquivado(s)!"
             st.rerun()
+
+def relatorio_audiencias(df_audiencias: pd.DataFrame) -> None:
+    """
+    Relatório de Audiências com Filtros e Export
+    """
+    st.markdown("### 📅 Audiências")
+    st.caption("Acompanhe audiências programadas e realizadas")
+
+    if df_audiencias.empty:
+        st.info("Nenhuma audiência cadastrada.")
+        return
+
+    st.divider()
+
+    # ===== FILTROS =====
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        data_inicio = st.date_input(
+            "📅 Data Início",
+            value=pd.Timestamp.now(tz="America/Sao_Paulo").date(),
+            key="rel_aud_data_inicio"
+        )
+
+    with col2:
+        data_fim = st.date_input(
+            "📅 Data Fim",
+            value=pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=90),
+            key="rel_aud_data_fim"
+        )
+
+    with col3:
+        statuses = ["Todos"] + sorted(df_audiencias["status"].dropna().unique().tolist())
+        filtro_status = st.selectbox(
+            "🎯 Status",
+            statuses,
+            key="rel_aud_status"
+        )
+
+    col4, col5 = st.columns(2)
+
+    with col4:
+        formatos = ["Todos"] + sorted(df_audiencias["formato"].dropna().unique().tolist())
+        filtro_formato = st.selectbox(
+            "💻 Formato",
+            formatos,
+            key="rel_aud_formato"
+        )
+
+    with col5:
+        tipos = ["Todos"] + sorted(df_audiencias["tipo"].dropna().unique().tolist())
+        filtro_tipo = st.selectbox(
+            "📋 Tipo",
+            tipos,
+            key="rel_aud_tipo"
+        )
+
+    st.divider()
+
+    # ===== APLICAR FILTROS =====
+    df_filtrado = df_audiencias.copy()
+
+    # Filtro de data
+    if pd.notna(data_inicio):
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["data_audiencia"]).dt.date >= data_inicio]
+    if pd.notna(data_fim):
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["data_audiencia"]).dt.date <= data_fim]
+
+    # Filtro de status
+    if filtro_status != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["status"] == filtro_status]
+
+    # Filtro de formato
+    if filtro_formato != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["formato"] == filtro_formato]
+
+    # Filtro de tipo
+    if filtro_tipo != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["tipo"] == filtro_tipo]
+
+    # ===== MÉTRICAS =====
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📅 Total", len(df_filtrado))
+    col2.metric("📅 Período", f"{data_inicio.strftime('%d/%m')} a {data_fim.strftime('%d/%m')}")
+    col3.metric("🎯 Status", filtro_status if filtro_status != "Todos" else "Todos")
+    col4.metric("💻 Formato", filtro_formato if filtro_formato != "Todos" else "Todos")
+
+    st.divider()
+
+    if df_filtrado.empty:
+        st.info("Nenhuma audiência encontrada com os filtros aplicados.")
+        return
+
+    # ===== TABELA DE RESULTADOS =====
+    st.markdown("### 📋 Audiências Listadas")
+
+    # Preparar dados para exibição
+    df_exibicao = df_filtrado[[
+        "processo", "autor", "reu", "data_audiencia", "hora_inicio",
+        "hora_termino", "sala", "tipo", "formato", "status"
+    ]].copy()
+
+    df_exibicao["data_audiencia"] = pd.to_datetime(df_exibicao["data_audiencia"]).dt.strftime("%d/%m/%Y")
+
+    # Renomear colunas
+    df_exibicao = df_exibicao.rename(columns={
+        "processo": "Processo",
+        "autor": "Autor",
+        "reu": "Réu",
+        "data_audiencia": "Data",
+        "hora_inicio": "Início",
+        "hora_termino": "Término",
+        "sala": "Sala",
+        "tipo": "Tipo",
+        "formato": "Formato",
+        "status": "Status"
+    })
+
+    # Exibir tabela
+    st.dataframe(
+        df_exibicao,
+        use_container_width=True,
+        height=400,
+        hide_index=True
+    )
+
+def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, df_audiencias: pd.DataFrame) -> None:
+    """
+    PASSO 2.5: Dashboard de Relatórios com 3 abas
+    - Prazos Ativos
+    - Prazos Concluídos
+    - Audiências
+    """
+    st.markdown("# 📊 Relatórios")
+    st.caption("Extraia pautas e relatórios de seu sistema")
+
+    tab1, tab2, tab3 = st.tabs(["📋 Prazos Ativos", "✅ Concluídos", "📅 Audiências"])
+
+    with tab1:
+        relatorio_prazos_ativos(df_prazos, df_processos)
+
+    with tab2:
+        relatorio_prazos_concluidos(df_prazos, df_processos)
+
+    with tab3:
+        relatorio_audiencias(df_audiencias)
 
 def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
     """Gerencia visualização de clientes (catálogo)."""
@@ -2370,7 +2679,7 @@ def main() -> None:
 
     with st.sidebar:
         st.title("⚖️ Controladoria")
-        opcoes_menu = ["Novo Prazo", "Nova Audiência", "Novo Processo", "Cards", "📊 Relatório", "Dashboard"]
+        opcoes_menu = ["Novo Prazo", "Nova Audiência", "Novo Processo", "Cards", "📊 Relatórios", "Dashboard"]
         aba = st.radio("Opção:", opcoes_menu,
                       key="aba",
                       index=opcoes_menu.index(st.session_state.aba_selecionada) if st.session_state.aba_selecionada in opcoes_menu else 0)
@@ -2474,8 +2783,8 @@ def main() -> None:
         elif aba == "Cards":
             # PASSO 2: Visão Cards Hierárquica (sem filtro global, mostra tudo por cliente)
             pass  # Renderizado no main area abaixo
-        elif aba == "📊 Relatório":
-            # PASSO 2.5: Relatório de Prazos Concluídos (renderizado no main area abaixo)
+        elif aba == "📊 Relatórios":
+            # PASSO 2.5: Dashboard de Relatórios (renderizado no main area abaixo)
             pass
         else:
             # ===== APLICAR FILTRO DE BUSCA NO DASHBOARD =====
@@ -2500,9 +2809,9 @@ def main() -> None:
         dashboard_cards_hierarquico(df_prazos, df_audiencias, df_processos)
         st.stop()
 
-    # ===== PASSO 2.5: RENDERIZAR RELATÓRIO DE CONCLUÍDOS =====
-    if aba == "📊 Relatório":
-        relatorio_prazos_concluidos(df_prazos, df_processos)
+    # ===== PASSO 2.5: RENDERIZAR DASHBOARD DE RELATÓRIOS =====
+    if aba == "📊 Relatórios":
+        relatórios_dashboard(df_prazos, df_processos, df_audiencias)
         st.stop()
 
     # ===== APLICAR FILTRO DE BUSCA NAS TABS =====
