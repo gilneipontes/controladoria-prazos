@@ -826,7 +826,12 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                     st.session_state[modal_key_modo] = "detalhes"
                     st.rerun()
 
-def sidebar_novo_prazo(processos_df: pd.DataFrame, processo_fixo: str | None = None) -> None:
+def sidebar_novo_prazo(
+    processos_df: pd.DataFrame,
+    processo_fixo: str | None = None,
+    titulo_fixo: str | None = None,
+    obs_inicial: str = "",
+) -> None:
     """
     PASSO 6: Impedir duplicação de prazos ✅
     """
@@ -901,31 +906,35 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame, processo_fixo: str | None = N
 
         st.success(f"✅ Processo selecionado: **{processo}**")
 
-    st.write("**Título** \\*")
-    busca_titulo = st.text_input(
-        "Digite para filtrar atalhos jurídicos",
-        value="",
-        placeholder="Ex: PET, CONT, MANIF...",
-        key=f"busca_{v}",
-        label_visibility="collapsed"
-    )
-
     titulo = ""
-    if busca_titulo:
-        atalhos_filtrados = {k: v for k, v in ATALHOS.items() if busca_titulo.upper() in k}
-        if atalhos_filtrados:
-            titulo_atalho = st.selectbox(
-                "Atalhos encontrados:",
-                options=list(atalhos_filtrados.keys()),
-                format_func=lambda x: f"{x} — {atalhos_filtrados[x]}",
-                key=f"ta_{v}",
-                label_visibility="collapsed"
-            )
-            titulo = atalhos_filtrados[titulo_atalho]
-        else:
-            st.warning("Nenhum atalho encontrado!")
+    if titulo_fixo:
+        # Título já escolhido (ex.: sugerido pela leitura do despacho)
+        titulo = titulo_fixo
     else:
-        st.caption("👉 Digite acima para ver os atalhos disponíveis")
+        st.write("**Título** \\*")
+        busca_titulo = st.text_input(
+            "Digite para filtrar atalhos jurídicos",
+            value="",
+            placeholder="Ex: PET, CONT, MANIF...",
+            key=f"busca_{v}",
+            label_visibility="collapsed"
+        )
+
+        if busca_titulo:
+            atalhos_filtrados = {k: v for k, v in ATALHOS.items() if busca_titulo.upper() in k}
+            if atalhos_filtrados:
+                titulo_atalho = st.selectbox(
+                    "Atalhos encontrados:",
+                    options=list(atalhos_filtrados.keys()),
+                    format_func=lambda x: f"{x} — {atalhos_filtrados[x]}",
+                    key=f"ta_{v}",
+                    label_visibility="collapsed"
+                )
+                titulo = atalhos_filtrados[titulo_atalho]
+            else:
+                st.warning("Nenhum atalho encontrado!")
+        else:
+            st.caption("👉 Digite acima para ver os atalhos disponíveis")
 
     if titulo:
         st.caption(f"📌 Selecionado: **{titulo}**")
@@ -939,7 +948,8 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame, processo_fixo: str | None = N
         data_fatal = c2.date_input("Data Fatal *", value=None, format="DD/MM/YYYY", key=f"f_{v}")
 
         prioridade = st.select_slider("Prioridade", PRIORIDADES, value="Normal", key=f"pr_{v}")
-        st.text_area("Observações", value="", key=f"d_{v}")
+        chave_obs = f"d_{v}_{abs(hash(obs_inicial)) % 10**8}" if obs_inicial else f"d_{v}"
+        observacoes = st.text_area("Observações", value=obs_inicial, key=chave_obs, height=150 if obs_inicial else None)
 
         c1, c2 = st.columns(2)
         with c1:
@@ -971,7 +981,7 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame, processo_fixo: str | None = N
                             "data_fatal": data_fatal.isoformat(),
                             "data_interna": data_interna.isoformat() if data_interna else None,
                             "prioridade": prioridade,
-                            "descricao": st.session_state.get(f"d_{v}") or None,
+                            "descricao": observacoes or None,
                             "arquivado": False,
                         })
                         st.session_state.form_v += 1
@@ -2510,6 +2520,7 @@ def abrir_janela(nome: str) -> None:
     """Callback dos botões de cadastro: marca qual janela abrir."""
     st.session_state.janela_aberta = nome
     st.session_state.lancar_prazo_processo = None
+    st.session_state.despacho_resultado = None
 
 def formulario_novo_processo() -> None:
     v = st.session_state.form_v
@@ -2538,6 +2549,181 @@ def janela_nova_audiencia(processos_df: pd.DataFrame) -> None:
 @st.dialog("⚖️ Novo Processo", width="large")
 def janela_novo_processo() -> None:
     formulario_novo_processo()
+
+# ===== LEITURA DE DESPACHO (regras, sem IA e sem enviar o texto para fora) =====
+# Cada regra: (código do atalho, padrões procurados no texto sem acentos, prazo legal em dias úteis ou None)
+REGRAS_DESPACHO = [
+    ("CONTR-APEL", [r"contrarraz\w*.{0,80}apela", r"apela\w*.{0,120}contrarraz", r"intime-se o apelado"], 15),
+    ("CONTR-AG", [r"contraminuta", r"contrarraz\w*.{0,80}agravo"], 15),
+    ("CONTR-RO", [r"contrarraz\w*.{0,80}recurso ordinario"], 8),
+    ("EMEND-INI", [r"emend\w*.{0,40}inicial"], 15),
+    ("REPL", [r"replica", r"(manifest|diga)\w*.{0,60}contestac", r"sobre a contestac"], 15),
+    ("SPEC-PROV", [r"especific\w*.{0,40}provas", r"provas que pretende\w* produzir", r"provas a produzir"], None),
+    ("ROL-TEST", [r"rol de testemunhas", r"arrol\w* testemunhas"], None),
+    ("QUESITOS", [r"quesitos", r"assistente tecnico"], 15),
+    ("MANIFEST-LAUDO", [r"(manifest|diga)\w*.{0,60}laudo", r"sobre o laudo", r"laudo pericial"], 15),
+    ("IMP-CALC", [r"impugn\w*.{0,40}calculo"], None),
+    ("MANIFEST-CALC", [r"(manifest|diga)\w*.{0,60}calculo", r"sobre os calculos", r"calculos apresentados"], None),
+    ("CONTR-DOC", [r"(manifest|diga)\w*.{0,60}documentos", r"sobre os documentos", r"documentos juntados"], None),
+    ("MEMORIAIS", [r"memoriais", r"alegacoes finais"], 15),
+    ("RAZOES-FIN", [r"razoes finais"], None),
+    ("INDIC-BENS", [r"indi\w*.{0,30}bens", r"bens (passiveis de|a) penhora"], None),
+    ("IMP-CUMP", [r"impugn\w*.{0,40}cumprimento", r"art\.? ?525"], 15),
+    ("CUMP-SENT", [r"cumprimento de sentenca", r"art\.? ?523"], None),
+    ("APEL", [r"julgo (procedente|improcedente|parcialmente)", r"\bsentenca\b.{0,200}(publique-se|registre-se)", r"extingo o (processo|feito)"], 15),
+    ("EMB-DECL", [r"embargos de declarac", r"julgo (procedente|improcedente|parcialmente)"], 5),
+    ("TERMO-AUD", [r"audiencia.{0,80}(designo|designada|marcada|para o dia|redesign)", r"designo audiencia"], None),
+    ("ALVARA", [r"alvara"], None),
+    ("ACORDO", [r"acordo", r"conciliac"], None),
+    ("PED-SUSP", [r"suspens\w* (do|o) (processo|feito)"], None),
+    ("PET-JUNT", [r"\bjunt(e|em|ar|ando)\b", r"\bcomprov(e|em|ar)\b", r"traga\w* aos autos", r"apresent\w* (o |os )?documento", r"recolh\w*.{0,40}(custas|despesa|preparo|condução|conducao|guia)"], None),
+    ("MANIF", [r"manifeste-se", r"manifestem-se", r"\bdiga\b", r"\bdigam\b", r"para (que )?(se )?manifest", r"vista (a|as) parte", r"\binform(e|em|ar)\b", r"intime\w*.{0,60}para"], None),
+]
+
+_NUMEROS_EXTENSO = {
+    "um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3, "quatro": 4, "cinco": 5, "seis": 6, "sete": 7,
+    "oito": 8, "nove": 9, "dez": 10, "onze": 11, "doze": 12, "treze": 13, "catorze": 14, "quatorze": 14,
+    "quinze": 15, "dezesseis": 16, "dezessete": 17, "dezoito": 18, "dezenove": 19, "vinte": 20,
+    "trinta": 30, "quarenta": 40, "quarenta e cinco": 45, "sessenta": 60, "noventa": 90,
+}
+
+def _dias_no_texto(texto_norm: str) -> list[str]:
+    """Encontra prazos em dias escritos no despacho (ex.: 'prazo de 10 dias', 'quinze dias úteis')."""
+    extenso = "|".join(sorted(_NUMEROS_EXTENSO, key=len, reverse=True))
+    padrao = rf"\b(\d{{1,3}}|{extenso})\s*(?:\([^)]{{0,30}}\)\s*)?(dias?(?:\s+uteis|\s+corridos)?|horas)\b"
+    achados = []
+    for m in re.finditer(padrao, texto_norm):
+        n = m.group(1)
+        n = int(n) if n.isdigit() else _NUMEROS_EXTENSO[n]
+        unidade = m.group(2).replace("dia ", "dias ").replace("uteis", "úteis")
+        rotulo = f"{n} {unidade if unidade != 'dia' else 'dia'}"
+        if rotulo not in achados:
+            achados.append(rotulo)
+    return achados
+
+def _frases(texto: str) -> list[str]:
+    partes = re.split(r"(?<=[.;:!?])\s+|\n+", texto)
+    return [p.strip() for p in partes if len(p.strip()) > 3]
+
+def interpretar_despacho(texto: str, processos_df: pd.DataFrame) -> dict:
+    """
+    Lê o despacho e devolve:
+    - processo: número encontrado no texto e cadastrado no app (ou None)
+    - sugestoes: lista de possíveis prazos, na ordem em que aparecem no texto
+    """
+    texto_norm = remover_acentos(texto)
+    frases = _frases(texto)
+    frases_norm = [remover_acentos(f) for f in frases]
+    dias_gerais = _dias_no_texto(texto_norm)
+
+    # Processo pelo número CNJ (com ou sem pontuação)
+    processo = None
+    for m in re.finditer(r"\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}", texto):
+        digitos = re.sub(r"\D", "", m.group(0))
+        if not processos_df.empty:
+            achado = processos_df[processos_df["numero"].fillna("").str.replace(r"\D", "", regex=True) == digitos]
+            if not achado.empty:
+                processo = achado.iloc[0]["numero"]
+                break
+
+    sugestoes = []
+    for codigo, padroes, prazo_legal in REGRAS_DESPACHO:
+        posicao = None
+        for padrao in padroes:
+            m = re.search(padrao, texto_norm)
+            if m and (posicao is None or m.start() < posicao):
+                posicao = m.start()
+        if posicao is None:
+            continue
+
+        # Frase do despacho onde a regra apareceu
+        trecho = ""
+        for f, fn in zip(frases, frases_norm):
+            if any(re.search(p, fn) for p in padroes):
+                trecho = f
+                break
+
+        dias_trecho = _dias_no_texto(remover_acentos(trecho)) if trecho else []
+        if dias_trecho:
+            prazo_txt = f"{dias_trecho[0]} (indicado no despacho)"
+        elif dias_gerais:
+            prazo_txt = f"{dias_gerais[0]} (indicado no despacho)"
+        elif prazo_legal:
+            prazo_txt = f"{prazo_legal} dias úteis (prazo legal — conferir)"
+        else:
+            prazo_txt = "5 dias úteis se não houver prazo expresso (art. 218, § 3º, CPC — conferir)"
+
+        sugestoes.append({
+            "codigo": codigo,
+            "titulo": ATALHOS[codigo],
+            "prazo": prazo_txt,
+            "trecho": trecho,
+            "posicao": posicao,
+        })
+
+    # Mais específicos primeiro (na ordem do texto); "Manifestação" genérica sempre por último
+    sugestoes.sort(key=lambda x: (x["codigo"] == "MANIF", x["posicao"]))
+
+    return {"processo": processo, "sugestoes": sugestoes}
+
+def _observacao_sugerida(sugestao: dict) -> str:
+    linhas = [f"⏱️ Prazo: {sugestao['prazo']}"]
+    if sugestao["trecho"]:
+        linhas.append(f"📄 Despacho: {sugestao['trecho']}")
+    return "\n".join(linhas)
+
+def ler_despacho() -> None:
+    """Callback do botão Interpretar."""
+    st.session_state.despacho_resultado = interpretar_despacho(
+        st.session_state.get("texto_despacho", ""),
+        st.session_state.get("_processos_despacho", pd.DataFrame()),
+    )
+
+@st.dialog("📝 Colar Despacho", width="large")
+def janela_despacho(processos_df: pd.DataFrame) -> None:
+    st.session_state["_processos_despacho"] = processos_df
+
+    st.text_area(
+        "Cole aqui o texto do despacho (ou da intimação):",
+        key="texto_despacho",
+        height=180,
+        placeholder="Ex.: Intimem-se as partes para que, no prazo de 10 dias, manifestem-se acerca das provas que pretendem produzir...",
+    )
+    st.button("🔎 Interpretar despacho", type="primary", use_container_width=True, on_click=ler_despacho)
+
+    resultado = st.session_state.get("despacho_resultado")
+    if not resultado:
+        st.caption("💡 As datas você preenche no formulário. O app sugere o título, o processo e as observações.")
+        return
+
+    st.divider()
+
+    if not resultado["sugestoes"]:
+        st.warning("Não identifiquei um prazo específico neste texto. Escolha o título manualmente abaixo.")
+        sugestao = None
+    else:
+        st.markdown("#### 🎯 Possíveis prazos")
+        opcoes = list(range(len(resultado["sugestoes"])))
+        idx = st.radio(
+            "Escolha o prazo a lançar:",
+            options=opcoes,
+            format_func=lambda i: f"{resultado['sugestoes'][i]['titulo']} — {resultado['sugestoes'][i]['prazo']}",
+            key="sugestao_despacho_idx",
+        )
+        sugestao = resultado["sugestoes"][idx]
+
+    if resultado["processo"]:
+        st.success(f"📌 Processo identificado no texto: **{resultado['processo']}**")
+    else:
+        st.info("Número do processo não encontrado no texto (ou não cadastrado). Busque o processo abaixo.")
+
+    st.markdown("#### ➕ Lançar Prazo")
+    sidebar_novo_prazo(
+        processos_df,
+        processo_fixo=resultado["processo"],
+        titulo_fixo=sugestao["titulo"] if sugestao else None,
+        obs_inicial=_observacao_sugerida(sugestao) if sugestao else "",
+    )
 
 def definir_lancar_prazo(numero: str | None) -> None:
     """Callback: abre (numero) ou fecha (None) o formulário de prazo dentro da janela de processos."""
@@ -2895,6 +3081,7 @@ def main() -> None:
             "📋 Novo Prazo": "novo_prazo",
             "📅 Nova Audiência": "nova_audiencia",
             "⚖️ Novo Processo": "novo_processo",
+            "📝 Colar Despacho": "despacho",
         }
         for rotulo, janela in acoes_cadastro.items():
             st.button(
@@ -2977,6 +3164,8 @@ def main() -> None:
         janela_nova_audiencia(df_processos)
     elif janela == "novo_processo":
         janela_novo_processo()
+    elif janela == "despacho":
+        janela_despacho(df_processos)
     elif janela == "processos":
         janela_processos(df_processos, df_prazos)
 
