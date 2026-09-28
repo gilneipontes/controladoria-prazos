@@ -1771,6 +1771,10 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                         # TÍTULO GRANDE E LEGÍVEL (pelo menos 30 chars com quebra natural)
                         st.markdown(f"<div style='font-size: 12px; font-weight: bold; line-height: 1.4; word-wrap: break-word; margin: 4px 0;'>{prazo['titulo'][:35]}</div>", unsafe_allow_html=True)
 
+                        # NOME DO CLIENTE (em destaque mas menor)
+                        cliente_exib = prazo['cliente'] if prazo['cliente'] else "Sem cliente"
+                        st.markdown(f"<div style='font-size: 11px; color: #666; font-weight: 500; margin: 2px 0;'>👤 {cliente_exib[:25]}</div>", unsafe_allow_html=True)
+
                         # Data apenas (2 dígitos/mês)
                         data_str = prazo['data_fatal'].strftime("%d/%m")
                         st.markdown(f"<small style='color: #888;'>{data_str}</small>", unsafe_allow_html=True)
@@ -1800,6 +1804,9 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                         st.markdown(f"<div style='font-size: 18px; line-height: 1.2;'>✅</div>", unsafe_allow_html=True)
                         # TÍTULO GRANDE E LEGÍVEL (pelo menos 30 chars com quebra natural)
                         st.markdown(f"<div style='font-size: 12px; font-weight: bold; line-height: 1.4; word-wrap: break-word; margin: 4px 0;'>{prazo['titulo'][:35]}</div>", unsafe_allow_html=True)
+                        # NOME DO CLIENTE (em destaque mas menor)
+                        cliente_exib = prazo['cliente'] if prazo['cliente'] else "Sem cliente"
+                        st.markdown(f"<div style='font-size: 11px; color: #666; font-weight: 500; margin: 2px 0;'>👤 {cliente_exib[:25]}</div>", unsafe_allow_html=True)
                         data_conc = prazo['concluido_em'].strftime("%d/%m") if pd.notna(prazo['concluido_em']) else "—"
                         st.markdown(f"<small style='color: #888;'>{data_conc}</small>", unsafe_allow_html=True)
 
