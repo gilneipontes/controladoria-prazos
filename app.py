@@ -2919,6 +2919,7 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                         if st.button("👁️ Ver", key=f"modal_{prazo['id']}", use_container_width=True, help="Clique para ver tudo"):
                             st.session_state.modal_aberta = True
                             st.session_state.id_modal = prazo['id']
+                            st.session_state.modo_modal = None
                             st.rerun()
 
     # ===== ABA CONCLUÍDOS (GRID 5 COLUNAS) =====
@@ -2952,6 +2953,7 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                         if st.button("👁️ Ver", key=f"modal_conc_{prazo['id']}", use_container_width=True, help="Clique para ver"):
                             st.session_state.modal_aberta = True
                             st.session_state.id_modal = prazo['id']
+                            st.session_state.modo_modal = None
                             st.rerun()
 
     # ===== EXPANDER COM DETALHES COMPLETOS =====
@@ -3026,8 +3028,8 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                             st.rerun()
 
                 with col_acao2:
-                    if st.button("✏️ Editar Observações", use_container_width=True, key=f"btn_edit_{id_prazo}"):
-                        st.session_state.modo_modal = "editar_obs"
+                    if st.button("✏️ Editar Prazo", use_container_width=True, key=f"btn_edit_{id_prazo}"):
+                        st.session_state.modo_modal = "editar_prazo"
                         st.rerun()
 
                 with col_acao3:
@@ -3035,30 +3037,79 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                         st.session_state.modal_aberta = False
                         st.rerun()
 
-                # ===== MODO EDIÇÃO =====
-                if st.session_state.get("modo_modal") == "editar_obs":
+                # ===== MODO EDIÇÃO: TODOS OS CAMPOS DO PRAZO =====
+                if st.session_state.get("modo_modal") == "editar_prazo":
                     st.divider()
-                    st.subheader("📝 Editar O Que Precisa Fazer")
+                    st.subheader("✏️ Editar Prazo")
 
-                    with st.form(f"form_edit_obs_{id_prazo}"):
+                    with st.form(f"form_edit_prazo_{id_prazo}"):
+                        novo_titulo = st.text_input("Título *", value=prazo["titulo"] or "")
+
+                        col_e1, col_e2 = st.columns(2)
+                        with col_e1:
+                            novo_tipo = st.selectbox(
+                                "Tipo",
+                                TIPOS,
+                                index=TIPOS.index(prazo["tipo"]) if prazo["tipo"] in TIPOS else 0,
+                            )
+                            novo_responsavel = st.selectbox(
+                                "Responsável",
+                                RESPONSAVEIS,
+                                index=RESPONSAVEIS.index(prazo["responsavel"]) if prazo["responsavel"] in RESPONSAVEIS else 0,
+                            )
+                        with col_e2:
+                            nova_interna = st.date_input(
+                                "Prazo Interno",
+                                value=prazo["data_interna"] if pd.notna(prazo["data_interna"]) else None,
+                                format="DD/MM/YYYY",
+                            )
+                            nova_fatal = st.date_input(
+                                "Data Fatal *",
+                                value=prazo["data_fatal"],
+                                format="DD/MM/YYYY",
+                            )
+
+                        nova_prioridade = st.select_slider(
+                            "Prioridade",
+                            PRIORIDADES,
+                            value=prazo["prioridade"] if prazo["prioridade"] in PRIORIDADES else "Normal",
+                        )
+
                         nova_obs = st.text_area(
-                            "Anote aqui o que precisa fazer neste prazo:",
-                            value=prazo['descricao'] or "",
+                            "O que precisa ser feito (observações):",
+                            value=prazo["descricao"] or "",
                             height=150,
-                            placeholder="Ex:\n- Buscar documentação no tribunal\n- Enviar petição até 15h\n- Anexar comprovantes\n- Ligar para cliente"
+                            placeholder="Ex:\n- Buscar documentação no tribunal\n- Enviar petição até 15h\n- Anexar comprovantes\n- Ligar para cliente",
                         )
 
                         col_form1, col_form2 = st.columns(2)
                         with col_form1:
-                            if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
-                                atualizar_prazo(id_prazo, {"descricao": nova_obs or None})
-                                st.session_state.aviso = "✅ Observações salvas!"
-                                st.session_state.modo_modal = None
-                                st.rerun()
+                            salvar = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
                         with col_form2:
-                            if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                                st.session_state.modo_modal = None
-                                st.rerun()
+                            cancelar = st.form_submit_button("❌ Cancelar", use_container_width=True)
+
+                    if salvar:
+                        if not novo_titulo.strip() or not nova_fatal:
+                            st.error("Preencha o título e a data fatal!")
+                        elif nova_interna and nova_interna > nova_fatal:
+                            st.error("O prazo interno deve ser igual ou anterior à data fatal!")
+                        else:
+                            atualizar_prazo(id_prazo, {
+                                "titulo": novo_titulo.strip(),
+                                "tipo": novo_tipo,
+                                "responsavel": novo_responsavel,
+                                "prioridade": nova_prioridade,
+                                "data_interna": nova_interna.isoformat() if nova_interna else None,
+                                "data_fatal": nova_fatal.isoformat(),
+                                "descricao": nova_obs or None,
+                            })
+                            st.session_state.aviso = "✅ Prazo atualizado!"
+                            st.session_state.modo_modal = None
+                            st.rerun()
+
+                    if cancelar:
+                        st.session_state.modo_modal = None
+                        st.rerun()
 
 def main() -> None:
     init_estado()
