@@ -1615,7 +1615,7 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
                                         st.markdown(f"<div style='background-color: {cor_fundo}; padding: 2px 4px; border-radius: 3px; text-align: center; font-size: 9px; font-weight: bold; color: white;'>{texto_urgencia[:8]}</div>", unsafe_allow_html=True)
 
                                         # PASSO 3: Botão para abrir modal do cliente
-                                        if st.button("👁️ Ver Ficha", key=f"ficha_{prazo['id']}", use_container_width=True, size="small"):
+                                        if st.button("👁️ Ver Ficha", key=f"ficha_{prazo['id']}", use_container_width=True):
                                             modal_ficha_cliente(cliente, df_prazos, df_processos, df_audiencias)
 
                         if qtd_concluidos > 0:
@@ -1639,7 +1639,7 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
                                         st.markdown(f"<small style='color: #888;'>{data_conc}</small>", unsafe_allow_html=True)
 
                                         # PASSO 3: Botão para abrir modal do cliente
-                                        if st.button("👁️ Ver Ficha", key=f"ficha_conc_{prazo['id']}", use_container_width=True, size="small"):
+                                        if st.button("👁️ Ver Ficha", key=f"ficha_conc_{prazo['id']}", use_container_width=True):
                                             modal_ficha_cliente(cliente, df_prazos, df_processos, df_audiencias)
 
     # ===== SEÇÃO AUDIÊNCIAS =====
