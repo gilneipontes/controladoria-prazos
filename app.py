@@ -1952,7 +1952,11 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
         "data_fatal", "descricao", "prioridade"
     ]].copy()
 
-    df_exibicao["data_fatal"] = pd.to_datetime(df_exibicao["data_fatal"]).dt.strftime("%d/%m/%Y")
+    # Formatar datas com segurança
+    try:
+        df_exibicao["data_fatal"] = pd.to_datetime(df_exibicao["data_fatal"]).dt.strftime("%d/%m/%Y")
+    except:
+        df_exibicao["data_fatal"] = df_exibicao["data_fatal"].apply(lambda x: pd.Timestamp(x).strftime("%d/%m/%Y") if pd.notna(x) else "")
 
     # Calcular dias faltando
     dias_faltando = []
@@ -2102,8 +2106,16 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
         "data_fatal", "concluido_em", "descricao", "prioridade"
     ]].copy()
 
-    df_exibicao["data_fatal"] = pd.to_datetime(df_exibicao["data_fatal"]).dt.strftime("%d/%m/%Y")
-    df_exibicao["concluido_em"] = pd.to_datetime(df_exibicao["concluido_em"]).dt.strftime("%d/%m/%Y")
+    # Formatar datas com segurança
+    try:
+        df_exibicao["data_fatal"] = pd.to_datetime(df_exibicao["data_fatal"]).dt.strftime("%d/%m/%Y")
+    except:
+        df_exibicao["data_fatal"] = df_exibicao["data_fatal"].apply(lambda x: pd.Timestamp(x).strftime("%d/%m/%Y") if pd.notna(x) else "")
+    # Formatar datas de conclusão com segurança
+    try:
+        df_exibicao["concluido_em"] = pd.to_datetime(df_exibicao["concluido_em"]).dt.strftime("%d/%m/%Y")
+    except:
+        df_exibicao["concluido_em"] = df_exibicao["concluido_em"].apply(lambda x: pd.Timestamp(x).strftime("%d/%m/%Y") if pd.notna(x) else "")
 
     # Calcular dias para conclusão
     dias_para_conclusao = []
@@ -2270,7 +2282,11 @@ def relatorio_audiencias(df_audiencias: pd.DataFrame) -> None:
         "hora_termino", "sala", "tipo", "formato", "status"
     ]].copy()
 
-    df_exibicao["data_audiencia"] = pd.to_datetime(df_exibicao["data_audiencia"]).dt.strftime("%d/%m/%Y")
+    # Formatar datas de audiência com segurança
+    try:
+        df_exibicao["data_audiencia"] = pd.to_datetime(df_exibicao["data_audiencia"]).dt.strftime("%d/%m/%Y")
+    except:
+        df_exibicao["data_audiencia"] = df_exibicao["data_audiencia"].apply(lambda x: pd.Timestamp(x).strftime("%d/%m/%Y") if pd.notna(x) else "")
 
     # Renomear colunas
     df_exibicao = df_exibicao.rename(columns={
