@@ -1840,6 +1840,20 @@ def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.
                     with col2:
                         st.markdown(f"<div style='background-color: {status_color}; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px; font-weight: bold; color: white; margin-top: 10px;'>{aud['status']}</div>", unsafe_allow_html=True)
 
+def formatar_data_brasil(data) -> str:
+    """Formata data para DD/MM/YYYY de forma robusta"""
+    try:
+        if pd.isna(data):
+            return ""
+        # Se já é string, tenta converter
+        if isinstance(data, str):
+            ts = pd.to_datetime(data)
+        else:
+            ts = pd.Timestamp(data)
+        return ts.strftime("%d/%m/%Y")
+    except:
+        return str(data)
+
 def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
     """
     Relatório de Prazos Ativos/Pendentes com Filtros e Export
@@ -1952,11 +1966,8 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
         "data_fatal", "descricao", "prioridade"
     ]].copy()
 
-    # Formatar datas com segurança
-    try:
-        df_exibicao["data_fatal"] = pd.to_datetime(df_exibicao["data_fatal"]).dt.strftime("%d/%m/%Y")
-    except:
-        df_exibicao["data_fatal"] = df_exibicao["data_fatal"].apply(lambda x: pd.Timestamp(x).strftime("%d/%m/%Y") if pd.notna(x) else "")
+    # Formatar datas
+    df_exibicao["data_fatal"] = df_exibicao["data_fatal"].apply(formatar_data_brasil)
 
     # Calcular dias faltando
     dias_faltando = []
@@ -2106,16 +2117,10 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
         "data_fatal", "concluido_em", "descricao", "prioridade"
     ]].copy()
 
-    # Formatar datas com segurança
-    try:
-        df_exibicao["data_fatal"] = pd.to_datetime(df_exibicao["data_fatal"]).dt.strftime("%d/%m/%Y")
-    except:
-        df_exibicao["data_fatal"] = df_exibicao["data_fatal"].apply(lambda x: pd.Timestamp(x).strftime("%d/%m/%Y") if pd.notna(x) else "")
-    # Formatar datas de conclusão com segurança
-    try:
-        df_exibicao["concluido_em"] = pd.to_datetime(df_exibicao["concluido_em"]).dt.strftime("%d/%m/%Y")
-    except:
-        df_exibicao["concluido_em"] = df_exibicao["concluido_em"].apply(lambda x: pd.Timestamp(x).strftime("%d/%m/%Y") if pd.notna(x) else "")
+    # Formatar datas
+    df_exibicao["data_fatal"] = df_exibicao["data_fatal"].apply(formatar_data_brasil)
+    # Formatar datas de conclusão
+    df_exibicao["concluido_em"] = df_exibicao["concluido_em"].apply(formatar_data_brasil)
 
     # Calcular dias para conclusão
     dias_para_conclusao = []
@@ -2282,11 +2287,8 @@ def relatorio_audiencias(df_audiencias: pd.DataFrame) -> None:
         "hora_termino", "sala", "tipo", "formato", "status"
     ]].copy()
 
-    # Formatar datas de audiência com segurança
-    try:
-        df_exibicao["data_audiencia"] = pd.to_datetime(df_exibicao["data_audiencia"]).dt.strftime("%d/%m/%Y")
-    except:
-        df_exibicao["data_audiencia"] = df_exibicao["data_audiencia"].apply(lambda x: pd.Timestamp(x).strftime("%d/%m/%Y") if pd.notna(x) else "")
+    # Formatar datas de audiência
+    df_exibicao["data_audiencia"] = df_exibicao["data_audiencia"].apply(formatar_data_brasil)
 
     # Renomear colunas
     df_exibicao = df_exibicao.rename(columns={
