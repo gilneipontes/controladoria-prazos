@@ -1692,6 +1692,154 @@ def buscar_por_cliente(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, cli
 
     return df_prazos_filtrados, df_audiencias_filtradas
 
+def _definir_cor_prazo(prazo: dict) -> tuple[str, str, str]:
+    """
+    Define cor, emoji e texto de urgência baseado no status do prazo.
+    Retorna: (cor_hex, emoji, texto_urgencia)
+    """
+    if prazo['concluido']:
+        return "#2ecc71", "✅", "CONCLUÍDO"
+
+    faixa = prazo.get('faixa', 'Futuro')
+
+    if faixa == "Vencido":
+        return "#e74c3c", "🔴", "VENCIDO"
+    elif faixa == "Hoje":
+        return "#e67e22", "🟠", "VENCE HOJE"
+    elif faixa == "Até 3 dias":
+        return "#f39c12", "🟡", "ATENÇÃO: 3 DIAS"
+    elif faixa == "Até 7 dias":
+        return "#3498db", "🔵", "7 DIAS"
+    else:
+        return "#95a5a6", "🟢", "EM DIA"
+
+def renderizar_cards_prazos(df_prazos: pd.DataFrame) -> None:
+    """
+    Renderiza prazos como CARDS individuais com cores e ações rápidas.
+    Lê dados do Supabase e permite ações diretas.
+    """
+    if df_prazos.empty:
+        st.info("📭 Nenhum prazo cadastrado.")
+        return
+
+    # Filtrar apenas prazos não arquivados
+    df_exibir = df_prazos[~df_prazos["arquivado"]].copy()
+
+    if df_exibir.empty:
+        st.info("📭 Nenhum prazo ativo.")
+        return
+
+    # Enriquecer com informações de dias
+    df_exibir = enriquecer(df_exibir)
+
+    # Separar por status
+    concluidos = df_exibir[df_exibir["concluido"]]
+    pendentes = df_exibir[~df_exibir["concluido"]].sort_values("data_fatal")
+
+    # ===== ABAS DE VISUALIZAÇÃO =====
+    tab_pendentes, tab_concluidos = st.tabs([
+        f"📋 Pendentes ({len(pendentes)})",
+        f"✅ Concluídos ({len(concluidos)})"
+    ])
+
+    # ===== ABA PENDENTES =====
+    with tab_pendentes:
+        if pendentes.empty:
+            st.success("✅ Nenhum prazo pendente!")
+        else:
+            for idx, prazo in pendentes.iterrows():
+                cor_fundo, emoji_status, texto_urgencia = _definir_cor_prazo(prazo)
+
+                # Card Container
+                with st.container(border=True):
+                    # Header do Card
+                    col_status, col_info = st.columns([1, 10])
+
+                    with col_status:
+                        st.markdown(f"<div style='font-size: 28px; text-align: center;'>{emoji_status}</div>", unsafe_allow_html=True)
+
+                    with col_info:
+                        st.markdown(f"**{prazo['titulo']}**")
+                        st.caption(f"📋 Processo: `{prazo['processo']}`")
+
+                    st.divider()
+
+                    # Corpo do Card
+                    col_cliente, col_resp = st.columns(2)
+
+                    with col_cliente:
+                        st.markdown(f"**👤 Cliente:**\n{prazo['cliente']}")
+
+                    with col_resp:
+                        st.markdown(f"**👨‍⚖️ Responsável:**\n{prazo['responsavel']}")
+
+                    # Datas
+                    col_fatal, col_prior = st.columns(2)
+
+                    with col_fatal:
+                        data_str = prazo['data_fatal'].strftime("%d/%m/%Y")
+                        st.markdown(f"**🔚 Data Fatal:**\n{data_str}")
+
+                    with col_prior:
+                        prioridade_emoji = {"Alta": "🔴", "Normal": "🟡", "Baixa": "🟢"}
+                        emoji_pri = prioridade_emoji.get(prazo['prioridade'], '⚪')
+                        st.markdown(f"**{emoji_pri} Prioridade:**\n{prazo['prioridade']}")
+
+                    # Status de Urgência
+                    st.markdown(f"<div style='background-color: {cor_fundo}; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; color: white;'>{texto_urgencia}</div>", unsafe_allow_html=True)
+
+                    # Observações (se houver)
+                    if prazo['descricao']:
+                        st.markdown(f"**📝 Observações:**")
+                        st.caption(prazo['descricao'])
+
+                    st.divider()
+
+                    # Botões de Ação
+                    col_btn1, col_btn2 = st.columns(2)
+
+                    with col_btn1:
+                        if st.button("✅ Concluir", key=f"conc_{prazo['id']}", use_container_width=True):
+                            atualizar_prazo(prazo['id'], {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
+                            st.session_state.aviso = f"✅ Prazo '{prazo['titulo']}' marcado como concluído!"
+                            st.rerun()
+
+                    with col_btn2:
+                        if st.button("✏️ Detalhes", key=f"det_{prazo['id']}", use_container_width=True):
+                            st.session_state.modal_aberta = True
+                            st.session_state.id_modal = prazo['id']
+                            st.session_state.modo_modal = "visualizar"
+                            st.rerun()
+
+                    st.markdown("")  # Espaçamento
+
+    # ===== ABA CONCLUÍDOS =====
+    with tab_concluidos:
+        if concluidos.empty:
+            st.info("Nenhum prazo concluído ainda.")
+        else:
+            for idx, prazo in concluidos.iterrows():
+                with st.container(border=True):
+                    col_status, col_info = st.columns([1, 10])
+
+                    with col_status:
+                        st.markdown("<div style='font-size: 28px; text-align: center;'>✅</div>", unsafe_allow_html=True)
+
+                    with col_info:
+                        st.markdown(f"**{prazo['titulo']}** *(Concluído)*")
+                        st.caption(f"📋 Processo: `{prazo['processo']}`")
+
+                    st.divider()
+
+                    col_cliente, col_data = st.columns(2)
+
+                    with col_cliente:
+                        st.markdown(f"**👤 Cliente:**\n{prazo['cliente']}")
+
+                    with col_data:
+                        data_conc = prazo['concluido_em'].strftime("%d/%m/%Y") if pd.notna(prazo['concluido_em']) else "—"
+                        st.markdown(f"**✅ Concluído em:**\n{data_conc}")
+
 def main() -> None:
     init_estado()
     if not acesso_liberado():
