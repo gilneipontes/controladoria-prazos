@@ -302,6 +302,39 @@ def gerar_csv_pauta(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
 
     return df_export
 
+def resumo_o_que_fazer(texto, limite: int = 200) -> str:
+    """
+    Resume as observações do prazo para a pauta impressa:
+    - tira as linhas automáticas da leitura de despacho (⏱️ Prazo / 📄 Despacho);
+    - mantém o que o usuário escreveu;
+    - se só houver o trecho do despacho, usa uma versão curta dele.
+    """
+    if texto is None or (isinstance(texto, float) and pd.isna(texto)):
+        return "-"
+    texto = str(texto).strip()
+    if not texto:
+        return "-"
+
+    linhas_usuario, trecho_despacho = [], ""
+    for linha in texto.splitlines():
+        l = linha.strip()
+        if not l:
+            continue
+        if l.startswith("⏱️ Prazo:") or l.startswith("⏱ Prazo:"):
+            continue
+        if l.startswith("📄 Despacho:"):
+            trecho_despacho = l.replace("📄 Despacho:", "").strip()
+            continue
+        linhas_usuario.append(l)
+
+    resumo = " / ".join(linhas_usuario) if linhas_usuario else trecho_despacho
+    resumo = re.sub(r"\s+", " ", resumo).strip()
+    if not resumo:
+        return "-"
+    if len(resumo) > limite:
+        resumo = resumo[:limite].rsplit(" ", 1)[0].rstrip(",;:.") + "…"
+    return resumo
+
 def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -310,22 +343,36 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
     if df_prazos.empty:
         return None
 
-    df_export = df_prazos[["cliente", "processo", "titulo", "data_fatal"]].copy()
-    df_export["cliente"] = df_export["cliente"].apply(lambda x: x.split()[0] if pd.notna(x) else "")
+    df_export = df_prazos[["cliente", "processo", "titulo", "data_fatal", "descricao"]].copy()
+    df_export = df_export.rename(columns={"descricao": "o_que_fazer"})
+    df_export["cliente"] = df_export["cliente"].apply(lambda x: x.split()[0] if pd.notna(x) and x else "")
+    df_export["o_que_fazer"] = df_export["o_que_fazer"].apply(resumo_o_que_fazer)
 
-    if df_processos is not None:
-        processos_desc = df_processos[["numero", "descricao"]].copy()
+    # Tipo de ação: vem do cadastro do processo
+    if df_processos is not None and not df_processos.empty:
+        processos_desc = (
+            df_processos[["numero", "descricao"]]
+            .drop_duplicates(subset=["numero"], keep="first")
+            .rename(columns={"descricao": "acao"})
+        )
         df_export = df_export.merge(processos_desc, left_on="processo", right_on="numero", how="left")
-        df_export["descricao"] = df_export["descricao"].fillna("-")
+        df_export["acao"] = df_export["acao"].fillna("-").replace("", "-")
     else:
-        df_export["descricao"] = "-"
+        df_export["acao"] = "-"
 
     try:
         df_export["data_fatal"] = pd.to_datetime(df_export["data_fatal"]).dt.strftime("%d/%m/%Y")
     except:
         df_export["data_fatal"] = df_export["data_fatal"].astype(str)
 
-    df_export = df_export[["cliente", "processo", "titulo", "data_fatal", "descricao"]]
+    colunas = [
+        ("cliente", "Cliente", 15, "left"),
+        ("processo", "Nº Processo", 28, "left"),
+        ("titulo", "Prazo", 24, "left"),
+        ("data_fatal", "Data Fatal", 13, "center"),
+        ("acao", "Ação", 26, "left"),
+        ("o_que_fazer", "O que fazer", 55, "left"),
+    ]
 
     wb = Workbook()
     ws = wb.active
@@ -339,44 +386,34 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
         top=Side(style='thin'),
         bottom=Side(style='thin')
     )
-    center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    alinhamentos = {
+        "center": Alignment(horizontal="center", vertical="center", wrap_text=True),
+        "left": Alignment(horizontal="left", vertical="center", wrap_text=True),
+    }
 
-    headers = ["Cliente", "Nº Processo", "Título", "Data Fatal", "Descrição"]
-    for col_num, header in enumerate(headers, 1):
+    for col_num, (_, titulo, largura, _) in enumerate(colunas, 1):
         cell = ws.cell(row=1, column=col_num)
-        cell.value = header
+        cell.value = titulo
         cell.fill = header_fill
         cell.font = header_font
-        cell.alignment = center_align
+        cell.alignment = alinhamentos["center"]
         cell.border = border
+        ws.column_dimensions[cell.column_letter].width = largura
 
-    for row_num, (idx, row) in enumerate(df_export.iterrows(), 2):
-        ws.cell(row=row_num, column=1).value = row["cliente"]
-        ws.cell(row=row_num, column=1).alignment = left_align
-        ws.cell(row=row_num, column=1).border = border
+    for row_num, (_, row) in enumerate(df_export.iterrows(), 2):
+        for col_num, (campo, _, _, alinhamento) in enumerate(colunas, 1):
+            cell = ws.cell(row=row_num, column=col_num)
+            cell.value = row[campo]
+            cell.alignment = alinhamentos[alinhamento]
+            cell.border = border
 
-        ws.cell(row=row_num, column=2).value = row["processo"]
-        ws.cell(row=row_num, column=2).alignment = left_align
-        ws.cell(row=row_num, column=2).border = border
-
-        ws.cell(row=row_num, column=3).value = row["titulo"]
-        ws.cell(row=row_num, column=3).alignment = left_align
-        ws.cell(row=row_num, column=3).border = border
-
-        ws.cell(row=row_num, column=4).value = row["data_fatal"]
-        ws.cell(row=row_num, column=4).alignment = center_align
-        ws.cell(row=row_num, column=4).border = border
-
-        ws.cell(row=row_num, column=5).value = row["descricao"]
-        ws.cell(row=row_num, column=5).alignment = left_align
-        ws.cell(row=row_num, column=5).border = border
-
-    ws.column_dimensions['A'].width = 15
-    ws.column_dimensions['B'].width = 30
-    ws.column_dimensions['C'].width = 25
-    ws.column_dimensions['D'].width = 15
-    ws.column_dimensions['E'].width = 35
+    # Impressão: paisagem, cabeçalho repetido em cada página e ajuste à largura da folha
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_title_rows = "1:1"
+    ws.freeze_panes = "A2"
 
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         wb.save(tmp.name)
