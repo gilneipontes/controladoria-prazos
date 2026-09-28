@@ -1721,8 +1721,8 @@ def _definir_cor_prazo(prazo: dict) -> tuple[str, str, str]:
 
 def renderizar_cards_prazos(df_prazos: pd.DataFrame) -> None:
     """
-    Renderiza prazos como CARDS individuais com cores e ações rápidas.
-    Lê dados do Supabase e permite ações diretas.
+    Renderiza prazos como CARDS COMPACTOS em GRID (2-3 colunas).
+    Layout otimizado para muitos prazos.
     """
     if df_prazos.empty:
         st.info("📭 Nenhum prazo cadastrado.")
@@ -1748,103 +1748,72 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame) -> None:
         f"✅ Concluídos ({len(concluidos)})"
     ])
 
-    # ===== ABA PENDENTES =====
+    # ===== ABA PENDENTES (LAYOUT EM GRID) =====
     with tab_pendentes:
         if pendentes.empty:
             st.success("✅ Nenhum prazo pendente!")
         else:
-            for idx, prazo in pendentes.iterrows():
-                cor_fundo, emoji_status, texto_urgencia = _definir_cor_prazo(prazo)
+            # Renderizar em 3 colunas (responsivo)
+            num_cols = 3
+            cols = st.columns(num_cols)
 
-                # Card Container
-                with st.container(border=True):
-                    # Header do Card
-                    col_status, col_info = st.columns([1, 10])
+            for idx, (_, prazo) in enumerate(pendentes.iterrows()):
+                col = cols[idx % num_cols]
 
-                    with col_status:
-                        st.markdown(f"<div style='font-size: 28px; text-align: center;'>{emoji_status}</div>", unsafe_allow_html=True)
+                with col:
+                    cor_fundo, emoji_status, texto_urgencia = _definir_cor_prazo(prazo)
 
-                    with col_info:
-                        st.markdown(f"**{prazo['titulo']}**")
-                        st.caption(f"📋 Processo: `{prazo['processo']}`")
+                    # Card COMPACTO
+                    with st.container(border=True):
+                        # Cabeçalho (emoji + título)
+                        st.markdown(f"<div style='font-size: 20px; margin-bottom: 8px;'>{emoji_status} **{prazo['titulo'][:20]}...**</div>", unsafe_allow_html=True)
 
-                    st.divider()
+                        # Info compacta (1 linha)
+                        st.caption(f"📋 `{prazo['processo'][:15]}...`")
+                        st.caption(f"👤 {prazo['cliente'][:18]}...")
 
-                    # Corpo do Card
-                    col_cliente, col_resp = st.columns(2)
-
-                    with col_cliente:
-                        st.markdown(f"**👤 Cliente:**\n{prazo['cliente']}")
-
-                    with col_resp:
-                        st.markdown(f"**👨‍⚖️ Responsável:**\n{prazo['responsavel']}")
-
-                    # Datas
-                    col_fatal, col_prior = st.columns(2)
-
-                    with col_fatal:
+                        # Data Fatal + Prioridade (1 linha)
                         data_str = prazo['data_fatal'].strftime("%d/%m/%Y")
-                        st.markdown(f"**🔚 Data Fatal:**\n{data_str}")
+                        pri_emoji = {"Alta": "🔴", "Normal": "🟡", "Baixa": "🟢"}.get(prazo['prioridade'], '⚪')
+                        st.caption(f"🔚 {data_str} | {pri_emoji} {prazo['prioridade'][:3]}")
 
-                    with col_prior:
-                        prioridade_emoji = {"Alta": "🔴", "Normal": "🟡", "Baixa": "🟢"}
-                        emoji_pri = prioridade_emoji.get(prazo['prioridade'], '⚪')
-                        st.markdown(f"**{emoji_pri} Prioridade:**\n{prazo['prioridade']}")
+                        # Status urgência (mini badge)
+                        st.markdown(f"<div style='background-color: {cor_fundo}; padding: 6px; border-radius: 4px; text-align: center; font-size: 12px; font-weight: bold; color: white; margin: 8px 0;'>{texto_urgencia}</div>", unsafe_allow_html=True)
 
-                    # Status de Urgência
-                    st.markdown(f"<div style='background-color: {cor_fundo}; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; color: white;'>{texto_urgencia}</div>", unsafe_allow_html=True)
+                        # Botões compactos (lado a lado)
+                        btn_col1, btn_col2 = st.columns(2, gap="small")
 
-                    # Observações (se houver)
-                    if prazo['descricao']:
-                        st.markdown(f"**📝 Observações:**")
-                        st.caption(prazo['descricao'])
+                        with btn_col1:
+                            if st.button("✅", key=f"conc_{prazo['id']}", use_container_width=True, help="Concluir"):
+                                atualizar_prazo(prazo['id'], {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
+                                st.session_state.aviso = f"✅ '{prazo['titulo']}' concluído!"
+                                st.rerun()
 
-                    st.divider()
+                        with btn_col2:
+                            if st.button("📋", key=f"det_{prazo['id']}", use_container_width=True, help="Detalhes"):
+                                st.session_state.modal_aberta = True
+                                st.session_state.id_modal = prazo['id']
+                                st.session_state.modo_modal = "visualizar"
+                                st.rerun()
 
-                    # Botões de Ação
-                    col_btn1, col_btn2 = st.columns(2)
-
-                    with col_btn1:
-                        if st.button("✅ Concluir", key=f"conc_{prazo['id']}", use_container_width=True):
-                            atualizar_prazo(prazo['id'], {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
-                            st.session_state.aviso = f"✅ Prazo '{prazo['titulo']}' marcado como concluído!"
-                            st.rerun()
-
-                    with col_btn2:
-                        if st.button("✏️ Detalhes", key=f"det_{prazo['id']}", use_container_width=True):
-                            st.session_state.modal_aberta = True
-                            st.session_state.id_modal = prazo['id']
-                            st.session_state.modo_modal = "visualizar"
-                            st.rerun()
-
-                    st.markdown("")  # Espaçamento
-
-    # ===== ABA CONCLUÍDOS =====
+    # ===== ABA CONCLUÍDOS (GRID COMPACTO) =====
     with tab_concluidos:
         if concluidos.empty:
             st.info("Nenhum prazo concluído ainda.")
         else:
-            for idx, prazo in concluidos.iterrows():
-                with st.container(border=True):
-                    col_status, col_info = st.columns([1, 10])
+            num_cols = 3
+            cols = st.columns(num_cols)
 
-                    with col_status:
-                        st.markdown("<div style='font-size: 28px; text-align: center;'>✅</div>", unsafe_allow_html=True)
+            for idx, (_, prazo) in enumerate(concluidos.iterrows()):
+                col = cols[idx % num_cols]
 
-                    with col_info:
-                        st.markdown(f"**{prazo['titulo']}** *(Concluído)*")
-                        st.caption(f"📋 Processo: `{prazo['processo']}`")
-
-                    st.divider()
-
-                    col_cliente, col_data = st.columns(2)
-
-                    with col_cliente:
-                        st.markdown(f"**👤 Cliente:**\n{prazo['cliente']}")
-
-                    with col_data:
+                with col:
+                    with st.container(border=True):
+                        st.markdown(f"<div style='font-size: 20px; margin-bottom: 8px;'>✅ **{prazo['titulo'][:20]}...**</div>", unsafe_allow_html=True)
+                        st.caption(f"📋 `{prazo['processo'][:15]}...`")
+                        st.caption(f"👤 {prazo['cliente'][:18]}...")
                         data_conc = prazo['concluido_em'].strftime("%d/%m/%Y") if pd.notna(prazo['concluido_em']) else "—"
-                        st.markdown(f"**✅ Concluído em:**\n{data_conc}")
+                        st.caption(f"✅ Concluído: {data_conc}")
 
 def main() -> None:
     init_estado()
