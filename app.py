@@ -826,7 +826,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                     st.session_state[modal_key_modo] = "detalhes"
                     st.rerun()
 
-def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
+def sidebar_novo_prazo(processos_df: pd.DataFrame, processo_fixo: str | None = None) -> None:
     """
     PASSO 6: Impedir duplicação de prazos ✅
     """
@@ -834,54 +834,58 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
 
     processos_ativos = processos_df[processos_df["ativo"]].sort_values("numero")
 
-    st.write("**Nº Processo** \\*")
-
-    # Campo de texto com botão de LIMPAR
-    col_busca, col_limpar = st.columns([9, 1])
-
-    with col_busca:
-        busca_proc = st.text_input(
-            "Digite o número ou cliente",
-            value="",
-            key=f"busca_proc_{v}",
-            label_visibility="collapsed",
-            placeholder="Digite 3+ letras para buscar...",
-            max_chars=100
-        )
-
-    with col_limpar:
-        if st.button("🗑️", key=f"limpar_proc_{v}", help="Limpar pesquisa", use_container_width=True):
-            st.session_state[f"busca_proc_{v}"] = ""
-            st.rerun()
-
     processo = None
     cliente = ""
     parte_adversaria = ""
 
-    # Se digitou 3+ caracteres, mostrar selectbox com opções
-    if len(busca_proc) >= 3:
-        busca_lower = busca_proc.lower().strip()
+    if processo_fixo:
+        # Processo já escolhido (ex.: lançado de dentro de Processos Cadastrados)
+        processo = processo_fixo
+    else:
+        st.write("**Nº Processo** \\*")
 
-        # Filtrar processos por NÚMERO ou CLIENTE
-        processos_filtrados = processos_ativos[
-            (processos_ativos["numero"].str.contains(busca_lower, case=False, na=False, regex=False)) |
-            (processos_ativos["cliente"].str.contains(busca_lower, case=False, na=False, regex=False))
-        ]
+        # Campo de texto com botão de LIMPAR
+        col_busca, col_limpar = st.columns([9, 1])
 
-        if not processos_filtrados.empty:
-            st.caption(f"📋 {len(processos_filtrados)} processo(s) encontrado(s):")
-
-            # Selectbox com as opções (mostrando número e cliente)
-            processo = st.selectbox(
-                "Selecione:",
-                options=processos_filtrados["numero"].values,
-                format_func=lambda x: f"{x} — {processos_filtrados[processos_filtrados['numero']==x]['cliente'].values[0]}",
-                index=0,
+        with col_busca:
+            busca_proc = st.text_input(
+                "Digite o número ou cliente",
+                value="",
+                key=f"busca_proc_{v}",
                 label_visibility="collapsed",
-                key=f"sel_proc_{v}"
+                placeholder="Digite 3+ letras para buscar...",
+                max_chars=100
             )
-        else:
-            st.warning(f"❌ Nenhum processo encontrado com '{busca_proc}'")
+
+        with col_limpar:
+            if st.button("🗑️", key=f"limpar_proc_{v}", help="Limpar pesquisa", use_container_width=True):
+                st.session_state[f"busca_proc_{v}"] = ""
+                st.rerun()
+
+        # Se digitou 3+ caracteres, mostrar selectbox com opções
+        if len(busca_proc) >= 3:
+            busca_lower = busca_proc.lower().strip()
+
+            # Filtrar processos por NÚMERO ou CLIENTE
+            processos_filtrados = processos_ativos[
+                (processos_ativos["numero"].str.contains(busca_lower, case=False, na=False, regex=False)) |
+                (processos_ativos["cliente"].str.contains(busca_lower, case=False, na=False, regex=False))
+            ]
+
+            if not processos_filtrados.empty:
+                st.caption(f"📋 {len(processos_filtrados)} processo(s) encontrado(s):")
+
+                # Selectbox com as opções (mostrando número e cliente)
+                processo = st.selectbox(
+                    "Selecione:",
+                    options=processos_filtrados["numero"].values,
+                    format_func=lambda x: f"{x} — {processos_filtrados[processos_filtrados['numero']==x]['cliente'].values[0]}",
+                    index=0,
+                    label_visibility="collapsed",
+                    key=f"sel_proc_{v}"
+                )
+            else:
+                st.warning(f"❌ Nenhum processo encontrado com '{busca_proc}'")
 
     if processo:
         cliente = processos_ativos[processos_ativos["numero"] == processo]["cliente"].values[0]
@@ -1347,6 +1351,15 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
             ])
 
             with tab_abertos:
+                st.button(
+                    "➕ Lançar Prazo",
+                    key=f"lancar_prazo_{proc['id']}",
+                    type="primary",
+                    use_container_width=True,
+                    on_click=definir_lancar_prazo,
+                    args=(proc["numero"],),
+                )
+
                 if prazos_abertos.empty:
                     st.info("✅ Nenhum prazo em aberto!")
                 else:
@@ -2496,6 +2509,7 @@ def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> N
 def abrir_janela(nome: str) -> None:
     """Callback dos botões de cadastro: marca qual janela abrir."""
     st.session_state.janela_aberta = nome
+    st.session_state.lancar_prazo_processo = None
 
 def formulario_novo_processo() -> None:
     v = st.session_state.form_v
@@ -2525,9 +2539,27 @@ def janela_nova_audiencia(processos_df: pd.DataFrame) -> None:
 def janela_novo_processo() -> None:
     formulario_novo_processo()
 
+def definir_lancar_prazo(numero: str | None) -> None:
+    """Callback: abre (numero) ou fecha (None) o formulário de prazo dentro da janela de processos."""
+    st.session_state.lancar_prazo_processo = numero
+
 @st.dialog("🗂️ Processos Cadastrados", width="large")
 def janela_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
-    gerenciar_processos(df_processos, df_prazos)
+    numero = st.session_state.get("lancar_prazo_processo")
+
+    if numero:
+        # ===== LANÇAR PRAZO NO PROCESSO ESCOLHIDO =====
+        st.button(
+            "🔙 Voltar à pesquisa",
+            key="voltar_pesquisa_processos",
+            on_click=definir_lancar_prazo,
+            args=(None,),
+        )
+
+        st.markdown("### ➕ Lançar Prazo")
+        sidebar_novo_prazo(df_processos, processo_fixo=numero)
+    else:
+        gerenciar_processos(df_processos, df_prazos)
 
 def selecionar_menu(opcao: str) -> None:
     """Callback dos botões do menu lateral: guarda a opção escolhida."""
