@@ -2109,7 +2109,7 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
     col1.metric("✅ Total Concluídos", len(df_filtrado))
     col2.metric("📅 Período", f"{data_inicio.strftime('%d/%m')} a {data_fim.strftime('%d/%m')}")
     col3.metric("👤 Responsável", filtro_responsavel if filtro_responsavel != "Todos" else "Todos")
-    col4.metric("🏢 Cliente", filtro_cliente if filtro_cliente != "Todos" else "Todos")
+    col4.metric("🏢 Cliente", cliente_selecionado if cliente_selecionado else "Todos")
 
     st.divider()
 
