@@ -1765,9 +1765,11 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
 
                     # MINI CARD (ultra compacto)
                     with st.container(border=True):
-                        # Apenas emoji + título resumido
+                        # Emoji de status
                         st.markdown(f"<div style='font-size: 18px; line-height: 1.2;'>{emoji_status}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<small><b>{prazo['titulo'][:15]}...</b></small>", unsafe_allow_html=True)
+
+                        # TÍTULO GRANDE E LEGÍVEL (pelo menos 30 chars com quebra natural)
+                        st.markdown(f"<div style='font-size: 12px; font-weight: bold; line-height: 1.4; word-wrap: break-word; margin: 4px 0;'>{prazo['titulo'][:35]}</div>", unsafe_allow_html=True)
 
                         # Data apenas (2 dígitos/mês)
                         data_str = prazo['data_fatal'].strftime("%d/%m")
@@ -1796,7 +1798,8 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                 with col:
                     with st.container(border=True):
                         st.markdown(f"<div style='font-size: 18px; line-height: 1.2;'>✅</div>", unsafe_allow_html=True)
-                        st.markdown(f"<small><b>{prazo['titulo'][:15]}...</b></small>", unsafe_allow_html=True)
+                        # TÍTULO GRANDE E LEGÍVEL (pelo menos 30 chars com quebra natural)
+                        st.markdown(f"<div style='font-size: 12px; font-weight: bold; line-height: 1.4; word-wrap: break-word; margin: 4px 0;'>{prazo['titulo'][:35]}</div>", unsafe_allow_html=True)
                         data_conc = prazo['concluido_em'].strftime("%d/%m") if pd.notna(prazo['concluido_em']) else "—"
                         st.markdown(f"<small style='color: #888;'>{data_conc}</small>", unsafe_allow_html=True)
 
