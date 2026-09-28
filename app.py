@@ -2481,6 +2481,10 @@ def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> N
                         else:
                             st.info("Nenhum prazo associado")
 
+def selecionar_menu(opcao: str) -> None:
+    """Callback dos botões do menu lateral: guarda a opção escolhida."""
+    st.session_state.aba_selecionada = opcao
+
 def limpar_busca_cliente() -> None:
     """Callback para limpar a busca de cliente."""
     st.session_state.busca_temp_text = ""
@@ -2773,10 +2777,23 @@ def main() -> None:
     with st.sidebar:
         st.title("⚖️ Controladoria")
         opcoes_menu = ["📋 Novo Prazo", "📅 Nova Audiência", "⚖️ Novo Processo", "🎴 Cards", "📊 Relatórios", "📈 Dashboard"]
-        aba = st.radio("Opção:", opcoes_menu,
-                      key="aba",
-                      index=opcoes_menu.index(st.session_state.aba_selecionada) if st.session_state.aba_selecionada in opcoes_menu else 0)
-        st.session_state.aba_selecionada = aba
+
+        # Garante que um valor antigo (sem ícone) não quebre o menu
+        if st.session_state.aba_selecionada not in opcoes_menu:
+            st.session_state.aba_selecionada = opcoes_menu[0]
+
+        # ===== MENU TOUCH-FRIENDLY: um botão de largura total por opção =====
+        for opcao in opcoes_menu:
+            st.button(
+                opcao,
+                key=f"menu_{opcao}",
+                use_container_width=True,
+                type="primary" if opcao == st.session_state.aba_selecionada else "secondary",
+                on_click=selecionar_menu,
+                args=(opcao,),
+            )
+
+        aba = st.session_state.aba_selecionada
         st.divider()
 
         if st.button("🔄 Recarregar Dados", use_container_width=True):
