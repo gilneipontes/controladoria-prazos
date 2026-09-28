@@ -1204,12 +1204,24 @@ def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
                 st.session_state.form_v += 1
                 st.rerun()
 
+def _so_digitos(texto) -> str:
+    """Mantém apenas os números (ignora pontos, traços e espaços)."""
+    if pd.isna(texto):
+        return ""
+    return re.sub(r"\D", "", str(texto))
+
 def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
+    """
+    Aba Processos:
+    - Sem busca: mostra apenas o TOTAL de processos cadastrados (sem listar).
+    - Com busca (nome do cliente ou número): lista só os processos encontrados,
+      expansíveis, com a situação atual e os prazos de cada um.
+    """
+    st.subheader("📋 Processos Cadastrados")
+
     if df_processos.empty:
         st.info("Nenhum processo cadastrado.")
         return
-
-    st.subheader("📋 Processos Cadastrados")
 
     processos_ativos = df_processos[df_processos["ativo"]].copy()
 
@@ -1218,6 +1230,7 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
         return
 
     processos_unicos = processos_ativos.drop_duplicates(subset=["numero"], keep="first").sort_values("numero")
+    total_processos = len(processos_unicos)
 
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -1226,24 +1239,48 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
             placeholder="Ex: 5014993 ou HELENA",
             key="busca_processo",
             label_visibility="collapsed"
-        )
+        ).strip()
+
+    processos_filtrados = processos_unicos.iloc[0:0]
 
     if busca:
-        processos_filtrados = processos_unicos[
-            (processos_unicos["numero"].str.contains(busca, case=False, na=False, regex=False)) |
-            (processos_unicos["cliente"].str.contains(busca, case=False, na=False, regex=False))
-        ]
-    else:
-        processos_filtrados = processos_unicos
+        # Busca por NOME (ignora maiúsculas e acentos)
+        busca_sem_acentos = remover_acentos(busca)
+        mascara_nome = processos_unicos["cliente"].apply(remover_acentos).str.contains(
+            busca_sem_acentos, na=False, regex=False
+        )
+
+        # Busca por NÚMERO (com ou sem pontuação)
+        mascara_numero = processos_unicos["numero"].fillna("").str.contains(
+            busca, case=False, na=False, regex=False
+        )
+        digitos = _so_digitos(busca)
+        if len(digitos) >= 3:
+            mascara_numero = mascara_numero | processos_unicos["numero"].apply(_so_digitos).str.contains(
+                digitos, na=False, regex=False
+            )
+
+        processos_filtrados = processos_unicos[mascara_nome | mascara_numero]
 
     with col2:
-        st.metric("Resultados", len(processos_filtrados))
+        if busca:
+            st.metric("Resultados", len(processos_filtrados))
+        else:
+            st.metric("Total de processos", total_processos)
+
+    # ===== SEM BUSCA: NÃO LISTA NADA =====
+    if not busca:
+        st.caption("🔎 Digite o número do processo ou o nome do cliente para consultar como ele está agora.")
+        return
 
     if processos_filtrados.empty:
         st.warning(f"❌ Nenhum processo encontrado com '{busca}'")
         return
 
-    st.caption(f"Clique para expandir e ver todos os prazos do processo:")
+    st.caption("Clique para expandir e ver todos os prazos do processo:")
+
+    # Se só encontrou um processo, já abre direto
+    abrir_unico = len(processos_filtrados) == 1
 
     for idx, proc in processos_filtrados.iterrows():
         todos_prazos = df_prazos[df_prazos["processo"] == proc["numero"]]
@@ -1255,10 +1292,10 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
         qtd_concluidos = len(prazos_concluidos)
         qtd_arquivados = len(prazos_arquivados)
 
-        titulo_expander = f"**{proc['numero']}** | {proc['cliente']} | 📋 {qtd_abertos}📋 ✅{qtd_concluidos} 📦{qtd_arquivados}"
+        titulo_expander = f"**{proc['numero']}** | {proc['cliente']} | 📋 {qtd_abertos} ✅ {qtd_concluidos} 📦 {qtd_arquivados}"
 
         # Verificar se este é o processo que deve abrir automaticamente
-        abrir_automatico = proc["numero"] == st.session_state.get("processo_abrir_automatico", None)
+        abrir_automatico = abrir_unico or proc["numero"] == st.session_state.get("processo_abrir_automatico", None)
 
         with st.expander(titulo_expander, expanded=abrir_automatico):
 
@@ -1301,7 +1338,7 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                 if prazos_abertos.empty:
                     st.info("✅ Nenhum prazo em aberto!")
                 else:
-                    prazos_abertos = enriquecer(prazos_abertos).sort_values("dias_uteis")
+                    prazos_abertos = enriquecer(prazos_abertos.copy()).sort_values("dias_uteis")
 
                     for p_idx, prazo in prazos_abertos.iterrows():
                         mostra_card_prazo(prazo)
@@ -1310,7 +1347,7 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                 if prazos_concluidos.empty:
                     st.info("Nenhum prazo concluído ainda.")
                 else:
-                    prazos_concluidos = enriquecer(prazos_concluidos).sort_values("data_fatal", ascending=False)
+                    prazos_concluidos = enriquecer(prazos_concluidos.copy()).sort_values("data_fatal", ascending=False)
 
                     for p_idx, prazo in prazos_concluidos.iterrows():
                         mostra_card_prazo(prazo)
@@ -1319,7 +1356,7 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                 if prazos_arquivados.empty:
                     st.info("Nenhum prazo arquivado.")
                 else:
-                    prazos_arquivados = enriquecer(prazos_arquivados).sort_values("data_fatal", ascending=False)
+                    prazos_arquivados = enriquecer(prazos_arquivados.copy()).sort_values("data_fatal", ascending=False)
 
                     for p_idx, prazo in prazos_arquivados.iterrows():
                         mostra_card_prazo(prazo)
