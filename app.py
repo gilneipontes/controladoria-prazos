@@ -1840,7 +1840,7 @@ def formatar_data_brasil(data) -> str:
     except:
         return str(data)
 
-def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, cliente_global: str = None) -> None:
     """
     Relatório de Prazos Ativos/Pendentes com Filtros e Export
     """
@@ -1907,6 +1907,10 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
 
     # ===== APLICAR FILTROS =====
     df_filtrado = prazos_ativos.copy()
+
+    # Filtro GLOBAL de cliente (vem da busca no topo)
+    if cliente_global:
+        df_filtrado = df_filtrado[df_filtrado["cliente"] == cliente_global]
 
     # Filtro de data
     if pd.notna(data_inicio):
@@ -2004,7 +2008,7 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
                 use_container_width=True
             )
 
-def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, cliente_global: str = None) -> None:
     """
     PASSO 2.5: Relatório de Prazos Concluídos com Filtros e Export
     """
@@ -2103,8 +2107,12 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
     # ===== APLICAR FILTROS =====
     df_filtrado = prazos_concluidos.copy()
 
-    # Se cliente foi selecionado na busca, filtrar APENAS ele
-    if cliente_selecionado:
+    # Filtro GLOBAL de cliente (vem da busca no topo)
+    if cliente_global:
+        df_filtrado = df_filtrado[df_filtrado["cliente"] == cliente_global]
+
+    # Se cliente foi selecionado na busca INTERNA, filtrar APENAS ele
+    elif cliente_selecionado:
         df_filtrado = df_filtrado[df_filtrado["cliente"] == cliente_selecionado]
 
     # Filtro de data
@@ -2359,13 +2367,46 @@ def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, d
     st.markdown("# 📊 Relatórios")
     st.caption("Extraia pautas e relatórios de seu sistema")
 
+    st.divider()
+
+    # ===== BUSCA GLOBAL POR CLIENTE =====
+    st.markdown("### 🔍 Buscar por Cliente")
+
+    col_busca, col_vazio = st.columns([3, 2])
+
+    with col_busca:
+        busca_global = st.text_input("Digite o nome do cliente:", key="busca_global_relatorios", placeholder="Ex: PRISCILA, HELENA...")
+
+        cliente_global = None
+        if busca_global.strip():
+            # Buscar em todos os prazos (ativos, concluídos, arquivados)
+            todos_clientes = set()
+            todos_clientes.update(df_prazos["cliente"].dropna().unique())
+
+            clientes_filtrados = sorted([
+                c for c in todos_clientes
+                if busca_global.lower() in c.lower()
+            ])
+
+            if clientes_filtrados:
+                cliente_global = st.selectbox(
+                    "Selecione:",
+                    clientes_filtrados,
+                    key="cliente_sel_global"
+                )
+            else:
+                st.warning("Nenhum cliente encontrado.")
+
+    st.divider()
+
+    # ===== ABAS DOS RELATÓRIOS =====
     tab1, tab2, tab3 = st.tabs(["📋 Prazos Ativos", "✅ Concluídos", "📅 Audiências"])
 
     with tab1:
-        relatorio_prazos_ativos(df_prazos, df_processos)
+        relatorio_prazos_ativos(df_prazos, df_processos, cliente_global)
 
     with tab2:
-        relatorio_prazos_concluidos(df_prazos, df_processos)
+        relatorio_prazos_concluidos(df_prazos, df_processos, cliente_global)
 
     with tab3:
         relatorio_audiencias(df_audiencias)
