@@ -2056,7 +2056,20 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
         col1, col2, col3 = st.columns(3)
         col1.metric("✅ Prazos Concluídos", len(prazos_cliente))
         col2.metric("📋 Responsáveis", prazos_cliente["responsavel"].nunique())
-        col3.metric("📅 Período", f"{prazos_cliente['concluido_em'].min().strftime('%d/%m') if pd.notna(prazos_cliente['concluido_em'].min()) else '—'} a {prazos_cliente['concluido_em'].max().strftime('%d/%m') if pd.notna(prazos_cliente['concluido_em'].max()) else '—'}")
+
+        # Calcular período com segurança
+        try:
+            datas_validas = pd.to_datetime(prazos_cliente["concluido_em"]).dropna()
+            if len(datas_validas) > 0:
+                data_min = datas_validas.min().strftime('%d/%m')
+                data_max = datas_validas.max().strftime('%d/%m')
+                periodo = f"{data_min} a {data_max}"
+            else:
+                periodo = "—"
+        except:
+            periodo = "—"
+
+        col3.metric("📅 Período", periodo)
 
         st.divider()
 
