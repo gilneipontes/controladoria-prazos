@@ -2133,49 +2133,64 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
     # ===== TABELA DE RESULTADOS =====
     st.markdown("### 📋 Prazos Concluídos")
 
-    # Preparar dados para exibição
-    df_exibicao = df_filtrado[[
-        "titulo", "cliente", "processo", "responsavel",
-        "data_fatal", "concluido_em", "descricao", "prioridade"
-    ]].copy()
+    # Exibir cada prazo com botão para abrir detalhes
+    for idx, (_, prazo) in enumerate(df_filtrado.iterrows()):
+        col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 1, 1])
 
-    # Formatar datas
-    df_exibicao["data_fatal"] = df_exibicao["data_fatal"].apply(formatar_data_brasil)
-    # Formatar datas de conclusão
-    df_exibicao["concluido_em"] = df_exibicao["concluido_em"].apply(formatar_data_brasil)
+        with col1:
+            st.write(f"**{prazo['titulo'][:25]}**")
+        with col2:
+            st.write(f"📌 {prazo['cliente'][:20]}")
+        with col3:
+            st.write(f"📋 {prazo['processo']}")
+        with col4:
+            data_fatal = formatar_data_brasil(prazo['data_fatal'])
+            data_conc = formatar_data_brasil(prazo['concluido_em'])
+            st.write(f"{data_fatal} → {data_conc}")
+        with col5:
+            st.write(f"👤 {prazo['responsavel'][:12]}")
+        with col6:
+            if st.button("👁️ Ver", key=f"ver_prazo_{prazo['id']}"):
+                st.session_state[f"modal_prazo_id_{idx}"] = prazo['id']
+                st.session_state[f"modal_prazo_aberta_{idx}"] = True
+                st.rerun()
 
-    # Calcular dias para conclusão
-    dias_para_conclusao = []
-    for _, row in df_filtrado.iterrows():
-        try:
-            data_fatal = pd.to_datetime(row["data_fatal"]).date()
-            data_conc = pd.to_datetime(row["concluido_em"]).date()
-            dias = (data_conc - data_fatal).days
-            dias_para_conclusao.append(dias)
-        except:
-            dias_para_conclusao.append(None)
+        # Modal para ver detalhes
+        if st.session_state.get(f"modal_prazo_aberta_{idx}", False):
+            with st.container(border=True):
+                st.markdown(f"## 📌 {prazo['titulo']}")
 
-    df_exibicao["Dias Levou"] = dias_para_conclusao
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**Cliente:** {prazo['cliente']}")
+                    st.write(f"**Processo:** {prazo['processo']}")
+                    st.write(f"**Data Fatal:** {formatar_data_brasil(prazo['data_fatal'])}")
 
-    # Renomear colunas para exibição
-    df_exibicao = df_exibicao.rename(columns={
-        "titulo": "Prazo",
-        "cliente": "Cliente",
-        "processo": "Processo",
-        "responsavel": "Responsável",
-        "data_fatal": "Data Fatal",
-        "concluido_em": "Concluído em",
-        "descricao": "Descrição",
-        "prioridade": "Prioridade"
-    })
+                with col2:
+                    st.write(f"**Responsável:** {prazo['responsavel']}")
+                    st.write(f"**Prioridade:** {prazo['prioridade']}")
+                    st.write(f"**Concluído em:** {formatar_data_brasil(prazo['concluido_em'])}")
 
-    # Exibir tabela
-    st.dataframe(
-        df_exibicao,
-        use_container_width=True,
-        height=400,
-        hide_index=True
-    )
+                st.divider()
+                st.markdown("### 📝 Anotações/Descrição:")
+                st.info(prazo['descricao'] if prazo['descricao'] else "Sem anotações")
+
+                st.divider()
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    if st.button("✏️ Editar", use_container_width=True, key=f"btn_edit_conc_{prazo['id']}"):
+                        st.info("Funcionalidade de edição será implementada em breve!")
+                        st.session_state[f"modal_prazo_aberta_{idx}"] = False
+                        st.rerun()
+
+                with col2:
+                    st.write("")  # Espaçamento
+
+                with col3:
+                    if st.button("❌ Fechar", use_container_width=True, key=f"btn_fechar_conc_{prazo['id']}"):
+                        st.session_state[f"modal_prazo_aberta_{idx}"] = False
+                        st.rerun()
 
     st.divider()
 
