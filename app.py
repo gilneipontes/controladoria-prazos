@@ -1719,10 +1719,10 @@ def _definir_cor_prazo(prazo: dict) -> tuple[str, str, str]:
     else:
         return "#95a5a6", "🟢", "EM DIA"
 
-def renderizar_cards_prazos(df_prazos: pd.DataFrame) -> None:
+def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None) -> None:
     """
-    Renderiza prazos como CARDS COMPACTOS em GRID (2-3 colunas).
-    Layout otimizado para muitos prazos.
+    Renderiza prazos como MINI CARDS CLICÁVEIS em GRID (5 colunas).
+    Ao clicar, abre expander com TODOS os detalhes + o que precisa fazer.
     """
     if df_prazos.empty:
         st.info("📭 Nenhum prazo cadastrado.")
@@ -1748,14 +1748,14 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame) -> None:
         f"✅ Concluídos ({len(concluidos)})"
     ])
 
-    # ===== ABA PENDENTES (LAYOUT EM GRID) =====
+    # ===== ABA PENDENTES (LAYOUT EM GRID 5 COLUNAS - ULTRA COMPACTO) =====
     with tab_pendentes:
         if pendentes.empty:
             st.success("✅ Nenhum prazo pendente!")
         else:
-            # Renderizar em 3 colunas (responsivo)
-            num_cols = 3
-            cols = st.columns(num_cols)
+            # Renderizar em 5 colunas (MUITO mais compacto!)
+            num_cols = 5
+            cols = st.columns(num_cols, gap="small")
 
             for idx, (_, prazo) in enumerate(pendentes.iterrows()):
                 col = cols[idx % num_cols]
@@ -1763,57 +1763,147 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame) -> None:
                 with col:
                     cor_fundo, emoji_status, texto_urgencia = _definir_cor_prazo(prazo)
 
-                    # Card COMPACTO
+                    # MINI CARD (ultra compacto)
                     with st.container(border=True):
-                        # Cabeçalho (emoji + título)
-                        st.markdown(f"<div style='font-size: 20px; margin-bottom: 8px;'>{emoji_status} **{prazo['titulo'][:20]}...**</div>", unsafe_allow_html=True)
+                        # Apenas emoji + título resumido
+                        st.markdown(f"<div style='font-size: 18px; line-height: 1.2;'>{emoji_status}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<small><b>{prazo['titulo'][:15]}...</b></small>", unsafe_allow_html=True)
 
-                        # Info compacta (1 linha)
-                        st.caption(f"📋 `{prazo['processo'][:15]}...`")
-                        st.caption(f"👤 {prazo['cliente'][:18]}...")
+                        # Data apenas (2 dígitos/mês)
+                        data_str = prazo['data_fatal'].strftime("%d/%m")
+                        st.markdown(f"<small style='color: #888;'>{data_str}</small>", unsafe_allow_html=True)
 
-                        # Data Fatal + Prioridade (1 linha)
-                        data_str = prazo['data_fatal'].strftime("%d/%m/%Y")
-                        pri_emoji = {"Alta": "🔴", "Normal": "🟡", "Baixa": "🟢"}.get(prazo['prioridade'], '⚪')
-                        st.caption(f"🔚 {data_str} | {pri_emoji} {prazo['prioridade'][:3]}")
+                        # Mini badge de urgência
+                        st.markdown(f"<div style='background-color: {cor_fundo}; padding: 3px 6px; border-radius: 3px; text-align: center; font-size: 10px; font-weight: bold; color: white; margin: 4px 0;'>{texto_urgencia[:8]}</div>", unsafe_allow_html=True)
 
-                        # Status urgência (mini badge)
-                        st.markdown(f"<div style='background-color: {cor_fundo}; padding: 6px; border-radius: 4px; text-align: center; font-size: 12px; font-weight: bold; color: white; margin: 8px 0;'>{texto_urgencia}</div>", unsafe_allow_html=True)
+                        # Botão para abrir detalhes
+                        if st.button("👁️ Ver", key=f"modal_{prazo['id']}", use_container_width=True, help="Clique para ver tudo"):
+                            st.session_state.modal_aberta = True
+                            st.session_state.id_modal = prazo['id']
+                            st.rerun()
 
-                        # Botões compactos (lado a lado)
-                        btn_col1, btn_col2 = st.columns(2, gap="small")
-
-                        with btn_col1:
-                            if st.button("✅", key=f"conc_{prazo['id']}", use_container_width=True, help="Concluir"):
-                                atualizar_prazo(prazo['id'], {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
-                                st.session_state.aviso = f"✅ '{prazo['titulo']}' concluído!"
-                                st.rerun()
-
-                        with btn_col2:
-                            if st.button("📋", key=f"det_{prazo['id']}", use_container_width=True, help="Detalhes"):
-                                st.session_state.modal_aberta = True
-                                st.session_state.id_modal = prazo['id']
-                                st.session_state.modo_modal = "visualizar"
-                                st.rerun()
-
-    # ===== ABA CONCLUÍDOS (GRID COMPACTO) =====
+    # ===== ABA CONCLUÍDOS (GRID 5 COLUNAS) =====
     with tab_concluidos:
         if concluidos.empty:
             st.info("Nenhum prazo concluído ainda.")
         else:
-            num_cols = 3
-            cols = st.columns(num_cols)
+            num_cols = 5
+            cols = st.columns(num_cols, gap="small")
 
             for idx, (_, prazo) in enumerate(concluidos.iterrows()):
                 col = cols[idx % num_cols]
 
                 with col:
                     with st.container(border=True):
-                        st.markdown(f"<div style='font-size: 20px; margin-bottom: 8px;'>✅ **{prazo['titulo'][:20]}...**</div>", unsafe_allow_html=True)
-                        st.caption(f"📋 `{prazo['processo'][:15]}...`")
-                        st.caption(f"👤 {prazo['cliente'][:18]}...")
+                        st.markdown(f"<div style='font-size: 18px; line-height: 1.2;'>✅</div>", unsafe_allow_html=True)
+                        st.markdown(f"<small><b>{prazo['titulo'][:15]}...</b></small>", unsafe_allow_html=True)
+                        data_conc = prazo['concluido_em'].strftime("%d/%m") if pd.notna(prazo['concluido_em']) else "—"
+                        st.markdown(f"<small style='color: #888;'>{data_conc}</small>", unsafe_allow_html=True)
+
+                        if st.button("👁️ Ver", key=f"modal_conc_{prazo['id']}", use_container_width=True, help="Clique para ver"):
+                            st.session_state.modal_aberta = True
+                            st.session_state.id_modal = prazo['id']
+                            st.rerun()
+
+    # ===== EXPANDER COM DETALHES COMPLETOS =====
+    if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
+        id_prazo = st.session_state.id_modal
+        prazo = df_prazos[df_prazos["id"] == id_prazo]
+
+        if not prazo.empty:
+            prazo = prazo.iloc[0]
+
+            # EXPANDER GRANDE COM TODOS OS DETALHES
+            with st.expander(f"📋 **{prazo['titulo']}** - DETALHES COMPLETOS", expanded=True):
+
+                # ===== SEÇÃO 1: INFORMAÇÕES PRINCIPAIS =====
+                st.subheader("📌 Informações da Tarefa")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**🔹 Processo:** `{prazo['processo']}`")
+                    st.write(f"**👤 Cliente:** {prazo['cliente']}")
+                    st.write(f"**👨‍⚖️ Responsável:** {prazo['responsavel']}")
+                with col2:
+                    st.write(f"**📅 Data Fatal:** {prazo['data_fatal'].strftime('%d/%m/%Y')}")
+                    prioridade_emoji = {"Alta": "🔴", "Normal": "🟡", "Baixa": "🟢"}.get(prazo['prioridade'], '⚪')
+                    st.write(f"**{prioridade_emoji} Prioridade:** {prazo['prioridade']}")
+                    st.write(f"**📝 Tipo:** {prazo['tipo']}")
+
+                # ===== SEÇÃO 2: O QUE FAZER (OBSERVAÇÕES - DESTAQUE) =====
+                st.divider()
+                st.subheader("✅ O QUE PRECISA SER FEITO")
+
+                if prazo['descricao']:
+                    st.success(prazo['descricao'])
+                else:
+                    st.warning("⚠️ Nenhuma observação anotada. Clique em 'Editar' para adicionar o que precisa fazer!")
+
+                # ===== SEÇÃO 3: INFORMAÇÕES ADICIONAIS =====
+                st.divider()
+                st.subheader("📊 Informações Adicionais")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    data_interna_str = prazo['data_interna'].strftime("%d/%m/%Y") if pd.notna(prazo['data_interna']) else "Não definido"
+                    st.write(f"**⏰ Prazo Interno:** {data_interna_str}")
+                    dias_uteis = prazo.get('dias_uteis', '?')
+                    st.write(f"**📅 Dias Úteis:** {dias_uteis}")
+                with col2:
+                    faixa = prazo.get('faixa', 'Desconhecido')
+                    st.write(f"**🎯 Situação:** {prazo.get('situacao', faixa)}")
+                    if prazo['concluido']:
                         data_conc = prazo['concluido_em'].strftime("%d/%m/%Y") if pd.notna(prazo['concluido_em']) else "—"
-                        st.caption(f"✅ Concluído: {data_conc}")
+                        st.write(f"**✅ Concluído em:** {data_conc}")
+
+                # ===== SEÇÃO 4: AÇÕES =====
+                st.divider()
+                st.subheader("⚙️ Ações Rápidas")
+
+                col_acao1, col_acao2, col_acao3 = st.columns(3)
+
+                with col_acao1:
+                    if not prazo['concluido']:
+                        if st.button("✅ Concluir Agora", use_container_width=True, key=f"btn_concl_{id_prazo}", type="primary"):
+                            atualizar_prazo(id_prazo, {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
+                            st.session_state.aviso = f"✅ '{prazo['titulo']}' concluído!"
+                            st.session_state.modal_aberta = False
+                            st.rerun()
+
+                with col_acao2:
+                    if st.button("✏️ Editar Observações", use_container_width=True, key=f"btn_edit_{id_prazo}"):
+                        st.session_state.modo_modal = "editar_obs"
+                        st.rerun()
+
+                with col_acao3:
+                    if st.button("🔙 Fechar", use_container_width=True, key=f"btn_fechar_{id_prazo}"):
+                        st.session_state.modal_aberta = False
+                        st.rerun()
+
+                # ===== MODO EDIÇÃO =====
+                if st.session_state.get("modo_modal") == "editar_obs":
+                    st.divider()
+                    st.subheader("📝 Editar O Que Precisa Fazer")
+
+                    with st.form(f"form_edit_obs_{id_prazo}"):
+                        nova_obs = st.text_area(
+                            "Anote aqui o que precisa fazer neste prazo:",
+                            value=prazo['descricao'] or "",
+                            height=150,
+                            placeholder="Ex:\n- Buscar documentação no tribunal\n- Enviar petição até 15h\n- Anexar comprovantes\n- Ligar para cliente"
+                        )
+
+                        col_form1, col_form2 = st.columns(2)
+                        with col_form1:
+                            if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
+                                atualizar_prazo(id_prazo, {"descricao": nova_obs or None})
+                                st.session_state.aviso = "✅ Observações salvas!"
+                                st.session_state.modo_modal = None
+                                st.rerun()
+                        with col_form2:
+                            if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                                st.session_state.modo_modal = None
+                                st.rerun()
 
 def main() -> None:
     init_estado()
