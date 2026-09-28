@@ -1575,12 +1575,6 @@ def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> N
     # Obter lista única de clientes com seus processos
     clientes_unicos = sorted(processos_ativos["cliente"].dropna().unique())
 
-    # Mostrar métrica simples
-    st.metric("📋 Total de Clientes", len(clientes_unicos))
-    st.caption("💡 Use a **BUSCA POR CLIENTE** (sidebar) para filtrar tudo! Ou clique para expandir abaixo:")
-
-    st.caption("Clique para expandir e ver todos os processos do cliente:")
-
     for cliente in clientes_unicos:
         processos_cliente = processos_ativos[processos_ativos["cliente"] == cliente].sort_values("numero")
         total_processos = len(processos_cliente)
