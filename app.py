@@ -1,11 +1,16 @@
 """
-Controladoria Jurídica - SEMANA 1 COMPLETA
-PASSOS 2, 3, 4, 5, 6 - IMPLEMENTADOS
+Controladoria Jurídica - SEMANA 1 EM PROGRESSO
+PASSO 1: Cards com cores dinâmicas ✅
+PASSO 2: Visão Cards Hierárquica ✅
+PASSO 3: Modal com Ficha Integral do Cliente (3 abas) ✅
+PASSO 4: Tabela de Auditoria - EM CONSTRUÇÃO
+PASSO 5: Ações rápidas dentro do Modal - EM CONSTRUÇÃO
+PASSO 6: Visão Calendário/Agenda - EM CONSTRUÇÃO
 """
 # ============================================
 # CONTROLADORIA JURÍDICA - SISTEMA DE PRAZOS
-# Versão: 3.0 - SEMANA 1 COMPLETA - 25/09/2026
-# PASSOS IMPLEMENTADOS: 2, 3, 4, 5, 6
+# Versão: 4.0 - SEMANA 1 EM PROGRESSO - 28/09/2026
+# PASSOS IMPLEMENTADOS: 1, 2, 3
 # ============================================
 
 from __future__ import annotations
@@ -1557,6 +1562,272 @@ def remover_acentos(texto: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', str(texto))
                    if unicodedata.category(c) != 'Mn').lower()
 
+def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_processos: pd.DataFrame = None) -> None:
+    """
+    PASSO 2: Visão Cards Hierárquica
+    PASSO 3: Integração com Modal de Ficha Integral
+    Agrupa prazos e audiências por cliente em cards aninhados.
+    """
+    if df_processos is None:
+        df_processos = pd.DataFrame()
+    st.markdown("# 📌 Visão Cards")
+    st.caption("🎯 Organize seus dados por cliente com cards hierárquicos")
+
+    # Enriquecer prazos com cores
+    if not df_prazos.empty:
+        df_prazos = enriquecer(df_prazos)
+
+    col_prazos, col_audiencias = st.columns(2, gap="large")
+
+    # ===== SEÇÃO PRAZOS =====
+    with col_prazos:
+        with st.expander("📋 **PRAZOS**", expanded=True):
+            if df_prazos.empty:
+                st.info("Nenhum prazo cadastrado.")
+            else:
+                # Agrupar por cliente
+                clientes_prazos = sorted(df_prazos[~df_prazos["arquivado"]]["cliente"].dropna().unique())
+
+                for cliente in clientes_prazos:
+                    prazos_cliente = df_prazos[(df_prazos["cliente"] == cliente) & (~df_prazos["arquivado"])]
+                    prazos_abertos = prazos_cliente[~prazos_cliente["concluido"]]
+                    prazos_concluidos = prazos_cliente[prazos_cliente["concluido"]]
+
+                    qtd_abertos = len(prazos_abertos)
+                    qtd_concluidos = len(prazos_concluidos)
+
+                    # Card do cliente
+                    with st.expander(f"👤 **{cliente}** | 📋 {qtd_abertos} | ✅ {qtd_concluidos}"):
+
+                        if qtd_abertos > 0:
+                            st.markdown("**📋 Prazos Pendentes:**")
+                            cols = st.columns(2, gap="small")
+
+                            for idx, (_, prazo) in enumerate(prazos_abertos.iterrows()):
+                                col = cols[idx % 2]
+                                with col:
+                                    cor_fundo, emoji_status, texto_urgencia = _definir_cor_prazo(prazo)
+
+                                    with st.container(border=True):
+                                        st.markdown(f"<div style='font-size: 16px;'>{emoji_status}</div>", unsafe_allow_html=True)
+                                        st.markdown(f"<b style='font-size: 13px;'>{prazo['titulo'][:30]}</b>", unsafe_allow_html=True)
+                                        st.markdown(f"<small style='color: #888;'>{prazo['data_fatal'].strftime('%d/%m')}</small>", unsafe_allow_html=True)
+                                        st.markdown(f"<div style='background-color: {cor_fundo}; padding: 2px 4px; border-radius: 3px; text-align: center; font-size: 9px; font-weight: bold; color: white;'>{texto_urgencia[:8]}</div>", unsafe_allow_html=True)
+
+                                        # PASSO 3: Botão para abrir modal do cliente
+                                        if st.button("👁️ Ver Ficha", key=f"ficha_{prazo['id']}", use_container_width=True, size="small"):
+                                            modal_ficha_cliente(cliente, df_prazos, df_processos, df_audiencias)
+
+                        if qtd_concluidos > 0:
+                            st.divider()
+                            st.markdown("**✅ Prazos Concluídos:**")
+                            cols = st.columns(2, gap="small")
+
+                            for idx, (_, prazo) in enumerate(prazos_concluidos.iterrows()):
+                                col = cols[idx % 2]
+                                with col:
+                                    with st.container(border=True):
+                                        st.markdown(f"<div style='font-size: 16px;'>✅</div>", unsafe_allow_html=True)
+                                        st.markdown(f"<b style='font-size: 13px;'>{prazo['titulo'][:30]}</b>", unsafe_allow_html=True)
+                                        data_conc = prazo['concluido_em'].strftime("%d/%m") if pd.notna(prazo['concluido_em']) else "—"
+                                        st.markdown(f"<small style='color: #888;'>{data_conc}</small>", unsafe_allow_html=True)
+
+                                        # PASSO 3: Botão para abrir modal do cliente
+                                        if st.button("👁️ Ver Ficha", key=f"ficha_conc_{prazo['id']}", use_container_width=True, size="small"):
+                                            modal_ficha_cliente(cliente, df_prazos, df_processos, df_audiencias)
+
+    # ===== SEÇÃO AUDIÊNCIAS =====
+    with col_audiencias:
+        with st.expander("📅 **AUDIÊNCIAS**", expanded=True):
+            if df_audiencias.empty:
+                st.info("Nenhuma audiência cadastrada.")
+            else:
+                # Agrupar por cliente (usando processo como referência)
+                clientes_audiencias = sorted(df_audiencias["autor"].dropna().unique())
+
+                for cliente in clientes_audiencias:
+                    audiencias_cliente = df_audiencias[df_audiencias["autor"] == cliente]
+                    qtd_audiencias = len(audiencias_cliente)
+
+                    # Card do cliente
+                    with st.expander(f"👤 **{cliente}** | 📅 {qtd_audiencias}"):
+                        cols = st.columns(1, gap="small")
+
+                        for idx, (_, aud) in enumerate(audiencias_cliente.iterrows()):
+                            with st.container(border=True):
+                                col1, col2 = st.columns([1, 1])
+
+                                with col1:
+                                    st.markdown(f"**📌 Processo:** `{aud['processo']}`")
+                                    st.markdown(f"**⚖️ Réu:** {aud['reu']}")
+
+                                with col2:
+                                    st.markdown(f"**📅 Data:** {aud['data_audiencia'].strftime('%d/%m/%Y')}")
+                                    st.markdown(f"**🕐 Horário:** {aud['hora_inicio']} - {aud['hora_termino']}")
+
+                                # Status badge
+                                status_colors = {"Agendada": "#3498db", "Realizada": "#2ecc71", "Cancelada": "#e74c3c"}
+                                status_color = status_colors.get(aud["status"], "#95a5a6")
+                                st.markdown(f"<div style='background-color: {status_color}; padding: 4px 8px; border-radius: 3px; text-align: center; font-size: 11px; font-weight: bold; color: white;'>{aud['status']}</div>", unsafe_allow_html=True)
+
+@st.dialog("📋 Ficha Integral do Cliente", width="large")
+def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.DataFrame, df_audiencias: pd.DataFrame) -> None:
+    """
+    PASSO 3: Modal com Ficha Integral do Cliente (3 abas)
+    Aba 1: Resumo e Status
+    Aba 2: Prazos Detalhados com Ações
+    Aba 3: Audiências e Timeline
+    """
+    if not cliente or cliente.strip() == "":
+        st.error("Cliente não fornecido")
+        return
+
+    # Filtrar dados do cliente
+    prazos_cliente = df_prazos[df_prazos["cliente"] == cliente].copy()
+    processos_cliente = df_processos[df_processos["cliente"] == cliente].copy()
+    audiencias_cliente = df_audiencias[df_audiencias["autor"] == cliente].copy()
+
+    # Enriquecer prazos
+    if not prazos_cliente.empty:
+        prazos_cliente = enriquecer(prazos_cliente)
+
+    tab1, tab2, tab3 = st.tabs(["📊 Resumo", "📋 Prazos", "📅 Audiências"])
+
+    # ===== ABA 1: RESUMO E STATUS =====
+    with tab1:
+        st.markdown(f"## 👤 {cliente}")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        prazos_abertos = prazos_cliente[~prazos_cliente["concluido"] & ~prazos_cliente["arquivado"]]
+        prazos_concluidos = prazos_cliente[prazos_cliente["concluido"]]
+        prazos_vencidos = prazos_abertos[prazos_abertos["faixa"] == "Vencido"]
+
+        col1.metric("📋 Prazos Ativos", len(prazos_abertos))
+        col2.metric("✅ Concluídos", len(prazos_concluidos))
+        col3.metric("🔴 Vencidos", len(prazos_vencidos))
+        col4.metric("⚖️ Processos", len(processos_cliente))
+
+        st.divider()
+
+        if not processos_cliente.empty:
+            st.markdown("### 📝 Processos do Cliente")
+
+            for _, proc in processos_cliente.iterrows():
+                with st.container(border=True):
+                    col1, col2, col3 = st.columns([2, 2, 1])
+
+                    with col1:
+                        st.markdown(f"**{proc['numero']}**")
+                        st.caption(f"⚔️ {proc['parte_contraria']}")
+
+                    with col2:
+                        if proc['descricao']:
+                            st.caption(f"📌 {proc['descricao']}")
+                        else:
+                            st.caption("—")
+
+                    with col3:
+                        prazos_proc = prazos_cliente[prazos_cliente["processo"] == proc["numero"]]
+                        st.metric("Prazos", len(prazos_proc[~prazos_proc["concluido"] & ~prazos_proc["arquivado"]]), label_visibility="collapsed")
+        else:
+            st.info("Nenhum processo cadastrado para este cliente")
+
+    # ===== ABA 2: PRAZOS DETALHADOS COM AÇÕES =====
+    with tab2:
+        st.markdown("### 📋 Prazos Detalhados")
+
+        if prazos_abertos.empty and prazos_concluidos.empty:
+            st.info("Nenhum prazo cadastrado para este cliente")
+        else:
+            # Separar abertos e concluídos
+            if not prazos_abertos.empty:
+                st.markdown("#### 📌 Prazos Pendentes")
+
+                for _, prazo in prazos_abertos.iterrows():
+                    cor_fundo, emoji_status, texto_urgencia = _definir_cor_prazo(prazo)
+
+                    with st.container(border=True):
+                        col1, col2 = st.columns([4, 1])
+
+                        with col1:
+                            st.markdown(f"{emoji_status} **{prazo['titulo']}**")
+
+                            col_info1, col_info2 = st.columns(2)
+                            with col_info1:
+                                st.caption(f"📌 Processo: `{prazo['processo']}`")
+                                st.caption(f"👤 Responsável: {prazo['responsavel']}")
+
+                            with col_info2:
+                                st.caption(f"📅 Data Fatal: {prazo['data_fatal'].strftime('%d/%m/%Y')}")
+                                st.caption(f"⏱️ Dias Úteis: {prazo['dias_uteis']}")
+
+                            if prazo['descricao']:
+                                st.info(f"📝 {prazo['descricao']}", icon="📝")
+
+                        with col2:
+                            st.markdown(f"<div style='background-color: {cor_fundo}; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px; font-weight: bold; color: white; margin-top: 10px;'>{texto_urgencia}</div>", unsafe_allow_html=True)
+
+                st.divider()
+
+            # Concluídos
+            if not prazos_concluidos.empty:
+                st.markdown("#### ✅ Prazos Concluídos")
+
+                for _, prazo in prazos_concluidos.iterrows():
+                    with st.container(border=True):
+                        col1, col2 = st.columns([4, 1])
+
+                        with col1:
+                            st.markdown(f"✅ **{prazo['titulo']}**")
+
+                            col_info1, col_info2 = st.columns(2)
+                            with col_info1:
+                                st.caption(f"📌 Processo: `{prazo['processo']}`")
+                                st.caption(f"👤 Responsável: {prazo['responsavel']}")
+
+                            with col_info2:
+                                data_conc = prazo['concluido_em'].strftime('%d/%m/%Y') if pd.notna(prazo['concluido_em']) else "—"
+                                st.caption(f"✅ Concluído em: {data_conc}")
+                                st.caption(f"📅 Data Fatal: {prazo['data_fatal'].strftime('%d/%m/%Y')}")
+
+                        with col2:
+                            st.markdown("<div style='background-color: #2ecc71; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px; font-weight: bold; color: white; margin-top: 10px;'>✅ OK</div>", unsafe_allow_html=True)
+
+    # ===== ABA 3: AUDIÊNCIAS E TIMELINE =====
+    with tab3:
+        st.markdown("### 📅 Audiências")
+
+        if audiencias_cliente.empty:
+            st.info("Nenhuma audiência cadastrada para este cliente")
+        else:
+            for _, aud in audiencias_cliente.iterrows():
+                status_colors = {"Agendada": "#3498db", "Realizada": "#2ecc71", "Cancelada": "#e74c3c"}
+                status_color = status_colors.get(aud["status"], "#95a5a6")
+
+                with st.container(border=True):
+                    col1, col2 = st.columns([3, 1])
+
+                    with col1:
+                        st.markdown(f"**📌 Processo:** `{aud['processo']}`")
+
+                        col_info1, col_info2 = st.columns(2)
+                        with col_info1:
+                            st.caption(f"⚖️ Réu: {aud['reu']}")
+                            st.caption(f"📍 Sala: {aud['sala']}")
+
+                        with col_info2:
+                            st.caption(f"📅 Data: {aud['data_audiencia'].strftime('%d/%m/%Y')}")
+                            st.caption(f"🕐 Horário: {aud['hora_inicio']} às {aud['hora_termino']}")
+
+                        st.caption(f"📋 Tipo: {aud['tipo']} | Formato: {aud['formato']}")
+
+                        if aud['observacoes']:
+                            st.info(f"📝 {aud['observacoes']}")
+
+                    with col2:
+                        st.markdown(f"<div style='background-color: {status_color}; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px; font-weight: bold; color: white; margin-top: 10px;'>{aud['status']}</div>", unsafe_allow_html=True)
+
 def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
     """Gerencia visualização de clientes (catálogo)."""
     st.subheader("👤 Cadastro de Clientes")
@@ -1909,9 +2180,9 @@ def main() -> None:
 
     with st.sidebar:
         st.title("⚖️ Controladoria")
-        aba = st.radio("Opção:", ["Novo Prazo", "Nova Audiência", "Novo Processo", "Dashboard"],
+        aba = st.radio("Opção:", ["Novo Prazo", "Nova Audiência", "Novo Processo", "Cards", "Dashboard"],
                       key="aba",
-                      index=["Novo Prazo", "Nova Audiência", "Novo Processo", "Dashboard"].index(st.session_state.aba_selecionada) if st.session_state.aba_selecionada != "Cadastro Cliente" else 0)
+                      index=["Novo Prazo", "Nova Audiência", "Novo Processo", "Cards", "Dashboard"].index(st.session_state.aba_selecionada) if st.session_state.aba_selecionada in ["Novo Prazo", "Nova Audiência", "Novo Processo", "Cards", "Dashboard"] else 0)
         st.session_state.aba_selecionada = aba
         st.divider()
 
@@ -2009,6 +2280,9 @@ def main() -> None:
                         st.rerun()
                     else:
                         st.error("Preencha todos!")
+        elif aba == "Cards":
+            # PASSO 2: Visão Cards Hierárquica (sem filtro global, mostra tudo por cliente)
+            pass  # Renderizado no main area abaixo
         else:
             # ===== APLICAR FILTRO DE BUSCA NO DASHBOARD =====
             df_prazos_filtrados, df_audiencias_filtradas = buscar_por_cliente(
@@ -2026,6 +2300,11 @@ def main() -> None:
     if st.session_state.aviso:
         st.toast(st.session_state.aviso)
         st.session_state.aviso = None
+
+    # ===== PASSO 2: RENDERIZAR VISÃO CARDS HIERÁRQUICA =====
+    if aba == "Cards":
+        dashboard_cards_hierarquico(df_prazos, df_audiencias, df_processos)
+        st.stop()
 
     # ===== APLICAR FILTRO DE BUSCA NAS TABS =====
     df_prazos_filtrados, df_audiencias_filtradas = buscar_por_cliente(
