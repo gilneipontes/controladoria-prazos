@@ -137,6 +137,7 @@ def hoje() -> dt.date:
 def init_estado() -> None:
     st.session_state.setdefault("form_v", 0)
     st.session_state.setdefault("editor_v", 0)
+    st.session_state.setdefault("cadastro_cliente_v", 0)
     st.session_state.setdefault("aviso", None)
     st.session_state.setdefault("modal_aberta", False)
     st.session_state.setdefault("id_modal", None)
@@ -1574,18 +1575,20 @@ def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> N
     # Obter lista única de clientes com seus processos
     clientes_unicos = sorted(processos_ativos["cliente"].dropna().unique())
 
+    v = st.session_state.cadastro_cliente_v
+
     col1, col2, col3 = st.columns([8, 1, 1])
     with col1:
         busca_cliente = st.text_input(
             "🔍 Buscar cliente por nome:",
             placeholder="Digite 3+ letras...",
-            key="busca_cadastro_cliente",
+            key=f"busca_cadastro_cliente_{v}",
             label_visibility="collapsed"
         )
 
     with col2:
-        if st.button("🗑️", key="limpar_busca_cliente_btn", help="Limpar pesquisa", use_container_width=True):
-            st.session_state.busca_cadastro_cliente = ""
+        if st.button("🗑️", key=f"limpar_busca_cliente_btn_{v}", help="Limpar pesquisa", use_container_width=True):
+            st.session_state.cadastro_cliente_v += 1
             st.rerun()
 
     # Filtrar clientes por nome (3+ caracteres)
