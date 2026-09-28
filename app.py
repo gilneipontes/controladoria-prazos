@@ -1590,16 +1590,14 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
 
                 for cliente in clientes_prazos:
                     prazos_cliente = df_prazos[(df_prazos["cliente"] == cliente) & (~df_prazos["arquivado"])]
+                    # Mostrar APENAS prazos abertos nos cards (concluídos vão para relatórios)
                     prazos_abertos = prazos_cliente[~prazos_cliente["concluido"]]
-                    prazos_concluidos = prazos_cliente[prazos_cliente["concluido"]]
 
                     qtd_abertos = len(prazos_abertos)
-                    qtd_concluidos = len(prazos_concluidos)
 
-                    # Card do cliente
-                    with st.expander(f"👤 **{cliente}** | 📋 {qtd_abertos} | ✅ {qtd_concluidos}"):
-
-                        if qtd_abertos > 0:
+                    # Só mostrar card se houver prazos abertos
+                    if qtd_abertos > 0:
+                        with st.expander(f"👤 **{cliente}** | 📋 {qtd_abertos}"):
                             st.markdown("**📋 Prazos Pendentes:**")
                             cols = st.columns(2, gap="small")
 
@@ -1618,63 +1616,51 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
                                         if st.button("👁️ Ver Ficha", key=f"ficha_{prazo['id']}", use_container_width=True):
                                             modal_ficha_cliente(cliente, df_prazos, df_processos, df_audiencias)
 
-                        if qtd_concluidos > 0:
-                            st.divider()
-                            st.markdown("**✅ Prazos Concluídos:**")
-                            cols = st.columns(2, gap="small")
-
-                            for idx, (_, prazo) in enumerate(prazos_concluidos.iterrows()):
-                                col = cols[idx % 2]
-                                with col:
-                                    with st.container(border=True):
-                                        st.markdown(f"<div style='font-size: 16px;'>✅</div>", unsafe_allow_html=True)
-                                        st.markdown(f"<b style='font-size: 13px;'>{prazo['titulo'][:30]}</b>", unsafe_allow_html=True)
-                                        try:
-                                            if pd.notna(prazo['concluido_em']):
-                                                data_conc = pd.Timestamp(prazo['concluido_em']).strftime("%d/%m")
-                                            else:
-                                                data_conc = "—"
-                                        except:
-                                            data_conc = "—"
-                                        st.markdown(f"<small style='color: #888;'>{data_conc}</small>", unsafe_allow_html=True)
-
-                                        # PASSO 3: Botão para abrir modal do cliente
-                                        if st.button("👁️ Ver Ficha", key=f"ficha_conc_{prazo['id']}", use_container_width=True):
-                                            modal_ficha_cliente(cliente, df_prazos, df_processos, df_audiencias)
-
     # ===== SEÇÃO AUDIÊNCIAS =====
     with col_audiencias:
         with st.expander("📅 **AUDIÊNCIAS**", expanded=True):
             if df_audiencias.empty:
                 st.info("Nenhuma audiência cadastrada.")
             else:
-                # Agrupar por cliente (usando processo como referência)
-                clientes_audiencias = sorted(df_audiencias["autor"].dropna().unique())
+                # Filtrar APENAS audiências futuras e não realizadas (realizadas vão para relatórios)
+                hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+                df_aud_ativas = df_audiencias[
+                    (df_audiencias["status"] != "Realizada") &
+                    (df_audiencias["status"] != "Cancelada") &
+                    (pd.to_datetime(df_audiencias["data_audiencia"]).dt.date >= hoje)
+                ].copy()
 
-                for cliente in clientes_audiencias:
-                    audiencias_cliente = df_audiencias[df_audiencias["autor"] == cliente]
-                    qtd_audiencias = len(audiencias_cliente)
+                if df_aud_ativas.empty:
+                    st.info("✅ Nenhuma audiência programada!")
+                else:
+                    # Agrupar por cliente (usando processo como referência)
+                    clientes_audiencias = sorted(df_aud_ativas["autor"].dropna().unique())
 
-                    # Card do cliente
-                    with st.expander(f"👤 **{cliente}** | 📅 {qtd_audiencias}"):
-                        cols = st.columns(1, gap="small")
+                    for cliente in clientes_audiencias:
+                        audiencias_cliente = df_aud_ativas[df_aud_ativas["autor"] == cliente]
+                        qtd_audiencias = len(audiencias_cliente)
 
-                        for idx, (_, aud) in enumerate(audiencias_cliente.iterrows()):
-                            with st.container(border=True):
-                                col1, col2 = st.columns([1, 1])
+                        # Card do cliente
+                        if qtd_audiencias > 0:
+                            with st.expander(f"👤 **{cliente}** | 📅 {qtd_audiencias}"):
+                                cols = st.columns(1, gap="small")
 
-                                with col1:
-                                    st.markdown(f"**📌 Processo:** `{aud['processo']}`")
-                                    st.markdown(f"**⚖️ Réu:** {aud['reu']}")
+                                for idx, (_, aud) in enumerate(audiencias_cliente.iterrows()):
+                                    with st.container(border=True):
+                                        col1, col2 = st.columns([1, 1])
 
-                                with col2:
-                                    st.markdown(f"**📅 Data:** {aud['data_audiencia'].strftime('%d/%m/%Y')}")
-                                    st.markdown(f"**🕐 Horário:** {aud['hora_inicio']} - {aud['hora_termino']}")
+                                        with col1:
+                                            st.markdown(f"**📌 Processo:** `{aud['processo']}`")
+                                            st.markdown(f"**⚖️ Réu:** {aud['reu']}")
 
-                                # Status badge
-                                status_colors = {"Agendada": "#3498db", "Realizada": "#2ecc71", "Cancelada": "#e74c3c"}
-                                status_color = status_colors.get(aud["status"], "#95a5a6")
-                                st.markdown(f"<div style='background-color: {status_color}; padding: 4px 8px; border-radius: 3px; text-align: center; font-size: 11px; font-weight: bold; color: white;'>{aud['status']}</div>", unsafe_allow_html=True)
+                                        with col2:
+                                            st.markdown(f"**📅 Data:** {aud['data_audiencia'].strftime('%d/%m/%Y')}")
+                                            st.markdown(f"**🕐 Horário:** {aud['hora_inicio']} - {aud['hora_termino']}")
+
+                                        # Status badge
+                                        status_colors = {"Agendada": "#3498db", "Realizada": "#2ecc71", "Cancelada": "#e74c3c"}
+                                        status_color = status_colors.get(aud["status"], "#95a5a6")
+                                        st.markdown(f"<div style='background-color: {status_color}; padding: 4px 8px; border-radius: 3px; text-align: center; font-size: 11px; font-weight: bold; color: white;'>{aud['status']}</div>", unsafe_allow_html=True)
 
 @st.dialog("📋 Ficha Integral do Cliente", width="large")
 def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.DataFrame, df_audiencias: pd.DataFrame) -> None:
