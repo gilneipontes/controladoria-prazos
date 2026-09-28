@@ -218,6 +218,12 @@ def atualizar_campos(atualizacoes: dict[int, dict]) -> None:
             supabase().table(TABELA_PRAZOS).update(campos).eq("id", id_prazo).execute()
     carregar_prazos.clear()
 
+def atualizar_prazo(id_prazo: int, campos: dict) -> None:
+    """Atualiza um prazo específico no Supabase"""
+    if campos:
+        supabase().table(TABELA_PRAZOS).update(campos).eq("id", id_prazo).execute()
+    carregar_prazos.clear()
+
 def atualizar_processo(id_processo: int, campos: dict) -> None:
     if campos:
         supabase().table(TABELA_PROCESSOS).update(campos).eq("id", id_processo).execute()
@@ -1994,7 +2000,7 @@ def main() -> None:
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🗂️ Processos", "📅 Audiências"])
 
     with tab1:
-        # ===== PASSO 4: FILTRO NA TAB 1 =====
+        # ===== PASSO 1: CARDS COM CORES DINÂMICAS =====
         st.write("**Filtrar por responsável:**")
         filtro_tab1 = st.selectbox(
             "Selecione",
@@ -2004,7 +2010,13 @@ def main() -> None:
         )
 
         prazos_ativos = df_prazos[~df_prazos["concluido"] & ~df_prazos["arquivado"]]
-        tabela_status(prazos_ativos, df_processos, prefix="tab_prazos", filtro_responsavel=filtro_tab1)
+
+        # Aplicar filtro de responsável se não for "Todos"
+        if filtro_tab1 != "Todos":
+            prazos_ativos = prazos_ativos[prazos_ativos["responsavel"] == filtro_tab1]
+
+        # ===== RENDERIZAR CARDS EM VEZ DE TABELA =====
+        renderizar_cards_prazos(prazos_ativos)
 
     with tab2:
         # ===== PASSO 5: FILTRO NA TAB 2 =====
