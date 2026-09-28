@@ -1649,27 +1649,46 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
     if not df_prazos.empty:
         df_prazos = enriquecer(df_prazos)
 
+    # ===== PRAZOS EM ABERTO, DO VENCIMENTO MAIS PRÓXIMO PARA O MAIS DISTANTE =====
+    if df_prazos.empty:
+        prazos_em_aberto = df_prazos
+    else:
+        prazos_em_aberto = df_prazos[~df_prazos["arquivado"] & ~df_prazos["concluido"]].sort_values("data_fatal")
+
+    # ===== AUDIÊNCIAS PROGRAMADAS (futuras, não realizadas nem canceladas), EM ORDEM DE DATA E HORA =====
+    if df_audiencias.empty:
+        df_aud_ativas = df_audiencias
+    else:
+        hoje_data = pd.Timestamp.now(tz="America/Sao_Paulo").date()
+        df_aud_ativas = df_audiencias[
+            (df_audiencias["status"] != "Realizada") &
+            (df_audiencias["status"] != "Cancelada") &
+            (pd.to_datetime(df_audiencias["data_audiencia"]).dt.date >= hoje_data)
+        ].copy()
+        df_aud_ativas["_ordem_hora"] = df_aud_ativas["hora_inicio"].astype(str)
+        df_aud_ativas = df_aud_ativas.sort_values(["data_audiencia", "_ordem_hora"])
+
     col_prazos, col_audiencias = st.columns(2, gap="large")
 
     # ===== SEÇÃO PRAZOS =====
     with col_prazos:
-        with st.expander("📋 **PRAZOS**", expanded=True):
-            if df_prazos.empty:
-                st.info("Nenhum prazo cadastrado.")
+        with st.expander(f"📋 **PRAZOS** · {len(prazos_em_aberto)} em aberto", expanded=True):
+            if prazos_em_aberto.empty:
+                st.info("✅ Nenhum prazo em aberto.")
             else:
-                # Agrupar por cliente
-                clientes_prazos = sorted(df_prazos[~df_prazos["arquivado"]]["cliente"].dropna().unique())
+                # Clientes na ordem do prazo mais urgente de cada um
+                clientes_prazos = list(dict.fromkeys(prazos_em_aberto["cliente"].dropna()))
 
                 for cliente in clientes_prazos:
-                    prazos_cliente = df_prazos[(df_prazos["cliente"] == cliente) & (~df_prazos["arquivado"])]
-                    # Mostrar APENAS prazos abertos nos cards (concluídos vão para relatórios)
-                    prazos_abertos = prazos_cliente[~prazos_cliente["concluido"]]
+                    # Prazos do cliente, já em ordem de vencimento
+                    prazos_abertos = prazos_em_aberto[prazos_em_aberto["cliente"] == cliente]
 
                     qtd_abertos = len(prazos_abertos)
+                    proximo = prazos_abertos.iloc[0]["data_fatal"].strftime("%d/%m")
 
                     # Só mostrar card se houver prazos abertos
                     if qtd_abertos > 0:
-                        with st.expander(f"👤 **{cliente}** | 📋 {qtd_abertos}"):
+                        with st.expander(f"👤 **{cliente}** | 📋 {qtd_abertos} | 🔚 próximo: {proximo}"):
                             st.markdown("**📋 Prazos Pendentes:**")
                             cols = st.columns(2, gap="small")
 
@@ -1690,31 +1709,25 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
 
     # ===== SEÇÃO AUDIÊNCIAS =====
     with col_audiencias:
-        with st.expander("📅 **AUDIÊNCIAS**", expanded=True):
+        with st.expander(f"📅 **AUDIÊNCIAS** · {len(df_aud_ativas)} agendada(s)", expanded=True):
             if df_audiencias.empty:
                 st.info("Nenhuma audiência cadastrada.")
             else:
-                # Filtrar APENAS audiências futuras e não realizadas (realizadas vão para relatórios)
-                hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
-                df_aud_ativas = df_audiencias[
-                    (df_audiencias["status"] != "Realizada") &
-                    (df_audiencias["status"] != "Cancelada") &
-                    (pd.to_datetime(df_audiencias["data_audiencia"]).dt.date >= hoje)
-                ].copy()
-
                 if df_aud_ativas.empty:
                     st.info("✅ Nenhuma audiência programada!")
                 else:
-                    # Agrupar por cliente (usando processo como referência)
-                    clientes_audiencias = sorted(df_aud_ativas["autor"].dropna().unique())
+                    # Clientes na ordem da audiência mais próxima de cada um
+                    clientes_audiencias = list(dict.fromkeys(df_aud_ativas["autor"].dropna()))
 
                     for cliente in clientes_audiencias:
+                        # Audiências do cliente, já em ordem de data e hora
                         audiencias_cliente = df_aud_ativas[df_aud_ativas["autor"] == cliente]
                         qtd_audiencias = len(audiencias_cliente)
+                        proxima = audiencias_cliente.iloc[0]["data_audiencia"].strftime("%d/%m")
 
                         # Card do cliente
                         if qtd_audiencias > 0:
-                            with st.expander(f"👤 **{cliente}** | 📅 {qtd_audiencias}"):
+                            with st.expander(f"👤 **{cliente}** | 📅 {qtd_audiencias} | 🗓️ próxima: {proxima}"):
                                 cols = st.columns(1, gap="small")
 
                                 for idx, (_, aud) in enumerate(audiencias_cliente.iterrows()):
