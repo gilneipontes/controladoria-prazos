@@ -2024,6 +2024,42 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
 
     st.divider()
 
+    # ===== BUSCA RÁPIDA POR CLIENTE =====
+    col_busca, col_vazio = st.columns([3, 2])
+
+    with col_busca:
+        busca_cliente = st.text_input("🔍 Buscar Cliente:", key="busca_concluidos", placeholder="Digite o nome do cliente...")
+
+        if busca_cliente.strip():
+            # Filtrar clientes que correspondem à busca
+            clientes_filtrados = sorted([
+                c for c in prazos_concluidos["cliente"].dropna().unique()
+                if busca_cliente.lower() in c.lower()
+            ])
+
+            if clientes_filtrados:
+                cliente_selecionado = st.selectbox(
+                    "Selecione:",
+                    clientes_filtrados,
+                    key="cliente_sel_concluidos"
+                )
+            else:
+                st.warning("Nenhum cliente encontrado com esse nome.")
+                cliente_selecionado = None
+        else:
+            cliente_selecionado = None
+
+    # ===== RESUMO DO CLIENTE SELECIONADO =====
+    if cliente_selecionado:
+        prazos_cliente = prazos_concluidos[prazos_concluidos["cliente"] == cliente_selecionado]
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("✅ Prazos Concluídos", len(prazos_cliente))
+        col2.metric("📋 Responsáveis", prazos_cliente["responsavel"].nunique())
+        col3.metric("📅 Período", f"{prazos_cliente['concluido_em'].min().strftime('%d/%m') if pd.notna(prazos_cliente['concluido_em'].min()) else '—'} a {prazos_cliente['concluido_em'].max().strftime('%d/%m') if pd.notna(prazos_cliente['concluido_em'].max()) else '—'}")
+
+        st.divider()
+
     # ===== FILTROS =====
     col1, col2, col3 = st.columns(3)
 
@@ -2049,23 +2085,14 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
             key="rel_responsavel"
         )
 
-    col4, col5 = st.columns(2)
-
-    with col4:
-        clientes_unicos = ["Todos"] + sorted(df_prazos["cliente"].dropna().unique().tolist())
-        filtro_cliente = st.selectbox(
-            "👤 Cliente",
-            clientes_unicos,
-            key="rel_cliente"
-        )
-
-    with col5:
-        st.empty()  # Espaçamento
-
     st.divider()
 
     # ===== APLICAR FILTROS =====
     df_filtrado = prazos_concluidos.copy()
+
+    # Se cliente foi selecionado na busca, filtrar APENAS ele
+    if cliente_selecionado:
+        df_filtrado = df_filtrado[df_filtrado["cliente"] == cliente_selecionado]
 
     # Filtro de data
     if pd.notna(data_inicio):
@@ -2076,10 +2103,6 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
     # Filtro de responsável
     if filtro_responsavel != "Todos":
         df_filtrado = df_filtrado[df_filtrado["responsavel"] == filtro_responsavel]
-
-    # Filtro de cliente
-    if filtro_cliente != "Todos":
-        df_filtrado = df_filtrado[df_filtrado["cliente"] == filtro_cliente]
 
     # ===== MÉTRICAS =====
     col1, col2, col3, col4 = st.columns(4)
