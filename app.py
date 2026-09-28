@@ -1559,7 +1559,7 @@ def remover_acentos(texto: str) -> str:
                    if unicodedata.category(c) != 'Mn').lower()
 
 def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
-    """Gerencia visualização e busca de clientes."""
+    """Gerencia visualização de clientes (catálogo)."""
     st.subheader("👤 Cadastro de Clientes")
 
     if df_processos.empty:
@@ -1575,47 +1575,13 @@ def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> N
     # Obter lista única de clientes com seus processos
     clientes_unicos = sorted(processos_ativos["cliente"].dropna().unique())
 
-    v = st.session_state.cadastro_cliente_v
-
-    col1, col2, col3 = st.columns([8, 1, 1])
-    with col1:
-        busca_cliente = st.text_input(
-            "🔍 Buscar cliente por nome:",
-            placeholder="Digite 3+ letras...",
-            key=f"busca_cadastro_cliente_{v}",
-            label_visibility="collapsed"
-        )
-
-    with col2:
-        if st.button("🗑️", key=f"limpar_busca_cliente_btn_{v}", help="Limpar pesquisa", use_container_width=True):
-            st.session_state.cadastro_cliente_v += 1
-            st.rerun()
-
-    # Filtrar clientes por nome (3+ caracteres)
-    if len(busca_cliente) >= 3:
-        busca_lower = busca_cliente.lower()
-        clientes_filtrados = [c for c in clientes_unicos if busca_lower in c.lower()]
-    else:
-        clientes_filtrados = []
-
-    with col3:
-        st.metric("Clientes", len(clientes_filtrados))
-
-    if len(busca_cliente) == 0:
-        st.caption("👉 Digite 3+ letras no campo acima para buscar clientes")
-        return
-
-    if len(busca_cliente) > 0 and len(busca_cliente) < 3:
-        st.caption("👉 Digite 3+ letras para buscar clientes")
-        return
-
-    if not clientes_filtrados and busca_cliente:
-        st.warning(f"❌ Nenhum cliente encontrado com '{busca_cliente}'")
-        return
+    # Mostrar métrica simples
+    st.metric("📋 Total de Clientes", len(clientes_unicos))
+    st.caption("💡 Use a **BUSCA POR CLIENTE** (sidebar) para filtrar tudo! Ou clique para expandir abaixo:")
 
     st.caption("Clique para expandir e ver todos os processos do cliente:")
 
-    for cliente in clientes_filtrados:
+    for cliente in clientes_unicos:
         processos_cliente = processos_ativos[processos_ativos["cliente"] == cliente].sort_values("numero")
         total_processos = len(processos_cliente)
 
