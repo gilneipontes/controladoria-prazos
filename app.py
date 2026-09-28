@@ -148,6 +148,8 @@ def init_estado() -> None:
     st.session_state.setdefault("modo_modal", None)
     st.session_state.setdefault("sel_prazo_idx", 0)
     st.session_state.setdefault("aba_selecionada", "🏠 Início")
+    # Controle para recolher a barra lateral só uma vez por cliente selecionado
+    st.session_state.setdefault("sidebar_recolhida_para", None)
     # ===== PASSO 4 E 5: FILTROS POR RESPONSÁVEL =====
     st.session_state.setdefault("filtro_tab1", "Todos")
     st.session_state.setdefault("filtro_tab2", "Todos")
@@ -2533,6 +2535,39 @@ def limpar_busca_cliente() -> None:
     st.session_state.busca_temp_text = ""
     st.session_state.busca_cliente_sidebar = ""
     st.session_state.processo_abrir_automatico = None
+    st.session_state.cliente_selecionado_dropdown = None
+    st.session_state.sidebar_recolhida_para = None
+
+def recolher_sidebar_no_celular() -> None:
+    """
+    Recolhe a barra lateral automaticamente em telas pequenas (celular),
+    dando foco total à tela principal. No computador não faz nada.
+    """
+    import streamlit.components.v1 as components
+
+    components.html(
+        """
+        <script>
+        (function () {
+            const pai = window.parent;
+            if (!pai || pai.innerWidth > 768) return;  // só no celular
+            const doc = pai.document;
+            const seletores = [
+                '[data-testid="stSidebarCollapseButton"] button',
+                'section[data-testid="stSidebar"] [data-testid="baseButton-headerNoPadding"]',
+                'section[data-testid="stSidebar"] button[kind="headerNoPadding"]'
+            ];
+            setTimeout(function () {
+                for (const s of seletores) {
+                    const botao = doc.querySelector(s);
+                    if (botao) { botao.click(); break; }
+                }
+            }, 300);
+        })();
+        </script>
+        """,
+        height=0,
+    )
 
 def buscar_por_cliente(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, cliente_busca: str) -> tuple:
     """
@@ -2877,10 +2912,9 @@ def main() -> None:
         if "busca_temp_text" not in st.session_state:
             st.session_state.busca_temp_text = ""
 
-        # Campo de texto para digitar (captura em tempo real)
+        # Campo de texto para digitar (o valor fica guardado na própria chave)
         busca_temp = st.text_input(
             "Digite o nome...",
-            value=st.session_state.busca_temp_text,
             key="busca_temp_text",
             label_visibility="collapsed",
             placeholder="Digite 3+ letras para buscar...",
@@ -2897,28 +2931,38 @@ def main() -> None:
             sugestoes = sugestoes_inicio + sugestoes_contem
 
             if sugestoes:
-                # Selectbox com as sugestões (dropdown automático)
+                # Começa sem seleção: o filtro só vale depois que o cliente é escolhido
+                if st.session_state.get("cliente_selecionado_dropdown") not in sugestoes:
+                    st.session_state.cliente_selecionado_dropdown = None
+
                 cliente_selecionado = st.selectbox(
                     "Selecione o cliente:",
                     options=sugestoes,
-                    index=0,
+                    index=None,
+                    placeholder="👆 Toque para escolher o cliente...",
                     key="cliente_selecionado_dropdown",
                     label_visibility="collapsed"
                 )
 
-                # Usar o cliente selecionado para filtrar
-                cliente_busca = cliente_selecionado
-                st.session_state.busca_cliente_sidebar = cliente_selecionado
+                if cliente_selecionado:
+                    # Usar o cliente selecionado para filtrar
+                    cliente_busca = cliente_selecionado
+                    st.session_state.busca_cliente_sidebar = cliente_selecionado
 
-                # Salvar qual processo abrir automaticamente (primeiro da lista)
-                processos_cliente = df_processos[df_processos["cliente"].str.contains(cliente_selecionado, case=False, na=False)]
-                if not processos_cliente.empty:
-                    st.session_state.processo_abrir_automatico = processos_cliente.iloc[0]["numero"]
+                    # Salvar qual processo abrir automaticamente (primeiro da lista)
+                    processos_cliente = df_processos[df_processos["cliente"].str.contains(cliente_selecionado, case=False, na=False, regex=False)]
+                    if not processos_cliente.empty:
+                        st.session_state.processo_abrir_automatico = processos_cliente.iloc[0]["numero"]
 
-                # Mensagem de sucesso
-                if cliente_busca:
                     st.success(f"✅ Cliente selecionado: **{cliente_busca}**")
-                    st.info("👉 Os dados aparecem ao lado! Clique no processo para expandir.")
+                    st.info("👉 Os dados aparecem na tela principal! Clique no processo para expandir.")
+
+                    # No celular, recolhe a barra lateral uma única vez por cliente escolhido
+                    if st.session_state.sidebar_recolhida_para != cliente_selecionado:
+                        st.session_state.sidebar_recolhida_para = cliente_selecionado
+                        recolher_sidebar_no_celular()
+                else:
+                    cliente_busca = ""
             else:
                 st.warning(f"❌ Nenhum cliente encontrado com '{busca_temp}'")
                 cliente_busca = ""
@@ -2926,7 +2970,7 @@ def main() -> None:
             cliente_busca = ""
 
         # ===== BOTÃO LIMPAR BUSCA =====
-        st.button("🗑️ Limpe", use_container_width=True, on_click=limpar_busca_cliente)
+        st.button("🗑️ Limpar Busca", use_container_width=True, on_click=limpar_busca_cliente)
 
         st.divider()
 
