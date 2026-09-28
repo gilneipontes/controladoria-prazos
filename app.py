@@ -1230,7 +1230,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
     - Com busca (nome do cliente ou número): lista só os processos encontrados,
       expansíveis, com a situação atual e os prazos de cada um.
     """
-    st.subheader("📋 Processos Cadastrados")
 
     if df_processos.empty:
         st.info("Nenhum processo cadastrado.")
@@ -2526,6 +2525,10 @@ def janela_nova_audiencia(processos_df: pd.DataFrame) -> None:
 def janela_novo_processo() -> None:
     formulario_novo_processo()
 
+@st.dialog("🗂️ Processos Cadastrados", width="large")
+def janela_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
+    gerenciar_processos(df_processos, df_prazos)
+
 def selecionar_menu(opcao: str) -> None:
     """Callback dos botões do menu lateral: guarda a opção escolhida."""
     st.session_state.aba_selecionada = opcao
@@ -2889,6 +2892,15 @@ def main() -> None:
             )
 
         aba = st.session_state.aba_selecionada
+
+        # ===== PESQUISA DE PROCESSOS: abre em janela no centro da tela =====
+        st.button(
+            "🗂️ Processos Cadastrados",
+            key="acao_processos",
+            use_container_width=True,
+            on_click=abrir_janela,
+            args=("processos",),
+        )
         st.divider()
 
         if st.button("🔄 Recarregar Dados", use_container_width=True):
@@ -3005,6 +3017,8 @@ def main() -> None:
         janela_nova_audiencia(df_processos)
     elif janela == "novo_processo":
         janela_novo_processo()
+    elif janela == "processos":
+        janela_processos(df_processos, df_prazos)
 
     if st.session_state.aviso:
         st.toast(st.session_state.aviso)
@@ -3036,7 +3050,7 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos_filtrados) if not df_prazos_filtrados.empty else pd.DataFrame()
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🗂️ Processos", "📅 Audiências"])
+    tab1, tab2, tab3, tab4, tab6 = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "📅 Audiências"])
 
     with tab1:
         # ===== PASSO 1: CARDS COM CORES DINÂMICAS =====
@@ -3197,9 +3211,6 @@ def main() -> None:
         else:
             st.subheader("📦 Prazos Arquivados")
             tabela_status(prazos_arquivados, df_processos, prefix="tab_arquivados")
-
-    with tab5:
-        gerenciar_processos(df_processos, df_prazos)
 
     with tab6:
         st.subheader("📅 Audiências Agendadas")
