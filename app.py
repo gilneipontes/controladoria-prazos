@@ -1629,7 +1629,13 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
                                     with st.container(border=True):
                                         st.markdown(f"<div style='font-size: 16px;'>✅</div>", unsafe_allow_html=True)
                                         st.markdown(f"<b style='font-size: 13px;'>{prazo['titulo'][:30]}</b>", unsafe_allow_html=True)
-                                        data_conc = prazo['concluido_em'].strftime("%d/%m") if pd.notna(prazo['concluido_em']) else "—"
+                                        try:
+                                            if pd.notna(prazo['concluido_em']):
+                                                data_conc = pd.Timestamp(prazo['concluido_em']).strftime("%d/%m")
+                                            else:
+                                                data_conc = "—"
+                                        except:
+                                            data_conc = "—"
                                         st.markdown(f"<small style='color: #888;'>{data_conc}</small>", unsafe_allow_html=True)
 
                                         # PASSO 3: Botão para abrir modal do cliente
@@ -1787,7 +1793,13 @@ def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.
                                 st.caption(f"👤 Responsável: {prazo['responsavel']}")
 
                             with col_info2:
-                                data_conc = prazo['concluido_em'].strftime('%d/%m/%Y') if pd.notna(prazo['concluido_em']) else "—"
+                                try:
+                                    if pd.notna(prazo['concluido_em']):
+                                        data_conc = pd.Timestamp(prazo['concluido_em']).strftime('%d/%m/%Y')
+                                    else:
+                                        data_conc = "—"
+                                except:
+                                    data_conc = "—"
                                 st.caption(f"✅ Concluído em: {data_conc}")
                                 st.caption(f"📅 Data Fatal: {prazo['data_fatal'].strftime('%d/%m/%Y')}")
 
@@ -2057,7 +2069,13 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                         # NOME DO CLIENTE (em destaque mas menor)
                         cliente_exib = prazo['cliente'] if prazo['cliente'] else "Sem cliente"
                         st.markdown(f"<div style='font-size: 11px; color: #666; font-weight: 500; margin: 2px 0;'>👤 {cliente_exib[:25]}</div>", unsafe_allow_html=True)
-                        data_conc = prazo['concluido_em'].strftime("%d/%m") if pd.notna(prazo['concluido_em']) else "—"
+                        try:
+                            if pd.notna(prazo['concluido_em']):
+                                data_conc = pd.Timestamp(prazo['concluido_em']).strftime("%d/%m")
+                            else:
+                                data_conc = "—"
+                        except:
+                            data_conc = "—"
                         st.markdown(f"<small style='color: #888;'>{data_conc}</small>", unsafe_allow_html=True)
 
                         if st.button("👁️ Ver", key=f"modal_conc_{prazo['id']}", use_container_width=True, help="Clique para ver"):
@@ -2113,7 +2131,13 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                     faixa = prazo.get('faixa', 'Desconhecido')
                     st.write(f"**🎯 Situação:** {prazo.get('situacao', faixa)}")
                     if prazo['concluido']:
-                        data_conc = prazo['concluido_em'].strftime("%d/%m/%Y") if pd.notna(prazo['concluido_em']) else "—"
+                        try:
+                            if pd.notna(prazo['concluido_em']):
+                                data_conc = pd.Timestamp(prazo['concluido_em']).strftime("%d/%m/%Y")
+                            else:
+                                data_conc = "—"
+                        except:
+                            data_conc = "—"
                         st.write(f"**✅ Concluído em:** {data_conc}")
 
                 # ===== SEÇÃO 4: AÇÕES =====
