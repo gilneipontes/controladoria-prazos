@@ -147,7 +147,7 @@ def init_estado() -> None:
     st.session_state.setdefault("id_modal", None)
     st.session_state.setdefault("modo_modal", None)
     st.session_state.setdefault("sel_prazo_idx", 0)
-    st.session_state.setdefault("aba_selecionada", "Novo Prazo")
+    st.session_state.setdefault("aba_selecionada", "📋 Novo Prazo")
     # ===== PASSO 4 E 5: FILTROS POR RESPONSÁVEL =====
     st.session_state.setdefault("filtro_tab1", "Todos")
     st.session_state.setdefault("filtro_tab2", "Todos")
@@ -2772,7 +2772,7 @@ def main() -> None:
 
     with st.sidebar:
         st.title("⚖️ Controladoria")
-        opcoes_menu = ["Novo Prazo", "Nova Audiência", "Novo Processo", "Cards", "📊 Relatórios", "Dashboard"]
+        opcoes_menu = ["📋 Novo Prazo", "📅 Nova Audiência", "⚖️ Novo Processo", "🎴 Cards", "📊 Relatórios", "📈 Dashboard"]
         aba = st.radio("Opção:", opcoes_menu,
                       key="aba",
                       index=opcoes_menu.index(st.session_state.aba_selecionada) if st.session_state.aba_selecionada in opcoes_menu else 0)
@@ -2853,11 +2853,11 @@ def main() -> None:
 
         st.divider()
 
-        if aba == "Novo Prazo":
+        if aba == "📋 Novo Prazo":
             sidebar_novo_prazo(df_processos)
-        elif aba == "Nova Audiência":
+        elif aba == "📅 Nova Audiência":
             sidebar_nova_audiencia(df_processos)
-        elif aba == "Novo Processo":
+        elif aba == "⚖️ Novo Processo":
             st.subheader("⚖️ Novo Processo")
             v = st.session_state.form_v
             with st.form("proc"):
@@ -2873,7 +2873,7 @@ def main() -> None:
                         st.rerun()
                     else:
                         st.error("Preencha todos!")
-        elif aba == "Cards":
+        elif aba == "🎴 Cards":
             # PASSO 2: Visão Cards Hierárquica (sem filtro global, mostra tudo por cliente)
             pass  # Renderizado no main area abaixo
         elif aba == "📊 Relatórios":
@@ -2898,7 +2898,7 @@ def main() -> None:
         st.session_state.aviso = None
 
     # ===== PASSO 2: RENDERIZAR VISÃO CARDS HIERÁRQUICA =====
-    if aba == "Cards":
+    if aba == "🎴 Cards":
         dashboard_cards_hierarquico(df_prazos, df_audiencias, df_processos)
         st.stop()
 
