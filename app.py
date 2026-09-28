@@ -137,7 +137,6 @@ def hoje() -> dt.date:
 def init_estado() -> None:
     st.session_state.setdefault("form_v", 0)
     st.session_state.setdefault("editor_v", 0)
-    st.session_state.setdefault("cadastro_cliente_v", 0)
     st.session_state.setdefault("aviso", None)
     st.session_state.setdefault("modal_aberta", False)
     st.session_state.setdefault("id_modal", None)
@@ -1910,9 +1909,9 @@ def main() -> None:
 
     with st.sidebar:
         st.title("⚖️ Controladoria")
-        aba = st.radio("Opção:", ["Novo Prazo", "Nova Audiência", "Novo Processo", "Cadastro Cliente", "Dashboard"],
+        aba = st.radio("Opção:", ["Novo Prazo", "Nova Audiência", "Novo Processo", "Dashboard"],
                       key="aba",
-                      index=["Novo Prazo", "Nova Audiência", "Novo Processo", "Cadastro Cliente", "Dashboard"].index(st.session_state.aba_selecionada))
+                      index=["Novo Prazo", "Nova Audiência", "Novo Processo", "Dashboard"].index(st.session_state.aba_selecionada) if st.session_state.aba_selecionada != "Cadastro Cliente" else 0)
         st.session_state.aba_selecionada = aba
         st.divider()
 
@@ -2010,8 +2009,6 @@ def main() -> None:
                         st.rerun()
                     else:
                         st.error("Preencha todos!")
-        elif aba == "Cadastro Cliente":
-            gerenciar_clientes(df_processos, df_prazos)
         else:
             # ===== APLICAR FILTRO DE BUSCA NO DASHBOARD =====
             df_prazos_filtrados, df_audiencias_filtradas = buscar_por_cliente(
