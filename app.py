@@ -1574,7 +1574,7 @@ def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> N
     # Obter lista única de clientes com seus processos
     clientes_unicos = sorted(processos_ativos["cliente"].dropna().unique())
 
-    col1, col2 = st.columns([3, 1])
+    col1, col2, col3 = st.columns([8, 1, 1])
     with col1:
         busca_cliente = st.text_input(
             "🔍 Buscar cliente por nome:",
@@ -1583,22 +1583,31 @@ def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> N
             label_visibility="collapsed"
         )
 
+    with col2:
+        if st.button("🗑️", key="limpar_busca_cliente_btn", help="Limpar pesquisa", use_container_width=True):
+            st.session_state.busca_cadastro_cliente = ""
+            st.rerun()
+
     # Filtrar clientes por nome (3+ caracteres)
     if len(busca_cliente) >= 3:
         busca_lower = busca_cliente.lower()
         clientes_filtrados = [c for c in clientes_unicos if busca_lower in c.lower()]
     else:
-        clientes_filtrados = clientes_unicos if len(busca_cliente) == 0 else []
+        clientes_filtrados = []
 
-    with col2:
+    with col3:
         st.metric("Clientes", len(clientes_filtrados))
 
-    if not clientes_filtrados and busca_cliente:
-        st.warning(f"❌ Nenhum cliente encontrado com '{busca_cliente}'")
+    if len(busca_cliente) == 0:
+        st.caption("👉 Digite 3+ letras no campo acima para buscar clientes")
         return
 
     if len(busca_cliente) > 0 and len(busca_cliente) < 3:
         st.caption("👉 Digite 3+ letras para buscar clientes")
+        return
+
+    if not clientes_filtrados and busca_cliente:
+        st.warning(f"❌ Nenhum cliente encontrado com '{busca_cliente}'")
         return
 
     st.caption("Clique para expandir e ver todos os processos do cliente:")
