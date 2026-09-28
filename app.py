@@ -147,7 +147,7 @@ def init_estado() -> None:
     st.session_state.setdefault("id_modal", None)
     st.session_state.setdefault("modo_modal", None)
     st.session_state.setdefault("sel_prazo_idx", 0)
-    st.session_state.setdefault("aba_selecionada", "📋 Novo Prazo")
+    st.session_state.setdefault("aba_selecionada", "🏠 Início")
     # ===== PASSO 4 E 5: FILTROS POR RESPONSÁVEL =====
     st.session_state.setdefault("filtro_tab1", "Todos")
     st.session_state.setdefault("filtro_tab2", "Todos")
@@ -828,7 +828,6 @@ def sidebar_novo_prazo(processos_df: pd.DataFrame) -> None:
     """
     PASSO 6: Impedir duplicação de prazos ✅
     """
-    st.subheader("📋 Novo Prazo")
     v = st.session_state.form_v
 
     processos_ativos = processos_df[processos_df["ativo"]].sort_values("numero")
@@ -1101,7 +1100,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
                 tabela_audiencias(aud_canceladas, prefix="dash_canceladas")
 
 def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
-    st.subheader("📅 Nova Audiência")
     v = st.session_state.form_v
 
     processos_ativos = processos_df[processos_df["ativo"]].sort_values("numero")
@@ -2481,6 +2479,38 @@ def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> N
                         else:
                             st.info("Nenhum prazo associado")
 
+def abrir_janela(nome: str) -> None:
+    """Callback dos botões de cadastro: marca qual janela abrir."""
+    st.session_state.janela_aberta = nome
+
+def formulario_novo_processo() -> None:
+    v = st.session_state.form_v
+    with st.form("proc"):
+        numero = st.text_input("Nº CNJ *", value="", placeholder="0000000-00.0000.0.00.0000", key=f"pnumero_{v}")
+        cliente = st.text_input("Cliente *", value="", key=f"pcliente_{v}")
+        parte = st.text_input("Parte Adversária *", value="", key=f"pparte_{v}")
+        descricao = st.text_area("Descrição", value="", key=f"pdesc_{v}")
+        if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
+            if numero and cliente and parte:
+                inserir_processo({"numero": numero, "cliente": cliente, "parte_contraria": parte, "descricao": descricao or None, "ativo": True})
+                st.session_state.form_v += 1
+                st.session_state.aviso = "✅ Processo salvo com sucesso!"
+                st.rerun()
+            else:
+                st.error("Preencha todos os campos obrigatórios!")
+
+@st.dialog("📋 Novo Prazo", width="large")
+def janela_novo_prazo(processos_df: pd.DataFrame) -> None:
+    sidebar_novo_prazo(processos_df)
+
+@st.dialog("📅 Nova Audiência", width="large")
+def janela_nova_audiencia(processos_df: pd.DataFrame) -> None:
+    sidebar_nova_audiencia(processos_df)
+
+@st.dialog("⚖️ Novo Processo", width="large")
+def janela_novo_processo() -> None:
+    formulario_novo_processo()
+
 def selecionar_menu(opcao: str) -> None:
     """Callback dos botões do menu lateral: guarda a opção escolhida."""
     st.session_state.aba_selecionada = opcao
@@ -2776,9 +2806,26 @@ def main() -> None:
 
     with st.sidebar:
         st.title("⚖️ Controladoria")
-        opcoes_menu = ["📋 Novo Prazo", "📅 Nova Audiência", "⚖️ Novo Processo", "🎴 Cards", "📊 Relatórios", "📈 Dashboard"]
+        # ===== CADASTROS: abrem em janela no centro da tela =====
+        st.caption("➕ CADASTRAR")
+        acoes_cadastro = {
+            "📋 Novo Prazo": "novo_prazo",
+            "📅 Nova Audiência": "nova_audiencia",
+            "⚖️ Novo Processo": "novo_processo",
+        }
+        for rotulo, janela in acoes_cadastro.items():
+            st.button(
+                rotulo,
+                key=f"acao_{janela}",
+                use_container_width=True,
+                on_click=abrir_janela,
+                args=(janela,),
+            )
 
-        # Garante que um valor antigo (sem ícone) não quebre o menu
+        st.caption("🧭 NAVEGAR")
+        opcoes_menu = ["🏠 Início", "🎴 Cards", "📊 Relatórios", "📈 Dashboard"]
+
+        # Garante que um valor antigo não quebre o menu
         if st.session_state.aba_selecionada not in opcoes_menu:
             st.session_state.aba_selecionada = opcoes_menu[0]
 
@@ -2870,33 +2917,16 @@ def main() -> None:
 
         st.divider()
 
-        if aba == "📋 Novo Prazo":
-            sidebar_novo_prazo(df_processos)
-        elif aba == "📅 Nova Audiência":
-            sidebar_nova_audiencia(df_processos)
-        elif aba == "⚖️ Novo Processo":
-            st.subheader("⚖️ Novo Processo")
-            v = st.session_state.form_v
-            with st.form("proc"):
-                numero = st.text_input("Nº CNJ *", value="", placeholder="0000000-00.0000.0.00.0000", key=f"pnumero_{v}")
-                cliente = st.text_input("Cliente *", value="", key=f"pcliente_{v}")
-                parte = st.text_input("Parte Adversária *", value="", key=f"pparte_{v}")
-                descricao = st.text_area("Descrição", value="", key=f"pdesc_{v}")
-                if st.form_submit_button("Salvar", type="primary"):
-                    if numero and cliente and parte:
-                        inserir_processo({"numero": numero, "cliente": cliente, "parte_contraria": parte, "descricao": descricao or None, "ativo": True})
-                        st.session_state.form_v += 1
-                        st.session_state.aviso = "✅ Processo salvo com sucesso!"
-                        st.rerun()
-                    else:
-                        st.error("Preencha todos!")
+        if aba == "🏠 Início":
+            # Tela principal com as abas (Ativos, Concluídos, Pauta...)
+            pass
         elif aba == "🎴 Cards":
             # PASSO 2: Visão Cards Hierárquica (sem filtro global, mostra tudo por cliente)
             pass  # Renderizado no main area abaixo
         elif aba == "📊 Relatórios":
             # PASSO 2.5: Dashboard de Relatórios (renderizado no main area abaixo)
             pass
-        else:
+        elif aba == "📈 Dashboard":
             # ===== APLICAR FILTRO DE BUSCA NO DASHBOARD =====
             df_prazos_filtrados, df_audiencias_filtradas = buscar_por_cliente(
                 df_prazos, df_audiencias, cliente_busca
@@ -2909,6 +2939,15 @@ def main() -> None:
 
     st.title("⚖️ Controladoria Jurídica")
     st.caption(f"Hoje: {hoje():%d/%m/%Y}")
+
+    # ===== JANELAS DE CADASTRO (modal no centro da tela) =====
+    janela = st.session_state.pop("janela_aberta", None)
+    if janela == "novo_prazo":
+        janela_novo_prazo(df_processos)
+    elif janela == "nova_audiencia":
+        janela_nova_audiencia(df_processos)
+    elif janela == "novo_processo":
+        janela_novo_processo()
 
     if st.session_state.aviso:
         st.toast(st.session_state.aviso)
