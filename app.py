@@ -181,6 +181,165 @@ def acesso_liberado() -> bool:
 def supabase() -> Client:
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
+
+# =====================================================================
+# 🎨 APARÊNCIA: cada escritório escolhe as cores do seu sistema
+# As cores ficam salvas no banco (tabela "configuracoes"), então valem
+# para todas as pessoas do escritório, em qualquer computador ou celular.
+# =====================================================================
+TABELA_CONFIG = "configuracoes"
+
+TEMAS_PRONTOS = {
+    "Escuro (padrão)":  {"fundo": "#0E1117", "cartoes": "#262730", "texto": "#FAFAFA", "destaque": "#FF4B4B", "lateral": "#262730"},
+    "Claro":            {"fundo": "#FFFFFF", "cartoes": "#F0F2F6", "texto": "#31333F", "destaque": "#FF4B4B", "lateral": "#F0F2F6"},
+    "Azul jurídico":    {"fundo": "#F4F7FC", "cartoes": "#E3EAF5", "texto": "#0F1F3D", "destaque": "#1F3A68", "lateral": "#1F3A68"},
+    "Azul e dourado":   {"fundo": "#0F1F3D", "cartoes": "#1B2F57", "texto": "#F5F1E6", "destaque": "#C9A227", "lateral": "#0A1630"},
+    "Verde":            {"fundo": "#F5FAF6", "cartoes": "#E1EFE4", "texto": "#14301D", "destaque": "#2E7D4F", "lateral": "#1F4D33"},
+    "Vinho":            {"fundo": "#FBF7F7", "cartoes": "#F1E4E6", "texto": "#3A1219", "destaque": "#7B1E2E", "lateral": "#5A1522"},
+    "Grafite":          {"fundo": "#1E1F22", "cartoes": "#2B2D31", "texto": "#E8E8E8", "destaque": "#4F8CFF", "lateral": "#17181A"},
+}
+TEMA_PADRAO = "Escuro (padrão)"
+NOMES_CORES = {
+    "fundo": "Fundo da tela",
+    "cartoes": "Campos e cartões",
+    "texto": "Texto",
+    "destaque": "Botões e destaques",
+    "lateral": "Barra lateral",
+}
+
+
+def _luminancia(cor_hex: str) -> float:
+    cor_hex = cor_hex.lstrip("#")
+    canais = [int(cor_hex[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in canais]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def _contraste(cor1: str, cor2: str) -> float:
+    l1, l2 = sorted((_luminancia(cor1), _luminancia(cor2)), reverse=True)
+    return (l1 + 0.05) / (l2 + 0.05)
+
+
+def _misturar(cor1: str, cor2: str, peso: float) -> str:
+    """Mistura duas cores (peso = quanto da cor2)."""
+    a = [int(cor1.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    b = [int(cor2.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    return "#" + "".join(f"{round(x + (y - x) * peso):02X}" for x, y in zip(a, b))
+
+
+def _cor_legivel_sobre(fundo: str) -> str:
+    """Branco ou quase-preto, o que for mais legível sobre o fundo."""
+    return "#FAFAFA" if _contraste(fundo, "#FAFAFA") >= _contraste(fundo, "#1A1A1A") else "#1A1A1A"
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def carregar_tema() -> dict:
+    """Lê as cores do escritório no banco. Se não houver, usa o padrão."""
+    try:
+        resp = supabase().table(TABELA_CONFIG).select("*").eq("chave", "tema").execute()
+        if resp.data:
+            valor = resp.data[0]["valor"] or {}
+            if all(k in valor for k in NOMES_CORES):
+                return {k: str(valor[k]).upper() for k in NOMES_CORES}
+    except Exception:
+        pass
+    return dict(TEMAS_PRONTOS[TEMA_PADRAO])
+
+
+def salvar_tema(tema: dict) -> str | None:
+    """Grava as cores no banco. Devolve uma mensagem de erro, ou None se deu certo."""
+    try:
+        supabase().table(TABELA_CONFIG).upsert(
+            {"chave": "tema", "valor": tema, "atualizado_em": dt.datetime.now(TZ).isoformat()}
+        ).execute()
+        carregar_tema.clear()
+        return None
+    except Exception as exc:
+        if "configuracoes" in str(exc) or "does not exist" in str(exc) or "PGRST205" in str(exc):
+            return "A tabela de configurações ainda não existe no banco de dados. Ela é criada pelo arquivo supabase_schema.sql."
+        return f"Não foi possível salvar: {exc}"
+
+
+@st.cache_resource
+def _tema_em_uso() -> dict:
+    return {}
+
+
+def aplicar_tema(tema: dict) -> None:
+    """Aplica as cores ao sistema inteiro (telas, tabelas, campos e barra lateral)."""
+    lateral = tema["lateral"]
+    texto_lateral = _cor_legivel_sobre(lateral)
+    opcoes = {
+        "base": "dark" if _luminancia(tema["fundo"]) < 0.4 else "light",
+        "primaryColor": tema["destaque"],
+        "backgroundColor": tema["fundo"],
+        "secondaryBackgroundColor": tema["cartoes"],
+        "textColor": tema["texto"],
+        "sidebar.backgroundColor": lateral,
+        "sidebar.textColor": texto_lateral,
+        "sidebar.secondaryBackgroundColor": _misturar(lateral, texto_lateral, 0.12),
+        "sidebar.primaryColor": tema["destaque"] if _contraste(tema["destaque"], lateral) >= 2 else _misturar(tema["destaque"], texto_lateral, 0.45),
+    }
+    em_uso = _tema_em_uso()
+    if em_uso == opcoes:
+        return
+    for chave, valor in opcoes.items():
+        st._config.set_option(f"theme.{chave}", valor)
+    em_uso.clear()
+    em_uso.update(opcoes)
+    st.rerun()  # recarrega a tela uma vez para as novas cores aparecerem
+
+
+def _previa_tema(tema: dict) -> None:
+    lateral, texto_lateral = tema["lateral"], _cor_legivel_sobre(tema["lateral"])
+    texto_botao = _cor_legivel_sobre(tema["destaque"])
+    st.markdown(
+        f"""
+        <div style="display:flex;border-radius:8px;overflow:hidden;border:1px solid #8884;font-size:11px;height:92px">
+          <div style="background:{lateral};color:{texto_lateral};width:34%;padding:8px;font-weight:600">⚖️ Menu</div>
+          <div style="background:{tema['fundo']};color:{tema['texto']};flex:1;padding:8px">
+            <div style="font-weight:700;margin-bottom:6px">Controladoria</div>
+            <div style="background:{tema['cartoes']};border-radius:4px;padding:3px 6px;margin-bottom:6px">Campo / cartão</div>
+            <span style="background:{tema['destaque']};color:{texto_botao};border-radius:4px;padding:2px 8px">Botão</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def painel_aparencia() -> None:
+    """Painel na barra lateral para o escritório escolher as cores."""
+    atual = carregar_tema()
+    with st.expander("🎨 Aparência do sistema"):
+        nome_atual = next((n for n, t in TEMAS_PRONTOS.items() if t == atual), "Personalizado")
+        opcoes = list(TEMAS_PRONTOS) + ["Personalizado"]
+        escolha = st.selectbox("Tema", opcoes, index=opcoes.index(nome_atual), key="tema_escolha")
+
+        base = atual if escolha == "Personalizado" else TEMAS_PRONTOS[escolha]
+        novo = dict(base)
+        if escolha == "Personalizado":
+            st.caption("Clique em cada quadrado para escolher a cor:")
+            for chave, rotulo in NOMES_CORES.items():
+                novo[chave] = st.color_picker(rotulo, value=base[chave], key=f"cor_{chave}").upper()
+
+        st.caption("Prévia:")
+        _previa_tema(novo)
+
+        if _contraste(novo["texto"], novo["fundo"]) < 4.5 or _contraste(novo["texto"], novo["cartoes"]) < 3:
+            st.warning("⚠️ O texto vai ficar difícil de ler com essas cores. Escolha um texto mais claro ou mais escuro.")
+
+        if novo != atual:
+            if st.button("💾 Aplicar para todo o escritório", type="primary", key="tema_salvar", use_container_width=True):
+                erro = salvar_tema(novo)
+                if erro:
+                    st.error(erro)
+                else:
+                    st.session_state.aviso = "🎨 Cores do escritório atualizadas!"
+                    st.rerun()
+        else:
+            st.caption("✅ Estas são as cores em uso.")
+
 @st.cache_data(ttl=60, show_spinner="Carregando prazos…")
 def carregar_prazos() -> pd.DataFrame:
     resp = supabase().table(TABELA_PRAZOS).select("*").order("data_fatal").execute()
@@ -3163,6 +3322,7 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
 
 def main() -> None:
     init_estado()
+    aplicar_tema(carregar_tema())
     if not acesso_liberado():
         st.stop()
 
@@ -3227,7 +3387,10 @@ def main() -> None:
             carregar_prazos.clear()
             carregar_processos.clear()
             carregar_audiencias.clear()
+            carregar_tema.clear()
             st.rerun()
+
+        painel_aparencia()
 
         st.divider()
 
