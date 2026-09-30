@@ -1864,6 +1864,106 @@ def remover_acentos(texto: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', str(texto))
                    if unicodedata.category(c) != 'Mn').lower()
 
+@st.dialog("✏️ Editar Prazo", width="large")
+def janela_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+    """Janela para corrigir um prazo lançado errado."""
+    encontrados = df_prazos[df_prazos["id"] == id_prazo]
+    if encontrados.empty:
+        st.warning("Este prazo não foi encontrado. Clique em 🔄 Recarregar Dados.")
+        return
+    prazo = encontrados.iloc[0]
+    k = f"ed_{id_prazo}"
+
+    st.caption(f"👤 {prazo['cliente']}  ·  📌 {prazo['processo']}")
+
+    # --- Processo (caso tenha sido lançado no processo errado) ---
+    processos = df_processos[df_processos["ativo"]] if not df_processos.empty else df_processos
+    numeros = list(dict.fromkeys(processos["numero"].astype(str))) if not processos.empty else []
+    if prazo["processo"] not in numeros:
+        numeros = [str(prazo["processo"])] + numeros
+    clientes = dict(zip(df_processos["numero"].astype(str), df_processos["cliente"])) if not df_processos.empty else {}
+    processo = st.selectbox(
+        "Processo",
+        numeros,
+        index=numeros.index(str(prazo["processo"])),
+        format_func=lambda n: f"{n} — {clientes.get(n, prazo['cliente'])}",
+        key=f"{k}_proc",
+    )
+
+    # --- Título: pode digitar ou escolher um atalho (o atalho preenche o campo) ---
+    st.session_state.setdefault(f"{k}_titulo", str(prazo["titulo"]))
+
+    def _usar_atalho() -> None:
+        escolhido = st.session_state.get(f"{k}_atalho")
+        if escolhido in ATALHOS:
+            st.session_state[f"{k}_titulo"] = ATALHOS[escolhido]
+
+    st.selectbox(
+        "Trocar o título por um atalho (opcional)",
+        ["— manter o título abaixo —"] + list(ATALHOS.keys()),
+        format_func=lambda c: c if c.startswith("—") else f"{AREA_DO_ATALHO[c][:2]} {c} — {ATALHOS[c]}",
+        key=f"{k}_atalho",
+        on_change=_usar_atalho,
+    )
+    titulo = st.text_input("Título *", key=f"{k}_titulo")
+
+    c1, c2 = st.columns(2)
+    tipo = c1.selectbox("Tipo", TIPOS, index=TIPOS.index(prazo["tipo"]) if prazo["tipo"] in TIPOS else 0, key=f"{k}_tipo")
+    responsavel = c2.selectbox(
+        "Responsável", RESPONSAVEIS,
+        index=RESPONSAVEIS.index(prazo["responsavel"]) if prazo["responsavel"] in RESPONSAVEIS else 0,
+        key=f"{k}_resp",
+    )
+
+    c3, c4 = st.columns(2)
+    data_interna = c3.date_input(
+        "Prazo Interno",
+        value=prazo["data_interna"] if pd.notna(prazo["data_interna"]) else None,
+        format="DD/MM/YYYY", key=f"{k}_interna",
+    )
+    data_fatal = c4.date_input("Data Fatal *", value=prazo["data_fatal"], format="DD/MM/YYYY", key=f"{k}_fatal")
+
+    prioridade = st.select_slider(
+        "Prioridade", PRIORIDADES,
+        value=prazo["prioridade"] if prazo["prioridade"] in PRIORIDADES else "Normal",
+        key=f"{k}_prio",
+    )
+    descricao_atual = prazo["descricao"] if isinstance(prazo["descricao"], str) else ""
+    descricao = st.text_area("Observações", value=descricao_atual, key=f"{k}_desc")
+
+    b1, b2 = st.columns(2)
+    if b1.button("💾 Salvar alterações", type="primary", use_container_width=True, key=f"{k}_salvar"):
+        if not titulo.strip():
+            st.error("O título não pode ficar em branco.")
+        elif not data_fatal:
+            st.error("Informe a data fatal.")
+        elif data_interna and data_interna > data_fatal:
+            st.error("O prazo interno deve ser igual ou anterior à data fatal.")
+        else:
+            atualizar_prazo(int(id_prazo), {
+                "processo": processo,
+                "cliente": clientes.get(processo, prazo["cliente"]),
+                "titulo": titulo.strip(),
+                "tipo": tipo,
+                "responsavel": responsavel,
+                "data_interna": data_interna.isoformat() if data_interna else None,
+                "data_fatal": data_fatal.isoformat(),
+                "prioridade": prioridade,
+                "descricao": descricao.strip() or None,
+            })
+            _limpar_janela_edicao(k)
+            st.session_state.aviso = "✅ Prazo corrigido!"
+            st.rerun()
+    if b2.button("Cancelar", use_container_width=True, key=f"{k}_cancelar"):
+        _limpar_janela_edicao(k)
+        st.rerun()
+
+
+def _limpar_janela_edicao(prefixo: str) -> None:
+    for chave in [c for c in st.session_state if str(c).startswith(prefixo + "_")]:
+        del st.session_state[chave]
+
+
 def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_processos: pd.DataFrame = None) -> None:
     """
     PASSO 2: Visão Cards Hierárquica
@@ -1936,6 +2036,10 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
                                         # PASSO 3: Botão para abrir modal do cliente
                                         if st.button("👁️ Ver Ficha", key=f"ficha_{prazo['id']}", use_container_width=True):
                                             modal_ficha_cliente(cliente, df_prazos, df_processos, df_audiencias)
+
+                                        # Corrigir um prazo lançado errado
+                                        if st.button("✏️ Editar", key=f"editar_card_{prazo['id']}", use_container_width=True):
+                                            janela_editar_prazo(int(prazo["id"]), df_prazos, df_processos)
 
     # ===== SEÇÃO AUDIÊNCIAS =====
     with col_audiencias:
