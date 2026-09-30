@@ -1867,6 +1867,11 @@ def remover_acentos(texto: str) -> str:
 @st.dialog("✏️ Editar Prazo", width="large")
 def janela_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
     """Janela para corrigir um prazo lançado errado."""
+    formulario_editar_prazo(id_prazo, df_prazos, df_processos)
+
+
+def formulario_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd.DataFrame, ao_cancelar=None) -> None:
+    """Campos de edição de um prazo (usado nas janelas de edição e de consulta)."""
     encontrados = df_prazos[df_prazos["id"] == id_prazo]
     if encontrados.empty:
         st.warning("Este prazo não foi encontrado. Clique em 🔄 Recarregar Dados.")
@@ -1952,16 +1957,73 @@ def janela_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd
                 "descricao": descricao.strip() or None,
             })
             _limpar_janela_edicao(k)
+            st.session_state.pop(f"ver_prazo_modo_{id_prazo}", None)
             st.session_state.aviso = "✅ Prazo corrigido!"
             st.rerun()
     if b2.button("Cancelar", use_container_width=True, key=f"{k}_cancelar"):
         _limpar_janela_edicao(k)
+        if ao_cancelar:
+            ao_cancelar()
         st.rerun()
 
 
 def _limpar_janela_edicao(prefixo: str) -> None:
     for chave in [c for c in st.session_state if str(c).startswith(prefixo + "_")]:
         del st.session_state[chave]
+
+
+@st.dialog("📂 Prazo", width="large")
+def janela_ver_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+    """Consulta completa de um prazo, com opção de editar."""
+    modo_chave = f"ver_prazo_modo_{id_prazo}"
+    if st.session_state.get(modo_chave) == "editar":
+        st.markdown("#### ✏️ Editando o prazo")
+        formulario_editar_prazo(
+            id_prazo, df_prazos, df_processos,
+            ao_cancelar=lambda: st.session_state.pop(modo_chave, None),
+        )
+        return
+
+    encontrados = df_prazos[df_prazos["id"] == id_prazo]
+    if encontrados.empty:
+        st.warning("Este prazo não foi encontrado. Clique em 🔄 Recarregar Dados.")
+        return
+    prazo = enriquecer(encontrados.copy()).iloc[0]
+
+    parte = ""
+    acao = ""
+    if not df_processos.empty:
+        proc = df_processos[df_processos["numero"] == prazo["processo"]]
+        if not proc.empty:
+            parte = proc.iloc[0]["parte_contraria"] or ""
+            acao = proc.iloc[0]["descricao"] or ""
+
+    st.markdown(f"### {prazo['titulo']}")
+    st.markdown(f"**Situação:** {prazo['situacao']}  ·  **{int(prazo['dias_uteis'])}** dia(s) útil(eis)")
+
+    c1, c2 = st.columns(2)
+    c1.markdown(f"**👤 Cliente:** {prazo['cliente']}")
+    c2.markdown(f"**⚔️ Parte contrária:** {parte or '—'}")
+    c1.markdown(f"**📌 Processo:** `{prazo['processo']}`")
+    c2.markdown(f"**⚖️ Ação:** {acao or '—'}")
+    c1.markdown(f"**🗓️ Prazo interno:** {formatar_data_brasil(prazo['data_interna']) or '—'}")
+    c2.markdown(f"**🔚 Data fatal:** {formatar_data_brasil(prazo['data_fatal'])}")
+    c1.markdown(f"**👨‍⚖️ Responsável:** {prazo['responsavel']}")
+    c2.markdown(f"**⚡ Prioridade:** {prazo['prioridade']}")
+    st.markdown(f"**🏷️ Tipo:** {prazo['tipo']}")
+
+    st.markdown("**📝 Observações:**")
+    if isinstance(prazo["descricao"], str) and prazo["descricao"].strip():
+        st.info(prazo["descricao"])
+    else:
+        st.caption("Sem observações.")
+
+    b1, b2 = st.columns(2)
+    if b1.button("✏️ Editar este prazo", type="primary", use_container_width=True, key=f"ver_editar_{id_prazo}"):
+        st.session_state[modo_chave] = "editar"
+        st.rerun(scope="fragment")
+    if b2.button("Fechar", use_container_width=True, key=f"ver_fechar_{id_prazo}"):
+        st.rerun()
 
 
 def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_processos: pd.DataFrame = None) -> None:
@@ -2398,13 +2460,24 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
         "prioridade": "Prioridade"
     })
 
-    # Exibir tabela
-    st.dataframe(
+    # Exibir tabela (clique na caixinha da linha para abrir o prazo)
+    st.caption("👉 Clique na caixinha à esquerda de uma linha para abrir o prazo, consultar e editar.")
+    evento = st.dataframe(
         df_exibicao,
         use_container_width=True,
         height=400,
-        hide_index=True
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="tabela_prazos_listados",
     )
+
+    linhas = evento.selection.rows if evento is not None else []
+    if linhas:
+        selecionado = df_filtrado.iloc[linhas[0]]
+        st.success(f"Selecionado: **{selecionado['titulo']}** — {selecionado['cliente']} — fatal {formatar_data_brasil(selecionado['data_fatal'])}")
+        if st.button("📂 Abrir prazo", type="primary", use_container_width=True, key="abrir_prazo_listado"):
+            janela_ver_prazo(int(selecionado["id"]), df_prazos, df_processos)
 
     st.divider()
 
