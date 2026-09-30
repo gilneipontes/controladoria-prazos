@@ -96,45 +96,43 @@ TIPOS_AUDIENCIA = ["Inicial", "Continuação", "Sentença", "Outra"]
 STATUS_AUDIENCIA = ["Agendada", "Realizada", "Cancelada"]
 
 # ===== ATALHOS DE TÍTULO (lista que aparece na busca do "Novo Prazo") =====
-ATALHOS_POR_AREA = {
-    "⚖️ Trabalhista": {
-        "RECL-TRAB": "Reclamação Trabalhista (Inicial)",
-        "DEF-TRAB": "Contestação / Defesa Trabalhista",
-        "RECONV": "Reconvenção",
-        "RESTRAB": "Réplica à Contestação Trabalhista",
-        "AUD-INICIAL": "Audiência Trabalhista (Inicial / Una)",
-        "AUD-INSTR": "Audiência de Instrução",
-        "RAZ-FIN": "Razões Finais (Memoriais)",
-        "REC-ORD": "Recurso Ordinário (RO)",
-        "CONTR-RO": "Contrarrazões de Recurso Ordinário",
-        "REC-REV": "Recurso de Revista (RR)",
-        "AG-PET": "Agravo de Petição (Fase de Execução)",
-        "CALC-LIQ": "Manifestação sobre Cálculos de Liquidação",
-        "EMB-DECL-TRAB": "Embargos de Declaração Trabalhista",
-    },
-    "🏛️ Cível": {
-        "PET-INIC": "Petição Inicial Cível",
-        "CONT-CIV": "Contestação Cível",
-        "RECONV-CIV": "Reconvenção Cível",
-        "REPL-CIV": "Réplica / Manifestação à Contestação",
-        "ADJUD-COMP": "Adjudicação Compulsória",
-        "USUCAPIÃO": "Ação de Usucapião (Judicial / Extrajudicial)",
-        "INVENTÁRIO": "Ação de Inventário e Partilha (Judicial / Extrajudicial)",
-        "SPEC-PROV": "Especificação de Provas",
-        "AUD-CONC": "Audiência de Conciliação / Mediação (Art. 334 CPC)",
-        "IMP-JUST": "Impugnação à Justiça Gratuita",
-        "IMP-VAL": "Impugnação ao Valor da Causa",
-        "IMP-CUMP": "Impugnação ao Cumprimento de Sentença",
-        "APELAÇÃO": "Apelação Cível",
-        "CONTR-APEL": "Contrarrazões de Apelação",
-        "AG-INSTR": "Agravo de Instrumento",
-        "EMB-DECL": "Embargos de Declaração",
-        "RECURSO-ESP": "Recurso Especial (REsp)",
-        "RECURSO-EXT": "Recurso Extraordinário (RExt)",
-    },
+ATALHOS = {
+    "RECL-TRAB": "Reclamação Trabalhista (Inicial)",
+    "CONT-TRAB": "Contestação Trabalhista",
+    "CONT-CIV": "Contestação Cível",
+    "RECONV": "Reconvenção",
+    "REPLICA": "Réplica",
+    "EMB-EXEC": "Embargos à Execução",
+    "ADJUD-COMP": "Adjudicação Compulsória",
+    "USUCAPIÃO": "Ação de Usucapião",
+    "INVENTÁRIO": "Ação de Inventário e Partilha",
+    "MANIF-LAUDO": "Manifestação sobre Laudo Pericial",
+    "SPEC-PROV": "Especificação de Provas",
+    "AUD-INICIAL": "Audiência Trabalhista (Inicial / Una)",
+    "AUD-INSTR": "Audiência de Instrução",
+    "AUD-CONC": "Audiência de Conciliação / Mediação (Art. 334 CPC)",
+    "RAZ-FIN": "Razões Finais (Memoriais)",
+    "IMP-JUST": "Impugnação à Justiça Gratuita",
+    "IMP-VAL": "Impugnação ao Valor da Causa",
+    "IMP-CUMP": "Impugnação ao Cumprimento de Sentença",
+    "CALC-LIQ": "Manifestação sobre Cálculos de Liquidação",
+    "IMP-CALC-879": "Impugnação de Cálculos (Art. 879, § 2º CLT)",
+    "APELAÇÃO": "Apelação Cível",
+    "CONTR-APEL": "Contrarrazões de Apelação",
+    "REC-ORD": "Recurso Ordinário (RO)",
+    "CONTR-RO": "Contrarrazões ao Recurso Ordinário (RO)",
+    "REC-REV": "Recurso de Revista (RR)",
+    "CONTR-RR": "Contrarrazões ao Recurso de Revista (RR)",
+    "AG-INSTR": "Agravo de Instrumento",
+    "CONTR-AG-INSTR": "Contrarrazões ao Agravo de Instrumento",
+    "AG-PET": "Agravo de Petição (Fase de Execução)",
+    "AG-INT": "Agravo Interno",
+    "CONTR-AG-INT": "Contrarrazões ao Agravo Interno",
+    "EMB-DECL": "Embargos de Declaração",
+    "EMB-DECL-TRAB": "Embargos de Declaração Trabalhista",
+    "RECURSO-ESP": "Recurso Especial (REsp)",
+    "RECURSO-EXT": "Recurso Extraordinário (RExt)",
 }
-ATALHOS = {cod: nome for grupo in ATALHOS_POR_AREA.values() for cod, nome in grupo.items()}
-AREA_DO_ATALHO = {cod: area for area, grupo in ATALHOS_POR_AREA.items() for cod in grupo}
 
 # Títulos usados só pelo "Colar Despacho" quando a peça não está na lista acima
 TITULOS_EXTRAS_DESPACHO = {
@@ -1130,7 +1128,7 @@ def sidebar_novo_prazo(
         busca_titulo = st.text_input(
             "Digite para filtrar atalhos jurídicos",
             value="",
-            placeholder="Ex: RO, recurso, contestação, trabalhista, cível...",
+            placeholder="Ex: RO, recurso, contestação, manifestação...",
             key=f"busca_{v}",
             label_visibility="collapsed"
         )
@@ -1141,7 +1139,6 @@ def sidebar_novo_prazo(
             encontrados = [
                 k for k in ATALHOS
                 if termo in remover_acentos(k) or termo in remover_acentos(ATALHOS[k])
-                or termo in remover_acentos(AREA_DO_ATALHO[k])
             ]
             # Ordem: código exato (ex.: RO) > código que começa igual > nome que começa igual > o resto
             encontrados.sort(key=lambda k: (
@@ -1158,7 +1155,7 @@ def sidebar_novo_prazo(
             titulo_atalho = st.selectbox(
                 "Atalhos encontrados:",
                 options=opcoes_titulo,
-                format_func=lambda x: x if x == opcao_livre else f"{AREA_DO_ATALHO[x][:2]} {x} — {atalhos_filtrados[x]}",
+                format_func=lambda x: x if x == opcao_livre else f"{x} — {atalhos_filtrados[x]}",
                 key=f"ta_{v}",
                 label_visibility="collapsed"
             )
@@ -1906,7 +1903,7 @@ def formulario_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos
     st.selectbox(
         "Trocar o título por um atalho (opcional)",
         ["— manter o título abaixo —"] + list(ATALHOS.keys()),
-        format_func=lambda c: c if c.startswith("—") else f"{AREA_DO_ATALHO[c][:2]} {c} — {ATALHOS[c]}",
+        format_func=lambda c: c if c.startswith("—") else f"{c} — {ATALHOS[c]}",
         key=f"{k}_atalho",
         on_change=_usar_atalho,
     )
@@ -2974,15 +2971,15 @@ def janela_novo_processo() -> None:
 # Cada regra: (código do atalho, padrões procurados no texto sem acentos, prazo legal em dias úteis ou None)
 REGRAS_DESPACHO = [
     ("CONTR-APEL", [r"contrarraz\w*.{0,80}apela", r"apela\w*.{0,120}contrarraz", r"intime-se o apelado"], 15),
-    ("CONTR-AG", [r"contraminuta", r"contrarraz\w*.{0,80}agravo"], 15),
+    ("CONTR-AG-INSTR", [r"contraminuta", r"contrarraz\w*.{0,80}agravo"], 15),
     ("CONTR-RO", [r"contrarraz\w*.{0,80}recurso ordinario"], 8),
     ("EMEND-INI", [r"emend\w*.{0,40}inicial"], 15),
-    ("REPL-CIV", [r"replica", r"(manifest|diga)\w*.{0,60}contestac", r"sobre a contestac"], 15),
+    ("REPLICA", [r"replica", r"(manifest|diga)\w*.{0,60}contestac", r"sobre a contestac"], 15),
     ("SPEC-PROV", [r"especific\w*.{0,40}provas", r"provas que pretende\w* produzir", r"provas a produzir"], None),
     ("ROL-TEST", [r"rol de testemunhas", r"arrol\w* testemunhas"], None),
     ("QUESITOS", [r"quesitos", r"assistente tecnico"], 15),
-    ("MANIFEST-LAUDO", [r"(manifest|diga)\w*.{0,60}laudo", r"sobre o laudo", r"laudo pericial"], 15),
-    ("IMP-CALC", [r"impugn\w*.{0,40}calculo"], None),
+    ("MANIF-LAUDO", [r"(manifest|diga)\w*.{0,60}laudo", r"sobre o laudo", r"laudo pericial"], 15),
+    ("IMP-CALC-879", [r"impugn\w*.{0,40}calculo"], None),
     ("CALC-LIQ", [r"(manifest|diga)\w*.{0,60}calculo", r"sobre os calculos", r"calculos apresentados"], None),
     ("CONTR-DOC", [r"(manifest|diga)\w*.{0,60}documentos", r"sobre os documentos", r"documentos juntados"], None),
     ("RAZ-FIN", [r"memoriais", r"alegacoes finais"], 15),
