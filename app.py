@@ -33,7 +33,16 @@ TABELA_PRAZOS = "prazos"
 TABELA_PROCESSOS = "processos"
 TABELA_AUDIENCIAS = "audiencias"
 
-RESPONSAVEIS = ["Dr. Gilnei", "Dra. Jéssica"]
+# Advogados responsáveis. Cada escritório pode definir os seus no Streamlit
+# (Settings → Secrets), com uma linha assim:  RESPONSAVEIS = ["Dr. Fulano", "Dra. Beltrana"]
+# Se não definir, usa a lista abaixo.
+RESPONSAVEIS_PADRAO = ["Dr. Gilnei", "Dra. Jéssica"]
+try:
+    RESPONSAVEIS = [str(n).strip() for n in st.secrets.get("RESPONSAVEIS", RESPONSAVEIS_PADRAO) if str(n).strip()]
+except Exception:
+    RESPONSAVEIS = list(RESPONSAVEIS_PADRAO)
+if not RESPONSAVEIS:
+    RESPONSAVEIS = list(RESPONSAVEIS_PADRAO)
 TIPOS = ["Prazo Processual", "Data Fatal", "Tarefa Operacional", "Admin"]
 PRIORIDADES = ["Baixa", "Normal", "Alta"]
 ORDEM_PRIORIDADE = {"Alta": 0, "Normal": 1, "Baixa": 2}
@@ -86,54 +95,61 @@ FORMATOS_AUDIENCIA = ["Presencial", "Virtual"]
 TIPOS_AUDIENCIA = ["Inicial", "Continuação", "Sentença", "Outra"]
 STATUS_AUDIENCIA = ["Agendada", "Realizada", "Cancelada"]
 
-ATALHOS = {
-    "PET-INI": "Petição Inicial",
+# ===== ATALHOS DE TÍTULO (lista que aparece na busca do "Novo Prazo") =====
+ATALHOS_POR_AREA = {
+    "⚖️ Trabalhista": {
+        "RECL-TRAB": "Reclamação Trabalhista (Inicial)",
+        "DEF-TRAB": "Contestação / Defesa Trabalhista",
+        "RECONV": "Reconvenção",
+        "RESTRAB": "Réplica à Contestação Trabalhista",
+        "AUD-INICIAL": "Audiência Trabalhista (Inicial / Una)",
+        "AUD-INSTR": "Audiência de Instrução",
+        "RAZ-FIN": "Razões Finais (Memoriais)",
+        "REC-ORD": "Recurso Ordinário (RO)",
+        "CONTR-RO": "Contrarrazões de Recurso Ordinário",
+        "REC-REV": "Recurso de Revista (RR)",
+        "AG-PET": "Agravo de Petição (Fase de Execução)",
+        "CALC-LIQ": "Manifestação sobre Cálculos de Liquidação",
+        "EMB-DECL-TRAB": "Embargos de Declaração Trabalhista",
+    },
+    "🏛️ Cível": {
+        "PET-INIC": "Petição Inicial Cível",
+        "CONT-CIV": "Contestação Cível",
+        "RECONV-CIV": "Reconvenção Cível",
+        "REPL-CIV": "Réplica / Manifestação à Contestação",
+        "SPEC-PROV": "Especificação de Provas",
+        "AUD-CONC": "Audiência de Conciliação / Mediação (Art. 334 CPC)",
+        "IMP-JUST": "Impugnação à Justiça Gratuita",
+        "IMP-VAL": "Impugnação ao Valor da Causa",
+        "IMP-CUMP": "Impugnação ao Cumprimento de Sentença",
+        "APELAÇÃO": "Apelação Cível",
+        "CONTR-APEL": "Contrarrazões de Apelação",
+        "AG-INSTR": "Agravo de Instrumento",
+        "EMB-DECL": "Embargos de Declaração",
+        "RECURSO-ESP": "Recurso Especial (REsp)",
+        "RECURSO-EXT": "Recurso Extraordinário (RExt)",
+    },
+}
+ATALHOS = {cod: nome for grupo in ATALHOS_POR_AREA.values() for cod, nome in grupo.items()}
+AREA_DO_ATALHO = {cod: area for area, grupo in ATALHOS_POR_AREA.items() for cod in grupo}
+
+# Títulos usados só pelo "Colar Despacho" quando a peça não está na lista acima
+TITULOS_EXTRAS_DESPACHO = {
+    "CONTR-AG": "Contraminuta de Agravo",
     "EMEND-INI": "Emenda à Petição Inicial",
-    "RECL-TRAB": "Reclamação Trabalhista (Inicial)",
-    "EMEND-TRAB": "Emenda à Reclamação Trabalhista",
-    "CONT": "Contestação",
-    "CONT-TRAB": "Contestação Trabalhista",
-    "REPL": "Réplica à Contestação",
-    "CONTR-DOC": "Manifestação sobre Documentos",
-    "RECONV": "Reconvenção",
-    "IMP-VALI": "Impugnação ao Valor da Causa",
-    "EX-INCOMP": "Exceção de Incompetência",
-    "EX-PREEXEC": "Exceção de Pré-Executividade",
-    "SPEC-PROV": "Especificação de Provas",
     "ROL-TEST": "Rol de Testemunhas",
     "QUESITOS": "Quesitos para Perícia",
-    "QUES-TRAB": "Quesitos Trabalhistas",
     "MANIFEST-LAUDO": "Manifestação sobre Laudo",
-    "MANIF": "Manifestação",
-    "MEMORIAIS": "Alegações Finais",
-    "RAZOES-FIN": "Razões Finais",
-    "APEL": "Apelação",
-    "CONTR-APEL": "Contrarrazões de Apelação",
-    "RO": "Recurso Ordinário",
-    "CONTR-RO": "Contrarrazões de RO",
-    "RR": "Recurso de Revista",
-    "CONTR-RR": "Contrarrazões de RR",
-    "AG-INST": "Agravo de Instrumento",
-    "CONTR-AG": "Contraminuta de Agravo",
-    "AG-INT": "Agravo Interno",
-    "EMB-DECL": "Embargos de Declaração",
-    "RESP": "Recurso Especial",
-    "RE": "Recurso Extraordinário",
-    "CUMP-SENT": "Cumprimento de Sentença",
-    "IMP-CUMP": "Impugnação ao Cumprimento",
-    "EX-EXEC": "Execução de Título",
-    "EMB-EXEC": "Embargos à Execução",
-    "AG-PET": "Agravo de Petição",
-    "CONTR-AG-PET": "Contrarrazões de AG-PET",
     "IMP-CALC": "Impugnação aos Cálculos",
-    "MANIFEST-CALC": "Manifestação sobre Cálculos",
+    "CONTR-DOC": "Manifestação sobre Documentos",
     "INDIC-BENS": "Indicação de Bens",
-    "PET-JUNT": "Petição de Juntada",
+    "CUMP-SENT": "Cumprimento de Sentença",
     "TERMO-AUD": "Data de Audiência",
+    "ALVARA": "Expedição de Alvará",
     "ACORDO": "Termo de Acordo",
     "PED-SUSP": "Pedido de Suspensão",
-    "PET-EXT": "Pedido de Extinção",
-    "ALVARA": "Expedição de Alvará",
+    "PET-JUNT": "Petição de Juntada",
+    "MANIF": "Manifestação",
 }
 
 def hoje() -> dt.date:
@@ -902,7 +918,7 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
 
                 col1, col2 = st.columns(2)
                 with col1:
-                    novo_responsavel = st.selectbox("Responsável", RESPONSAVEIS, index=RESPONSAVEIS.index(prazo["responsavel"]), key=f"edit_resp_{prefix}_{id_prazo}")
+                    novo_responsavel = st.selectbox("Responsável", RESPONSAVEIS, index=RESPONSAVEIS.index(prazo["responsavel"]) if prazo["responsavel"] in RESPONSAVEIS else 0, key=f"edit_resp_{prefix}_{id_prazo}")
                 with col2:
                     nova_prioridade = st.selectbox("Prioridade", PRIORIDADES, index=PRIORIDADES.index(prazo["prioridade"]), key=f"edit_prio_{prefix}_{id_prazo}")
 
@@ -1111,24 +1127,39 @@ def sidebar_novo_prazo(
         busca_titulo = st.text_input(
             "Digite para filtrar atalhos jurídicos",
             value="",
-            placeholder="Ex: PET, CONT, MANIF...",
+            placeholder="Ex: RO, recurso, contestação, trabalhista, cível...",
             key=f"busca_{v}",
             label_visibility="collapsed"
         )
 
         if busca_titulo:
-            atalhos_filtrados = {k: v for k, v in ATALHOS.items() if busca_titulo.upper() in k}
-            if atalhos_filtrados:
-                titulo_atalho = st.selectbox(
-                    "Atalhos encontrados:",
-                    options=list(atalhos_filtrados.keys()),
-                    format_func=lambda x: f"{x} — {atalhos_filtrados[x]}",
-                    key=f"ta_{v}",
-                    label_visibility="collapsed"
-                )
-                titulo = atalhos_filtrados[titulo_atalho]
-            else:
-                st.warning("Nenhum atalho encontrado!")
+            # Busca pelo código (RO, CONT...) OU pelo nome (recurso, contestação...), sem ligar para acentos
+            termo = remover_acentos(busca_titulo.strip())
+            encontrados = [
+                k for k in ATALHOS
+                if termo in remover_acentos(k) or termo in remover_acentos(ATALHOS[k])
+                or termo in remover_acentos(AREA_DO_ATALHO[k])
+            ]
+            # Ordem: código exato (ex.: RO) > código que começa igual > nome que começa igual > o resto
+            encontrados.sort(key=lambda k: (
+                remover_acentos(k) != termo and f"({termo})" not in remover_acentos(ATALHOS[k]),
+                not remover_acentos(k).startswith(termo),
+                not remover_acentos(ATALHOS[k]).startswith(termo),
+            ))
+            atalhos_filtrados = {k: ATALHOS[k] for k in encontrados}
+            texto_livre = busca_titulo.strip()
+            opcao_livre = f"✏️ Usar como digitado: {texto_livre}"
+            opcoes_titulo = list(atalhos_filtrados.keys()) + [opcao_livre]
+            if not atalhos_filtrados:
+                st.caption("Nenhum atalho com esse nome. Você pode usar o texto como digitado.")
+            titulo_atalho = st.selectbox(
+                "Atalhos encontrados:",
+                options=opcoes_titulo,
+                format_func=lambda x: x if x == opcao_livre else f"{AREA_DO_ATALHO[x][:2]} {x} — {atalhos_filtrados[x]}",
+                key=f"ta_{v}",
+                label_visibility="collapsed"
+            )
+            titulo = texto_livre if titulo_atalho == opcao_livre else atalhos_filtrados[titulo_atalho]
         else:
             st.caption("👉 Digite acima para ver os atalhos disponíveis")
 
@@ -2766,20 +2797,20 @@ REGRAS_DESPACHO = [
     ("CONTR-AG", [r"contraminuta", r"contrarraz\w*.{0,80}agravo"], 15),
     ("CONTR-RO", [r"contrarraz\w*.{0,80}recurso ordinario"], 8),
     ("EMEND-INI", [r"emend\w*.{0,40}inicial"], 15),
-    ("REPL", [r"replica", r"(manifest|diga)\w*.{0,60}contestac", r"sobre a contestac"], 15),
+    ("REPL-CIV", [r"replica", r"(manifest|diga)\w*.{0,60}contestac", r"sobre a contestac"], 15),
     ("SPEC-PROV", [r"especific\w*.{0,40}provas", r"provas que pretende\w* produzir", r"provas a produzir"], None),
     ("ROL-TEST", [r"rol de testemunhas", r"arrol\w* testemunhas"], None),
     ("QUESITOS", [r"quesitos", r"assistente tecnico"], 15),
     ("MANIFEST-LAUDO", [r"(manifest|diga)\w*.{0,60}laudo", r"sobre o laudo", r"laudo pericial"], 15),
     ("IMP-CALC", [r"impugn\w*.{0,40}calculo"], None),
-    ("MANIFEST-CALC", [r"(manifest|diga)\w*.{0,60}calculo", r"sobre os calculos", r"calculos apresentados"], None),
+    ("CALC-LIQ", [r"(manifest|diga)\w*.{0,60}calculo", r"sobre os calculos", r"calculos apresentados"], None),
     ("CONTR-DOC", [r"(manifest|diga)\w*.{0,60}documentos", r"sobre os documentos", r"documentos juntados"], None),
-    ("MEMORIAIS", [r"memoriais", r"alegacoes finais"], 15),
-    ("RAZOES-FIN", [r"razoes finais"], None),
+    ("RAZ-FIN", [r"memoriais", r"alegacoes finais"], 15),
+    ("RAZ-FIN", [r"razoes finais"], None),
     ("INDIC-BENS", [r"indi\w*.{0,30}bens", r"bens (passiveis de|a) penhora"], None),
     ("IMP-CUMP", [r"impugn\w*.{0,40}cumprimento", r"art\.? ?525"], 15),
     ("CUMP-SENT", [r"cumprimento de sentenca", r"art\.? ?523"], None),
-    ("APEL", [r"julgo (procedente|improcedente|parcialmente)", r"\bsentenca\b.{0,200}(publique-se|registre-se)", r"extingo o (processo|feito)"], 15),
+    ("APELAÇÃO", [r"julgo (procedente|improcedente|parcialmente)", r"\bsentenca\b.{0,200}(publique-se|registre-se)", r"extingo o (processo|feito)"], 15),
     ("EMB-DECL", [r"embargos de declarac", r"julgo (procedente|improcedente|parcialmente)"], 5),
     ("TERMO-AUD", [r"audiencia.{0,80}(designo|designada|marcada|para o dia|redesign)", r"designo audiencia"], None),
     ("ALVARA", [r"alvara"], None),
@@ -2864,7 +2895,7 @@ def interpretar_despacho(texto: str, processos_df: pd.DataFrame) -> dict:
 
         sugestoes.append({
             "codigo": codigo,
-            "titulo": ATALHOS[codigo],
+            "titulo": ATALHOS.get(codigo) or TITULOS_EXTRAS_DESPACHO.get(codigo, codigo),
             "prazo": prazo_txt,
             "trecho": trecho,
             "posicao": posicao,
