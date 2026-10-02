@@ -47,6 +47,14 @@ TIPOS = ["Prazo Processual", "Data Fatal", "Tarefa Operacional", "Admin"]
 PRIORIDADES = ["Baixa", "Normal", "Alta"]
 ORDEM_PRIORIDADE = {"Alta": 0, "Normal": 1, "Baixa": 2}
 
+# ===== FASES DO PROCESSO =====
+FASES_PROCESSO = [
+    "Fase de Conhecimento",
+    "Fase de Cumprimento de Sentença",
+    "Fase de Recursos",
+    "Fase de Execução",
+]
+
 FAIXAS = {
     "Vencido": "🔴 Vencido",
     "Hoje": "🟠 Vence hoje",
@@ -84,7 +92,7 @@ COLUNAS_PRAZOS = [
     "arquivado",
 ]
 
-COLUNAS_PROCESSOS = ["id", "created_at", "numero", "cliente", "parte_contraria", "descricao", "ativo"]
+COLUNAS_PROCESSOS = ["id", "created_at", "numero", "cliente", "parte_contraria", "descricao", "fase", "ativo"]
 
 COLUNAS_AUDIENCIAS = [
     "id", "created_at", "processo", "autor", "reu", "sala", "data_audiencia",
@@ -767,7 +775,13 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
     st.divider()
     st.subheader("⚙️ Gerenciar Prazo")
 
-    df_ativos = df[~df["arquivado"]]
+    df_ativos = df[~df["arquivado"]].copy()
+
+    # ===== MERGE COM PARTE CONTRÁRIA PARA A SEÇÃO GERENCIAR =====
+    if processos_df is not None and not processos_df.empty:
+        processos_gerenciar = processos_df[["numero", "parte_contraria"]].drop_duplicates(subset=["numero"], keep="first").copy()
+        df_ativos = df_ativos.merge(processos_gerenciar, left_on="processo", right_on="numero", how="left")
+
     if df_ativos.empty:
         st.info("Nenhum prazo ativo.")
         return
@@ -795,7 +809,12 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
     opcoes_ids = [None]
 
     for _, row in df_ativos_filtrado.iterrows():
-        opcoes_display.append(f"{row['cliente']} | {row['titulo']} | {row['data_fatal'].strftime('%d/%m/%Y')}")
+        # Montar a exibição com cliente, parte contrária (se houver) e título
+        cliente_display = row['cliente']
+        if pd.notna(row.get('parte_contraria', '')) and row.get('parte_contraria', ''):
+            cliente_display = f"{cliente_display} / {row['parte_contraria']}"
+
+        opcoes_display.append(f"{cliente_display} | {row['titulo']} | {row['data_fatal'].strftime('%d/%m/%Y')}")
         opcoes_ids.append(row['id'])
 
     if len(opcoes_display) == 1:
@@ -1560,6 +1579,9 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                     st.write(f"🔹 **Nº Processo:** `{proc['numero']}`")
                     st.write(f"👤 **Cliente:** {proc['cliente']}")
                     st.write(f"⚔️ **Parte Adversária:** {proc['parte_contraria']}")
+                    # Exibir fase atual
+                    fase_atual = proc.get("fase", "Não definida")
+                    st.write(f"📊 **Fase:** {fase_atual}")
                     if proc["descricao"]:
                         st.write(f"📌 **Descrição:** {proc['descricao']}")
 
@@ -1568,12 +1590,29 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                     with st.form(f"edit_{proc['id']}", clear_on_submit=False):
                         novo_cliente = st.text_input("Cliente", value=proc["cliente"], key=f"cli_{proc['id']}")
                         nova_parte = st.text_input("Parte Adversária", value=proc["parte_contraria"], key=f"parte_{proc['id']}")
-                        nova_desc = st.text_area("Descrição", value=proc["descricao"] or "", height=100, key=f"desc_{proc['id']}")
+
+                        # ===== SELETOR DE FASE =====
+                        fase_atual = proc.get("fase", FASES_PROCESSO[0])
+                        # Se a fase atual não está na lista (caso legado), usa a primeira opção
+                        try:
+                            fase_index = FASES_PROCESSO.index(fase_atual)
+                        except ValueError:
+                            fase_index = 0
+
+                        nova_fase = st.selectbox(
+                            "Fase do Processo",
+                            FASES_PROCESSO,
+                            index=fase_index,
+                            key=f"fase_{proc['id']}"
+                        )
+
+                        nova_desc = st.text_area("Descrição", value=proc["descricao"] or "", height=80, key=f"desc_{proc['id']}")
 
                         if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
                             atualizar_processo(proc["id"], {
                                 "cliente": novo_cliente,
                                 "parte_contraria": nova_parte,
+                                "fase": nova_fase,
                                 "descricao": nova_desc or None
                             })
                             st.success("✅ Processo atualizado!")
@@ -1603,7 +1642,7 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                     prazos_abertos = enriquecer(prazos_abertos.copy()).sort_values("dias_uteis")
 
                     for p_idx, prazo in prazos_abertos.iterrows():
-                        mostra_card_prazo(prazo)
+                        mostra_card_prazo(prazo, df_processos)
 
             with tab_concluidos:
                 if prazos_concluidos.empty:
@@ -1612,7 +1651,7 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                     prazos_concluidos = enriquecer(prazos_concluidos.copy()).sort_values("data_fatal", ascending=False)
 
                     for p_idx, prazo in prazos_concluidos.iterrows():
-                        mostra_card_prazo(prazo)
+                        mostra_card_prazo(prazo, df_processos)
 
             with tab_arquivados:
                 if prazos_arquivados.empty:
@@ -1621,10 +1660,17 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                     prazos_arquivados = enriquecer(prazos_arquivados.copy()).sort_values("data_fatal", ascending=False)
 
                     for p_idx, prazo in prazos_arquivados.iterrows():
-                        mostra_card_prazo(prazo)
+                        mostra_card_prazo(prazo, df_processos)
 
-def mostra_card_prazo(prazo) -> None:
+def mostra_card_prazo(prazo, df_processos: pd.DataFrame = None) -> None:
     with st.container(border=True):
+        # ===== BUSCAR PARTE CONTRÁRIA =====
+        parte_contraria = ""
+        if df_processos is not None and not df_processos.empty and prazo.get('processo'):
+            proc = df_processos[df_processos['numero'] == prazo['processo']]
+            if not proc.empty:
+                parte_contraria = proc.iloc[0]['parte_contraria']
+
         col1, col2, col3, col4 = st.columns([0.8, 2, 1.2, 0.8])
 
         with col1:
@@ -1633,6 +1679,8 @@ def mostra_card_prazo(prazo) -> None:
         with col2:
             st.markdown(f"**{prazo['titulo']}**")
             st.caption(f"👤 {prazo['responsavel']}")
+            if parte_contraria:
+                st.caption(f"⚔️ {parte_contraria[:30]}")
 
         with col3:
             data_interna_str = prazo['data_interna'].strftime("%d/%m") if pd.notna(prazo['data_interna']) else "—"
@@ -1876,7 +1924,18 @@ def formulario_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos
     prazo = encontrados.iloc[0]
     k = f"ed_{id_prazo}"
 
-    st.caption(f"👤 {prazo['cliente']}  ·  📌 {prazo['processo']}")
+    # ===== BUSCAR PARTE CONTRÁRIA =====
+    parte_contraria = ""
+    if df_processos is not None and not df_processos.empty and prazo.get('processo'):
+        proc = df_processos[df_processos['numero'] == prazo['processo']]
+        if not proc.empty:
+            parte_contraria = proc.iloc[0]['parte_contraria']
+
+    # Exibir cabeçalho com cliente, processo e parte contrária
+    header_text = f"👤 {prazo['cliente']}  ·  📌 {prazo['processo']}"
+    if parte_contraria:
+        header_text += f"  ·  ⚔️ {parte_contraria}"
+    st.caption(header_text)
 
     # --- Processo (caso tenha sido lançado no processo errado) ---
     processos = df_processos[df_processos["ativo"]] if not df_processos.empty else df_processos
@@ -2065,13 +2124,17 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
             if prazos_em_aberto.empty:
                 st.info("✅ Nenhum prazo em aberto.")
             else:
-                # Clientes na ordem do prazo mais urgente de cada um
-                clientes_prazos = list(dict.fromkeys(prazos_em_aberto["cliente"].dropna()))
+                # ===== ORDENAR CLIENTES POR DATA FATAL MAIS PRÓXIMA =====
+                clientes_com_datas = []
+                for cliente in prazos_em_aberto["cliente"].dropna().unique():
+                    prazos_cliente = prazos_em_aberto[prazos_em_aberto["cliente"] == cliente]
+                    data_proxima = prazos_cliente["data_fatal"].min()
+                    clientes_com_datas.append((cliente, data_proxima, prazos_cliente))
 
-                for cliente in clientes_prazos:
-                    # Prazos do cliente, já em ordem de vencimento
-                    prazos_abertos = prazos_em_aberto[prazos_em_aberto["cliente"] == cliente]
+                # Ordenar clientes pela data mais próxima
+                clientes_com_datas.sort(key=lambda x: x[1])
 
+                for cliente, _, prazos_abertos in clientes_com_datas:
                     qtd_abertos = len(prazos_abertos)
                     proximo = prazos_abertos.iloc[0]["data_fatal"].strftime("%d/%m")
 
@@ -2086,19 +2149,26 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
                                 with col:
                                     cor_fundo, emoji_status, texto_urgencia = _definir_cor_prazo(prazo)
 
+                                    # ===== BUSCAR PARTE CONTRÁRIA =====
+                                    parte_contraria = ""
+                                    if not df_processos.empty and prazo['processo']:
+                                        proc = df_processos[df_processos['numero'] == prazo['processo']]
+                                        if not proc.empty:
+                                            parte_contraria = proc.iloc[0]['parte_contraria']
+
                                     with st.container(border=True):
                                         st.markdown(f"<div style='font-size: 16px;'>{emoji_status}</div>", unsafe_allow_html=True)
                                         st.markdown(f"<b style='font-size: 13px;'>{prazo['titulo'][:30]}</b>", unsafe_allow_html=True)
+                                        st.markdown(f"<small style='color: #888;'>👤 {cliente[:25]}</small>", unsafe_allow_html=True)
+                                        if parte_contraria:
+                                            st.markdown(f"<small style='color: #666;'>⚔️ {parte_contraria[:25]}</small>", unsafe_allow_html=True)
                                         st.markdown(f"<small style='color: #888;'>{prazo['data_fatal'].strftime('%d/%m')}</small>", unsafe_allow_html=True)
                                         st.markdown(f"<div style='background-color: {cor_fundo}; padding: 2px 4px; border-radius: 3px; text-align: center; font-size: 9px; font-weight: bold; color: white;'>{texto_urgencia[:8]}</div>", unsafe_allow_html=True)
 
                                         # PASSO 3: Botão para abrir modal do cliente
                                         if st.button("👁️ Ver Ficha", key=f"ficha_{prazo['id']}", use_container_width=True):
-                                            modal_ficha_cliente(cliente, df_prazos, df_processos, df_audiencias)
-
-                                        # Corrigir um prazo lançado errado
-                                        if st.button("✏️ Editar", key=f"editar_card_{prazo['id']}", use_container_width=True):
-                                            janela_editar_prazo(int(prazo["id"]), df_prazos, df_processos)
+                                            st.session_state.modal_cliente = cliente
+                                            st.rerun()
 
     # ===== SEÇÃO AUDIÊNCIAS =====
     with col_audiencias:
@@ -2109,12 +2179,17 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
                 if df_aud_ativas.empty:
                     st.info("✅ Nenhuma audiência programada!")
                 else:
-                    # Clientes na ordem da audiência mais próxima de cada um
-                    clientes_audiencias = list(dict.fromkeys(df_aud_ativas["autor"].dropna()))
-
-                    for cliente in clientes_audiencias:
-                        # Audiências do cliente, já em ordem de data e hora
+                    # ===== ORDENAR CLIENTES POR DATA DE AUDIÊNCIA MAIS PRÓXIMA =====
+                    clientes_com_datas_aud = []
+                    for cliente in df_aud_ativas["autor"].dropna().unique():
                         audiencias_cliente = df_aud_ativas[df_aud_ativas["autor"] == cliente]
+                        data_proxima_aud = pd.to_datetime(audiencias_cliente["data_audiencia"]).min()
+                        clientes_com_datas_aud.append((cliente, data_proxima_aud, audiencias_cliente))
+
+                    # Ordenar clientes pela data mais próxima
+                    clientes_com_datas_aud.sort(key=lambda x: x[1])
+
+                    for cliente, _, audiencias_cliente in clientes_com_datas_aud:
                         qtd_audiencias = len(audiencias_cliente)
                         proxima = audiencias_cliente.iloc[0]["data_audiencia"].strftime("%d/%m")
 
@@ -2217,6 +2292,13 @@ def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.
                 for _, prazo in prazos_abertos.iterrows():
                     cor_fundo, emoji_status, texto_urgencia = _definir_cor_prazo(prazo)
 
+                    # ===== BUSCAR PARTE CONTRÁRIA =====
+                    parte_contraria = ""
+                    if df_processos is not None and not df_processos.empty and prazo.get('processo'):
+                        proc = df_processos[df_processos['numero'] == prazo['processo']]
+                        if not proc.empty:
+                            parte_contraria = proc.iloc[0]['parte_contraria']
+
                     with st.container(border=True):
                         col1, col2 = st.columns([4, 1])
 
@@ -2227,6 +2309,8 @@ def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.
                             with col_info1:
                                 st.caption(f"📌 Processo: `{prazo['processo']}`")
                                 st.caption(f"👤 Responsável: {prazo['responsavel']}")
+                                if parte_contraria:
+                                    st.caption(f"⚔️ Parte Contrária: {parte_contraria[:40]}")
 
                             with col_info2:
                                 st.caption(f"📅 Data Fatal: {prazo['data_fatal'].strftime('%d/%m/%Y')}")
@@ -2238,6 +2322,12 @@ def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.
                         with col2:
                             st.markdown(f"<div style='background-color: {cor_fundo}; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px; font-weight: bold; color: white; margin-top: 10px;'>{texto_urgencia}</div>", unsafe_allow_html=True)
 
+                            # Botão de editar - usa session state para evitar conflito de layout
+                            if st.button("✏️ Editar", key=f"editar_ficha_{prazo['id']}", use_container_width=True):
+                                st.session_state.editar_prazo_id = int(prazo["id"])
+                                st.session_state.modal_aberto = False
+                                st.rerun()
+
                 st.divider()
 
             # Concluídos
@@ -2245,6 +2335,13 @@ def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.
                 st.markdown("#### ✅ Prazos Concluídos")
 
                 for _, prazo in prazos_concluidos.iterrows():
+                    # ===== BUSCAR PARTE CONTRÁRIA =====
+                    parte_contraria = ""
+                    if df_processos is not None and not df_processos.empty and prazo.get('processo'):
+                        proc = df_processos[df_processos['numero'] == prazo['processo']]
+                        if not proc.empty:
+                            parte_contraria = proc.iloc[0]['parte_contraria']
+
                     with st.container(border=True):
                         col1, col2 = st.columns([4, 1])
 
@@ -2255,6 +2352,8 @@ def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.
                             with col_info1:
                                 st.caption(f"📌 Processo: `{prazo['processo']}`")
                                 st.caption(f"👤 Responsável: {prazo['responsavel']}")
+                                if parte_contraria:
+                                    st.caption(f"⚔️ Parte Contrária: {parte_contraria[:40]}")
 
                             with col_info2:
                                 try:
@@ -2945,10 +3044,26 @@ def formulario_novo_processo() -> None:
         numero = st.text_input("Nº CNJ *", value="", placeholder="0000000-00.0000.0.00.0000", key=f"pnumero_{v}")
         cliente = st.text_input("Cliente *", value="", key=f"pcliente_{v}")
         parte = st.text_input("Parte Adversária *", value="", key=f"pparte_{v}")
+
+        # ===== NOVA: Seletor de Fase =====
+        fase = st.selectbox(
+            "Fase do Processo *",
+            FASES_PROCESSO,
+            index=0,
+            key=f"pfase_{v}"
+        )
+
         descricao = st.text_area("Descrição", value="", key=f"pdesc_{v}")
         if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
-            if numero and cliente and parte:
-                inserir_processo({"numero": numero, "cliente": cliente, "parte_contraria": parte, "descricao": descricao or None, "ativo": True})
+            if numero and cliente and parte and fase:
+                inserir_processo({
+                    "numero": numero,
+                    "cliente": cliente,
+                    "parte_contraria": parte,
+                    "fase": fase,
+                    "descricao": descricao or None,
+                    "ativo": True
+                })
                 st.session_state.form_v += 1
                 st.session_state.aviso = "✅ Processo salvo com sucesso!"
                 st.rerun()
@@ -3313,6 +3428,13 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                 with col:
                     cor_fundo, emoji_status, texto_urgencia = _definir_cor_prazo(prazo)
 
+                    # ===== BUSCAR PARTE CONTRÁRIA =====
+                    parte_contraria = ""
+                    if df_processos is not None and not df_processos.empty and prazo.get('processo'):
+                        proc = df_processos[df_processos['numero'] == prazo['processo']]
+                        if not proc.empty:
+                            parte_contraria = proc.iloc[0]['parte_contraria']
+
                     # MINI CARD (ultra compacto)
                     with st.container(border=True):
                         # Emoji de status
@@ -3324,6 +3446,10 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                         # NOME DO CLIENTE (em destaque mas menor)
                         cliente_exib = prazo['cliente'] if prazo['cliente'] else "Sem cliente"
                         st.markdown(f"<div style='font-size: 11px; color: #666; font-weight: 500; margin: 2px 0;'>👤 {cliente_exib[:25]}</div>", unsafe_allow_html=True)
+
+                        # ✨ PARTE CONTRÁRIA (se houver)
+                        if parte_contraria:
+                            st.markdown(f"<div style='font-size: 10px; color: #999; margin: 2px 0;'>⚔️ {parte_contraria[:20]}</div>", unsafe_allow_html=True)
 
                         # Data apenas (2 dígitos/mês)
                         data_str = prazo['data_fatal'].strftime("%d/%m")
@@ -3351,6 +3477,13 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                 col = cols[idx % num_cols]
 
                 with col:
+                    # ===== BUSCAR PARTE CONTRÁRIA =====
+                    parte_contraria = ""
+                    if df_processos is not None and not df_processos.empty and prazo.get('processo'):
+                        proc = df_processos[df_processos['numero'] == prazo['processo']]
+                        if not proc.empty:
+                            parte_contraria = proc.iloc[0]['parte_contraria']
+
                     with st.container(border=True):
                         st.markdown(f"<div style='font-size: 18px; line-height: 1.2;'>✅</div>", unsafe_allow_html=True)
                         # TÍTULO GRANDE E LEGÍVEL (pelo menos 30 chars com quebra natural)
@@ -3358,6 +3491,10 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                         # NOME DO CLIENTE (em destaque mas menor)
                         cliente_exib = prazo['cliente'] if prazo['cliente'] else "Sem cliente"
                         st.markdown(f"<div style='font-size: 11px; color: #666; font-weight: 500; margin: 2px 0;'>👤 {cliente_exib[:25]}</div>", unsafe_allow_html=True)
+
+                        # ✨ PARTE CONTRÁRIA (se houver)
+                        if parte_contraria:
+                            st.markdown(f"<div style='font-size: 10px; color: #999; margin: 2px 0;'>⚔️ {parte_contraria[:20]}</div>", unsafe_allow_html=True)
                         try:
                             if pd.notna(prazo['concluido_em']):
                                 data_conc = pd.Timestamp(prazo['concluido_em']).strftime("%d/%m")
@@ -3373,160 +3510,174 @@ def renderizar_cards_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame 
                             st.session_state.modo_modal = None
                             st.rerun()
 
-    # ===== EXPANDER COM DETALHES COMPLETOS =====
+    # ===== MODAL COM DETALHES COMPLETOS =====
     if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
         id_prazo = st.session_state.id_modal
         prazo = df_prazos[df_prazos["id"] == id_prazo]
 
         if not prazo.empty:
             prazo = prazo.iloc[0]
+            modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
+            st.stop()
 
-            # EXPANDER GRANDE COM TODOS OS DETALHES
-            with st.expander(f"📋 **{prazo['titulo']}** - DETALHES COMPLETOS", expanded=True):
+@st.dialog("📋 Detalhes Completos", width="large")
+def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+    """Modal com detalhes completos de um prazo e ações rápidas."""
 
-                # ===== SEÇÃO 1: INFORMAÇÕES PRINCIPAIS =====
-                st.subheader("📌 Informações da Tarefa")
+    st.markdown(f"#### {prazo['titulo']}")
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write(f"**🔹 Processo:** `{prazo['processo']}`")
-                    st.write(f"**👤 Cliente:** {prazo['cliente']}")
-                    st.write(f"**👨‍⚖️ Responsável:** {prazo['responsavel']}")
-                with col2:
-                    st.write(f"**📅 Data Fatal:** {prazo['data_fatal'].strftime('%d/%m/%Y')}")
-                    prioridade_emoji = {"Alta": "🔴", "Normal": "🟡", "Baixa": "🟢"}.get(prazo['prioridade'], '⚪')
-                    st.write(f"**{prioridade_emoji} Prioridade:** {prazo['prioridade']}")
-                    st.write(f"**📝 Tipo:** {prazo['tipo']}")
+    # ===== SEÇÃO 1: INFORMAÇÕES PRINCIPAIS =====
+    st.subheader("📌 Informações da Tarefa")
 
-                # ===== SEÇÃO 2: O QUE FAZER (OBSERVAÇÕES - DESTAQUE) =====
-                st.divider()
-                st.subheader("✅ O QUE PRECISA SER FEITO")
+    # ===== BUSCAR PARTE CONTRÁRIA =====
+    parte_contraria = ""
+    if df_processos is not None and not df_processos.empty and prazo.get('processo'):
+        proc = df_processos[df_processos['numero'] == prazo['processo']]
+        if not proc.empty:
+            parte_contraria = proc.iloc[0]['parte_contraria']
 
-                if prazo['descricao']:
-                    st.success(prazo['descricao'])
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write(f"**🔹 Processo:** `{prazo['processo']}`")
+        st.write(f"**👤 Cliente:** {prazo['cliente']}")
+        if parte_contraria:
+            st.write(f"**⚔️ Parte Contrária:** {parte_contraria}")
+        st.write(f"**👨‍⚖️ Responsável:** {prazo['responsavel']}")
+    with col2:
+        st.write(f"**📅 Data Fatal:** {prazo['data_fatal'].strftime('%d/%m/%Y')}")
+        prioridade_emoji = {"Alta": "🔴", "Normal": "🟡", "Baixa": "🟢"}.get(prazo['prioridade'], '⚪')
+        st.write(f"**{prioridade_emoji} Prioridade:** {prazo['prioridade']}")
+        st.write(f"**📝 Tipo:** {prazo['tipo']}")
+
+    # ===== SEÇÃO 2: O QUE FAZER (OBSERVAÇÕES - DESTAQUE) =====
+    st.divider()
+    st.subheader("✅ O QUE PRECISA SER FEITO")
+
+    if prazo['descricao']:
+        st.success(prazo['descricao'])
+    else:
+        st.warning("⚠️ Nenhuma observação anotada. Clique em 'Editar' para adicionar o que precisa fazer!")
+
+    # ===== SEÇÃO 3: INFORMAÇÕES ADICIONAIS =====
+    st.divider()
+    st.subheader("📊 Informações Adicionais")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        data_interna_str = prazo['data_interna'].strftime("%d/%m/%Y") if pd.notna(prazo['data_interna']) else "Não definido"
+        st.write(f"**⏰ Prazo Interno:** {data_interna_str}")
+        dias_uteis = prazo.get('dias_uteis', '?')
+        st.write(f"**📅 Dias Úteis:** {dias_uteis}")
+    with col2:
+        faixa = prazo.get('faixa', 'Desconhecido')
+        st.write(f"**🎯 Situação:** {prazo.get('situacao', faixa)}")
+        if prazo['concluido']:
+            try:
+                if pd.notna(prazo['concluido_em']):
+                    data_conc = pd.Timestamp(prazo['concluido_em']).strftime("%d/%m/%Y")
                 else:
-                    st.warning("⚠️ Nenhuma observação anotada. Clique em 'Editar' para adicionar o que precisa fazer!")
+                    data_conc = "—"
+            except:
+                data_conc = "—"
+            st.write(f"**✅ Concluído em:** {data_conc}")
 
-                # ===== SEÇÃO 3: INFORMAÇÕES ADICIONAIS =====
-                st.divider()
-                st.subheader("📊 Informações Adicionais")
+    # ===== SEÇÃO 4: AÇÕES =====
+    st.divider()
+    st.subheader("⚙️ Ações Rápidas")
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    data_interna_str = prazo['data_interna'].strftime("%d/%m/%Y") if pd.notna(prazo['data_interna']) else "Não definido"
-                    st.write(f"**⏰ Prazo Interno:** {data_interna_str}")
-                    dias_uteis = prazo.get('dias_uteis', '?')
-                    st.write(f"**📅 Dias Úteis:** {dias_uteis}")
-                with col2:
-                    faixa = prazo.get('faixa', 'Desconhecido')
-                    st.write(f"**🎯 Situação:** {prazo.get('situacao', faixa)}")
-                    if prazo['concluido']:
-                        try:
-                            if pd.notna(prazo['concluido_em']):
-                                data_conc = pd.Timestamp(prazo['concluido_em']).strftime("%d/%m/%Y")
-                            else:
-                                data_conc = "—"
-                        except:
-                            data_conc = "—"
-                        st.write(f"**✅ Concluído em:** {data_conc}")
+    col_acao1, col_acao2, col_acao3 = st.columns(3)
 
-                # ===== SEÇÃO 4: AÇÕES =====
-                st.divider()
-                st.subheader("⚙️ Ações Rápidas")
+    with col_acao1:
+        if not prazo['concluido']:
+            if st.button("✅ Concluir Agora", use_container_width=True, key=f"btn_concl_{id_prazo}", type="primary"):
+                atualizar_prazo(id_prazo, {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
+                st.session_state.aviso = f"✅ '{prazo['titulo']}' concluído!"
+                st.session_state.modal_aberta = False
+                st.rerun()
 
-                col_acao1, col_acao2, col_acao3 = st.columns(3)
+    with col_acao2:
+        if st.button("✏️ Editar Prazo", use_container_width=True, key=f"btn_edit_{id_prazo}"):
+            st.session_state.modo_modal = "editar_prazo"
+            st.rerun()
 
-                with col_acao1:
-                    if not prazo['concluido']:
-                        if st.button("✅ Concluir Agora", use_container_width=True, key=f"btn_concl_{id_prazo}", type="primary"):
-                            atualizar_prazo(id_prazo, {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
-                            st.session_state.aviso = f"✅ '{prazo['titulo']}' concluído!"
-                            st.session_state.modal_aberta = False
-                            st.rerun()
+    with col_acao3:
+        if st.button("🔙 Fechar", use_container_width=True, key=f"btn_fechar_{id_prazo}"):
+            st.session_state.modal_aberta = False
+            st.rerun()
 
-                with col_acao2:
-                    if st.button("✏️ Editar Prazo", use_container_width=True, key=f"btn_edit_{id_prazo}"):
-                        st.session_state.modo_modal = "editar_prazo"
-                        st.rerun()
+    # ===== MODO EDIÇÃO: TODOS OS CAMPOS DO PRAZO =====
+    if st.session_state.get("modo_modal") == "editar_prazo":
+        st.divider()
+        st.subheader("✏️ Editar Prazo")
 
-                with col_acao3:
-                    if st.button("🔙 Fechar", use_container_width=True, key=f"btn_fechar_{id_prazo}"):
-                        st.session_state.modal_aberta = False
-                        st.rerun()
+        with st.form(f"form_edit_prazo_{id_prazo}"):
+            novo_titulo = st.text_input("Título *", value=prazo["titulo"] or "")
 
-                # ===== MODO EDIÇÃO: TODOS OS CAMPOS DO PRAZO =====
-                if st.session_state.get("modo_modal") == "editar_prazo":
-                    st.divider()
-                    st.subheader("✏️ Editar Prazo")
+            col_e1, col_e2 = st.columns(2)
+            with col_e1:
+                novo_tipo = st.selectbox(
+                    "Tipo",
+                    TIPOS,
+                    index=TIPOS.index(prazo["tipo"]) if prazo["tipo"] in TIPOS else 0,
+                )
+                novo_responsavel = st.selectbox(
+                    "Responsável",
+                    RESPONSAVEIS,
+                    index=RESPONSAVEIS.index(prazo["responsavel"]) if prazo["responsavel"] in RESPONSAVEIS else 0,
+                )
+            with col_e2:
+                nova_interna = st.date_input(
+                    "Prazo Interno",
+                    value=prazo["data_interna"] if pd.notna(prazo["data_interna"]) else None,
+                    format="DD/MM/YYYY",
+                )
+                nova_fatal = st.date_input(
+                    "Data Fatal *",
+                    value=prazo["data_fatal"],
+                    format="DD/MM/YYYY",
+                )
 
-                    with st.form(f"form_edit_prazo_{id_prazo}"):
-                        novo_titulo = st.text_input("Título *", value=prazo["titulo"] or "")
+            nova_prioridade = st.select_slider(
+                "Prioridade",
+                PRIORIDADES,
+                value=prazo["prioridade"] if prazo["prioridade"] in PRIORIDADES else "Normal",
+            )
 
-                        col_e1, col_e2 = st.columns(2)
-                        with col_e1:
-                            novo_tipo = st.selectbox(
-                                "Tipo",
-                                TIPOS,
-                                index=TIPOS.index(prazo["tipo"]) if prazo["tipo"] in TIPOS else 0,
-                            )
-                            novo_responsavel = st.selectbox(
-                                "Responsável",
-                                RESPONSAVEIS,
-                                index=RESPONSAVEIS.index(prazo["responsavel"]) if prazo["responsavel"] in RESPONSAVEIS else 0,
-                            )
-                        with col_e2:
-                            nova_interna = st.date_input(
-                                "Prazo Interno",
-                                value=prazo["data_interna"] if pd.notna(prazo["data_interna"]) else None,
-                                format="DD/MM/YYYY",
-                            )
-                            nova_fatal = st.date_input(
-                                "Data Fatal *",
-                                value=prazo["data_fatal"],
-                                format="DD/MM/YYYY",
-                            )
+            nova_obs = st.text_area(
+                "O que precisa ser feito (observações):",
+                value=prazo["descricao"] or "",
+                height=150,
+                placeholder="Ex:\n- Buscar documentação no tribunal\n- Enviar petição até 15h\n- Anexar comprovantes\n- Ligar para cliente",
+            )
 
-                        nova_prioridade = st.select_slider(
-                            "Prioridade",
-                            PRIORIDADES,
-                            value=prazo["prioridade"] if prazo["prioridade"] in PRIORIDADES else "Normal",
-                        )
+            col_form1, col_form2 = st.columns(2)
+            with col_form1:
+                salvar = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
+            with col_form2:
+                cancelar = st.form_submit_button("❌ Cancelar", use_container_width=True)
 
-                        nova_obs = st.text_area(
-                            "O que precisa ser feito (observações):",
-                            value=prazo["descricao"] or "",
-                            height=150,
-                            placeholder="Ex:\n- Buscar documentação no tribunal\n- Enviar petição até 15h\n- Anexar comprovantes\n- Ligar para cliente",
-                        )
+        if salvar:
+            if not novo_titulo.strip() or not nova_fatal:
+                st.error("Preencha o título e a data fatal!")
+            elif nova_interna and nova_interna > nova_fatal:
+                st.error("O prazo interno deve ser igual ou anterior à data fatal!")
+            else:
+                atualizar_prazo(id_prazo, {
+                    "titulo": novo_titulo.strip(),
+                    "tipo": novo_tipo,
+                    "responsavel": novo_responsavel,
+                    "prioridade": nova_prioridade,
+                    "data_interna": nova_interna.isoformat() if nova_interna else None,
+                    "data_fatal": nova_fatal.isoformat(),
+                    "descricao": nova_obs or None,
+                })
+                st.session_state.aviso = "✅ Prazo atualizado!"
+                st.session_state.modo_modal = None
+                st.rerun()
 
-                        col_form1, col_form2 = st.columns(2)
-                        with col_form1:
-                            salvar = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
-                        with col_form2:
-                            cancelar = st.form_submit_button("❌ Cancelar", use_container_width=True)
-
-                    if salvar:
-                        if not novo_titulo.strip() or not nova_fatal:
-                            st.error("Preencha o título e a data fatal!")
-                        elif nova_interna and nova_interna > nova_fatal:
-                            st.error("O prazo interno deve ser igual ou anterior à data fatal!")
-                        else:
-                            atualizar_prazo(id_prazo, {
-                                "titulo": novo_titulo.strip(),
-                                "tipo": novo_tipo,
-                                "responsavel": novo_responsavel,
-                                "prioridade": nova_prioridade,
-                                "data_interna": nova_interna.isoformat() if nova_interna else None,
-                                "data_fatal": nova_fatal.isoformat(),
-                                "descricao": nova_obs or None,
-                            })
-                            st.session_state.aviso = "✅ Prazo atualizado!"
-                            st.session_state.modo_modal = None
-                            st.rerun()
-
-                    if cancelar:
-                        st.session_state.modo_modal = None
-                        st.rerun()
+        if cancelar:
+            st.session_state.modo_modal = None
+            st.rerun()
 
 def main() -> None:
     init_estado()
@@ -3641,6 +3792,16 @@ def main() -> None:
     elif janela == "processos":
         janela_processos(df_processos, df_prazos)
 
+    # ===== VERIFICAR SE PRECISA ABRIR MODAL DO CLIENTE =====
+    if st.session_state.get("modal_cliente"):
+        cliente_modal = st.session_state.pop("modal_cliente")
+        modal_ficha_cliente(cliente_modal, df_prazos, df_processos, df_audiencias)
+
+    # ===== VERIFICAR SE PRECISA ABRIR JANELA DE EDITAR (após modal fechar) =====
+    if st.session_state.get("editar_prazo_id"):
+        id_editar = st.session_state.pop("editar_prazo_id")
+        janela_editar_prazo(id_editar, df_prazos, df_processos)
+
     if st.session_state.aviso:
         st.toast(st.session_state.aviso)
         st.session_state.aviso = None
@@ -3690,7 +3851,7 @@ def main() -> None:
             prazos_ativos = prazos_ativos[prazos_ativos["responsavel"] == filtro_tab1]
 
         # ===== RENDERIZAR CARDS EM VEZ DE TABELA =====
-        renderizar_cards_prazos(prazos_ativos)
+        renderizar_cards_prazos(prazos_ativos, df_processos)
 
     with tab2:
         # ===== PASSO 5: FILTRO NA TAB 2 =====
