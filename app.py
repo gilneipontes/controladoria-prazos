@@ -1346,45 +1346,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
     aud_realizadas = df_audiencias[df_audiencias["status"] == "Realizada"] if not df_audiencias.empty else pd.DataFrame()
     aud_canceladas = df_audiencias[df_audiencias["status"] == "Cancelada"] if not df_audiencias.empty else pd.DataFrame()
 
-    st.markdown("## 📋 PRAZOS")
-    col1, col2, col3 = st.columns(3, gap="large")
-
-    with col1:
-        with st.container(border=True):
-            st.markdown("### 🔴 VENCIDOS")
-            st.metric("", len(vencidos), label_visibility="collapsed")
-
-    with col2:
-        with st.container(border=True):
-            st.markdown("### 🟠 HOJE")
-            st.metric("", len(hoje_prazos), label_visibility="collapsed")
-
-    with col3:
-        with st.container(border=True):
-            st.markdown("### 📋 PENDENTES")
-            st.metric("", len(pend), label_visibility="collapsed")
-
-    st.divider()
-
-    st.markdown("## 📅 AUDIÊNCIAS")
-    col1, col2, col3 = st.columns(3, gap="large")
-
-    with col1:
-        with st.container(border=True):
-            st.markdown("### 📅 AGENDADAS")
-            st.metric("", len(aud_agendadas), label_visibility="collapsed")
-
-    with col2:
-        with st.container(border=True):
-            st.markdown("### ✅ REALIZADAS")
-            st.metric("", len(aud_realizadas), label_visibility="collapsed")
-
-    with col3:
-        with st.container(border=True):
-            st.markdown("### ❌ CANCELADAS")
-            st.metric("", len(aud_canceladas), label_visibility="collapsed")
-
-    st.divider()
 
 def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
     v = st.session_state.form_v
