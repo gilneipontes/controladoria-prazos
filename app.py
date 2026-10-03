@@ -1398,60 +1398,6 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
 
     st.divider()
 
-    if st.session_state.dashboard_filtro:
-        filtro = st.session_state.dashboard_filtro
-
-        st.markdown("---")
-        col_voltar = st.columns([3, 1])
-        with col_voltar[1]:
-            if st.button("🔙 Voltar", use_container_width=True, key="btn_voltar_dash"):
-                st.session_state.dashboard_filtro = None
-                st.rerun()
-
-        st.markdown("---")
-
-        if filtro == "vencidos":
-            st.subheader("🔴 Prazos Vencidos")
-            if vencidos.empty:
-                st.info("Nenhum prazo vencido!")
-            else:
-                tabela_status(vencidos, df_processos, prefix="dash_vencidos")
-
-        elif filtro == "hoje":
-            st.subheader("🟠 Prazos de Hoje")
-            if hoje_prazos.empty:
-                st.info("Nenhum prazo para hoje!")
-            else:
-                tabela_status(hoje_prazos, df_processos, prefix="dash_hoje")
-
-        elif filtro == "pendentes":
-            st.subheader("📋 Prazos Pendentes")
-            if pend.empty:
-                st.info("Nenhum prazo pendente!")
-            else:
-                tabela_status(pend, df_processos, prefix="dash_pendentes")
-
-        elif filtro == "agendadas":
-            st.subheader("📅 Audiências Agendadas")
-            if aud_agendadas.empty:
-                st.info("Nenhuma audiência agendada!")
-            else:
-                tabela_audiencias(aud_agendadas, prefix="dash_agendadas")
-
-        elif filtro == "realizadas":
-            st.subheader("✅ Audiências Realizadas")
-            if aud_realizadas.empty:
-                st.info("Nenhuma audiência realizada!")
-            else:
-                tabela_audiencias(aud_realizadas, prefix="dash_realizadas")
-
-        elif filtro == "canceladas":
-            st.subheader("❌ Audiências Canceladas")
-            if aud_canceladas.empty:
-                st.info("Nenhuma audiência cancelada!")
-            else:
-                tabela_audiencias(aud_canceladas, prefix="dash_canceladas")
-
 def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
     v = st.session_state.form_v
 
@@ -2788,13 +2734,10 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
         df_filtrado = df_filtrado[df_filtrado["cliente"] == cliente_selecionado]
 
     # Filtro de data
-    # Primeiro, remover registros sem data de conclusão
-    df_filtrado = df_filtrado[df_filtrado["concluido_em"].notna()]
-
     if pd.notna(data_inicio):
-        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"], errors='coerce').dt.date >= data_inicio]
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"]).dt.date >= data_inicio]
     if pd.notna(data_fim):
-        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"], errors='coerce').dt.date <= data_fim]
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"]).dt.date <= data_fim]
 
     # Filtro de responsável
     if filtro_responsavel != "Todos":
