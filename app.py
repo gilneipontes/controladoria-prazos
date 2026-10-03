@@ -2788,10 +2788,13 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
         df_filtrado = df_filtrado[df_filtrado["cliente"] == cliente_selecionado]
 
     # Filtro de data
+    # Primeiro, remover registros sem data de conclusão
+    df_filtrado = df_filtrado[df_filtrado["concluido_em"].notna()]
+
     if pd.notna(data_inicio):
-        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"]).dt.date >= data_inicio]
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"], errors='coerce').dt.date >= data_inicio]
     if pd.notna(data_fim):
-        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"]).dt.date <= data_fim]
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"], errors='coerce').dt.date <= data_fim]
 
     # Filtro de responsável
     if filtro_responsavel != "Todos":
