@@ -1353,22 +1353,16 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
         with st.container(border=True):
             st.markdown("### 🔴 VENCIDOS")
             st.metric("", len(vencidos), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_vencidos", use_container_width=True):
-                st.session_state.dashboard_filtro = "vencidos"
 
     with col2:
         with st.container(border=True):
             st.markdown("### 🟠 HOJE")
             st.metric("", len(hoje_prazos), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_hoje", use_container_width=True):
-                st.session_state.dashboard_filtro = "hoje"
 
     with col3:
         with st.container(border=True):
             st.markdown("### 📋 PENDENTES")
             st.metric("", len(pend), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_pendentes", use_container_width=True):
-                st.session_state.dashboard_filtro = "pendentes"
 
     st.divider()
 
@@ -1379,22 +1373,16 @@ def dashboard_completo(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_
         with st.container(border=True):
             st.markdown("### 📅 AGENDADAS")
             st.metric("", len(aud_agendadas), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_agendadas", use_container_width=True):
-                st.session_state.dashboard_filtro = "agendadas"
 
     with col2:
         with st.container(border=True):
             st.markdown("### ✅ REALIZADAS")
             st.metric("", len(aud_realizadas), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_realizadas", use_container_width=True):
-                st.session_state.dashboard_filtro = "realizadas"
 
     with col3:
         with st.container(border=True):
             st.markdown("### ❌ CANCELADAS")
             st.metric("", len(aud_canceladas), label_visibility="collapsed")
-            if st.button("Ver Detalhes", key="btn_canceladas", use_container_width=True):
-                st.session_state.dashboard_filtro = "canceladas"
 
     st.divider()
 
