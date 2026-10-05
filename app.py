@@ -1,5 +1,5 @@
 """
-Controladoria Jurídica - SEMANA 1 EM PROGRESSO
+Controladoria Jurídica - KAIPPER E PONTES - SEMANA 1 EM PROGRESSO
 PASSO 1: Cards com cores dinâmicas ✅
 PASSO 2: Visão Cards Hierárquica ✅
 PASSO 3: Modal com Ficha Integral do Cliente (3 abas) ✅
@@ -8,7 +8,8 @@ PASSO 5: Ações rápidas dentro do Modal - EM CONSTRUÇÃO
 PASSO 6: Visão Calendário/Agenda - EM CONSTRUÇÃO
 """
 # ============================================
-# CONTROLADORIA JURÍDICA - SISTEMA DE PRAZOS
+# CONTROLADORIA JURÍDICA - KAIPPER E PONTES
+# SISTEMA DE GESTÃO DE PRAZOS
 # Versão: 4.0 - SEMANA 1 EM PROGRESSO - 28/09/2026
 # PASSOS IMPLEMENTADOS: 1, 2, 3
 # ============================================
@@ -2256,6 +2257,32 @@ def _limpar_janela_edicao(prefixo: str) -> None:
         del st.session_state[chave]
 
 
+@st.dialog("✅ Confirmar Conclusão", width="large")
+def janela_confirmar_concluir(id_prazo: int, prazo_info: dict) -> None:
+    """Dialog de confirmação antes de concluir um prazo."""
+    st.markdown(f"""
+    ## Tem certeza que deseja concluir este prazo?
+
+    **Prazo:** {prazo_info['titulo']}
+    **Cliente:** {prazo_info['cliente']}
+    **Data Fatal:** {formatar_data_brasil(prazo_info['data_fatal'])}
+    """)
+
+    col_sim, col_nao = st.columns(2)
+
+    with col_sim:
+        if st.button("✅ Sim, Concluir", use_container_width=True, type="primary", key=f"btn_conf_concl_sim_{id_prazo}"):
+            atualizar_prazo(id_prazo, {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
+            st.session_state.aviso = f"✅ '{prazo_info['titulo']}' concluído!"
+            st.session_state.confirmar_concluir = None
+            st.rerun()
+
+    with col_nao:
+        if st.button("❌ Cancelar", use_container_width=True, key=f"btn_conf_concl_nao_{id_prazo}"):
+            st.session_state.confirmar_concluir = None
+            st.rerun()
+
+
 @st.dialog("📂 Prazo", width="large")
 def janela_ver_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
     """Consulta completa de um prazo, com opção de editar."""
@@ -4257,29 +4284,7 @@ def main() -> None:
 
         if not prazo_concluir.empty:
             prazo_info = prazo_concluir.iloc[0]
-
-            with st.dialog("✅ Confirmar Conclusão", width="large"):
-                st.markdown(f"""
-                ## Tem certeza que deseja concluir este prazo?
-
-                **Prazo:** {prazo_info['titulo']}
-                **Cliente:** {prazo_info['cliente']}
-                **Data Fatal:** {formatar_data_brasil(prazo_info['data_fatal'])}
-                """)
-
-                col_sim, col_nao = st.columns(2)
-
-                with col_sim:
-                    if st.button("✅ Sim, Concluir", use_container_width=True, type="primary", key=f"btn_conf_concl_sim_{id_concluir}"):
-                        atualizar_prazo(id_concluir, {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
-                        st.session_state.aviso = f"✅ '{prazo_info['titulo']}' concluído!"
-                        st.session_state.confirmar_concluir = None
-                        st.rerun()
-
-                with col_nao:
-                    if st.button("❌ Cancelar", use_container_width=True, key=f"btn_conf_concl_nao_{id_concluir}"):
-                        st.session_state.confirmar_concluir = None
-                        st.rerun()
+            janela_confirmar_concluir(id_concluir, prazo_info)
 
     # ===== ABRIR O PRAZO DIRETO (após clique na tabela) =====
     if st.session_state.get("abrir_prazo_id"):
