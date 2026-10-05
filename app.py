@@ -1606,6 +1606,57 @@ def sidebar_nova_pericia(processos_df: pd.DataFrame) -> None:
                 st.session_state.form_v += 1
                 st.rerun()
 
+def sidebar_demanda_admin() -> None:
+    v = st.session_state.form_v
+
+    st.write("**Demanda Administrativa** \\*")
+    st.caption("Solicitações a clientes, colegas ou tarefas administrativas sem processo associado")
+
+    with st.form(f"cad_admin_{v}"):
+        cliente_colega = st.text_input("Cliente / Colega / Área *", value="", placeholder="Ex: Cliente ABC ou Dr. João", key=f"admin_cliente_{v}")
+
+        descricao = st.text_area("Descrição da Demanda *", value="", placeholder="O que precisa ser feito?", key=f"admin_desc_{v}", height=100)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            data_requisicao = col1.date_input("Data Requisição *", value=None, format="DD/MM/YYYY", key=f"admin_data_req_{v}")
+        with col2:
+            data_prazo = col2.date_input("Data Prazo *", value=None, format="DD/MM/YYYY", key=f"admin_data_prazo_{v}")
+
+        responsavel = st.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"admin_resp_{v}")
+
+        prioridade = st.select_slider("Prioridade", PRIORIDADES, value="Normal", key=f"admin_prior_{v}")
+
+        observacoes = st.text_area("Observações", value="", placeholder="Detalhes adicionais...", key=f"admin_obs_{v}")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
+                if not cliente_colega or not descricao or not data_requisicao or not data_prazo:
+                    st.error("Preencha todos os campos obrigatórios!")
+                elif data_requisicao > data_prazo:
+                    st.error("Data de requisição deve ser menor ou igual ao prazo!")
+                else:
+                    inserir_prazo({
+                        "tipo": "Admin",
+                        "titulo": f"[ADMIN] {cliente_colega}",
+                        "processo": None,
+                        "cliente": cliente_colega,
+                        "responsavel": responsavel,
+                        "data_fatal": data_prazo.isoformat(),
+                        "data_interna": data_requisicao.isoformat(),
+                        "prioridade": prioridade,
+                        "descricao": descricao or None,
+                        "arquivado": False,
+                    })
+                    st.session_state.form_v += 1
+                    st.session_state.aviso = "✅ Demanda administrativa salva com sucesso!"
+                    st.rerun()
+        with c2:
+            if st.form_submit_button("🗑️ Limpar", use_container_width=True):
+                st.session_state.form_v += 1
+                st.rerun()
+
 def _so_digitos(texto) -> str:
     """Mantém apenas os números (ignora pontos, traços e espaços)."""
     if pd.isna(texto):
@@ -3268,6 +3319,10 @@ def janela_nova_audiencia(processos_df: pd.DataFrame) -> None:
 def janela_nova_pericia(processos_df: pd.DataFrame) -> None:
     sidebar_nova_pericia(processos_df)
 
+@st.dialog("📌 Demanda Administrativa", width="large")
+def janela_demanda_admin() -> None:
+    sidebar_demanda_admin()
+
 @st.dialog("⚖️ Novo Processo", width="large")
 def janela_novo_processo() -> None:
     formulario_novo_processo()
@@ -3980,6 +4035,7 @@ def main() -> None:
             "📝 Colar Despacho": "despacho",
             "📅 Nova Audiência": "nova_audiencia",
             "🔬 Nova Perícia": "nova_pericia",
+            "📌 Demanda Administrativa": "demanda_admin",
         }
         for rotulo, janela in acoes_cadastro.items():
             st.button(
@@ -4101,6 +4157,8 @@ def main() -> None:
         janela_nova_audiencia(df_processos)
     elif janela == "nova_pericia":
         janela_nova_pericia(df_processos)
+    elif janela == "demanda_admin":
+        janela_demanda_admin()
     elif janela == "novo_processo":
         janela_novo_processo()
     elif janela == "despacho":
