@@ -4148,7 +4148,7 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos_filtrados) if not df_prazos_filtrados.empty else pd.DataFrame()
 
-    tab1, tab2, tab3, tab4, tab6 = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "📅 Audiências"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🔬 Perícias", "📅 Audiências"])
 
     with tab1:
         # ===== PASSO 1: CARDS COM CORES DINÂMICAS =====
@@ -4319,6 +4319,101 @@ def main() -> None:
         else:
             st.subheader("📦 Prazos Arquivados")
             tabela_status(prazos_arquivados, df_processos, prefix="tab_arquivados")
+
+    with tab5:
+        st.subheader("🔬 Perícias Cadastradas")
+
+        if df_pericias.empty:
+            st.info("Nenhuma perícia cadastrada.")
+        else:
+            # Separar por status
+            pericias_requisitadas = df_pericias[df_pericias["status"] == "Requisitada"].sort_values("data_prazo")
+            pericias_andamento = df_pericias[df_pericias["status"] == "Em andamento"].sort_values("data_prazo")
+            pericias_concluidas = df_pericias[df_pericias["status"] == "Concluída"].sort_values("data_prazo", ascending=False)
+            pericias_canceladas = df_pericias[df_pericias["status"] == "Cancelada"].sort_values("data_prazo", ascending=False)
+            pericias_adiadas = df_pericias[df_pericias["status"] == "Adiada"].sort_values("data_prazo")
+
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("📌 Requisitadas", len(pericias_requisitadas))
+            col2.metric("⚙️ Em andamento", len(pericias_andamento))
+            col3.metric("✅ Concluídas", len(pericias_concluidas))
+            col4.metric("❌ Canceladas", len(pericias_canceladas))
+            col5.metric("⏸️ Adiadas", len(pericias_adiadas))
+
+            st.divider()
+
+            per_tab1, per_tab2, per_tab3, per_tab4, per_tab5 = st.tabs([
+                f"📌 Requisitadas ({len(pericias_requisitadas)})",
+                f"⚙️ Em andamento ({len(pericias_andamento)})",
+                f"✅ Concluídas ({len(pericias_concluidas)})",
+                f"❌ Canceladas ({len(pericias_canceladas)})",
+                f"⏸️ Adiadas ({len(pericias_adiadas)})"
+            ])
+
+            with per_tab1:
+                if pericias_requisitadas.empty:
+                    st.info("Nenhuma perícia requisitada.")
+                else:
+                    for _, per in pericias_requisitadas.iterrows():
+                        with st.container(border=True):
+                            col1, col2 = st.columns([3, 1])
+                            col1.markdown(f"**{per['processo']}** — {per['cliente']}")
+                            col2.markdown(f"🔬 {per['tipo_pericia']}")
+                            st.caption(f"📋 Laudo: {per['descricao_laudo'] if per['descricao_laudo'] else 'Sem descrição'}")
+                            st.caption(f"👤 Perito: {per['perito_responsavel']} | 📅 Prazo: {per['data_prazo'].strftime('%d/%m/%Y')}")
+                            st.caption(f"Responsável: {per['responsavel']} | 📝 {per['observacoes'] if per['observacoes'] else 'Sem observações'}")
+
+            with per_tab2:
+                if pericias_andamento.empty:
+                    st.info("Nenhuma perícia em andamento.")
+                else:
+                    for _, per in pericias_andamento.iterrows():
+                        with st.container(border=True):
+                            col1, col2 = st.columns([3, 1])
+                            col1.markdown(f"**{per['processo']}** — {per['cliente']}")
+                            col2.markdown(f"🔬 {per['tipo_pericia']}")
+                            st.caption(f"📋 Laudo: {per['descricao_laudo'] if per['descricao_laudo'] else 'Sem descrição'}")
+                            st.caption(f"👤 Perito: {per['perito_responsavel']} | 📅 Prazo: {per['data_prazo'].strftime('%d/%m/%Y')}")
+                            st.caption(f"Responsável: {per['responsavel']} | 📝 {per['observacoes'] if per['observacoes'] else 'Sem observações'}")
+
+            with per_tab3:
+                if pericias_concluidas.empty:
+                    st.info("Nenhuma perícia concluída.")
+                else:
+                    for _, per in pericias_concluidas.iterrows():
+                        with st.container(border=True):
+                            col1, col2 = st.columns([3, 1])
+                            col1.markdown(f"**{per['processo']}** — {per['cliente']}")
+                            col2.markdown(f"✅ {per['tipo_pericia']}")
+                            st.caption(f"📋 Laudo: {per['descricao_laudo'] if per['descricao_laudo'] else 'Sem descrição'}")
+                            st.caption(f"👤 Perito: {per['perito_responsavel']} | 📅 Concluída: {per['data_conclusao'].strftime('%d/%m/%Y') if per['data_conclusao'] else 'Sem data'}")
+                            st.caption(f"Responsável: {per['responsavel']} | 📝 {per['observacoes'] if per['observacoes'] else 'Sem observações'}")
+
+            with per_tab4:
+                if pericias_canceladas.empty:
+                    st.info("Nenhuma perícia cancelada.")
+                else:
+                    for _, per in pericias_canceladas.iterrows():
+                        with st.container(border=True):
+                            col1, col2 = st.columns([3, 1])
+                            col1.markdown(f"**{per['processo']}** — {per['cliente']}")
+                            col2.markdown(f"❌ {per['tipo_pericia']}")
+                            st.caption(f"📋 Laudo: {per['descricao_laudo'] if per['descricao_laudo'] else 'Sem descrição'}")
+                            st.caption(f"👤 Perito: {per['perito_responsavel']} | 📅 Prazo era: {per['data_prazo'].strftime('%d/%m/%Y')}")
+                            st.caption(f"Responsável: {per['responsavel']} | 📝 {per['observacoes'] if per['observacoes'] else 'Sem observações'}")
+
+            with per_tab5:
+                if pericias_adiadas.empty:
+                    st.info("Nenhuma perícia adiada.")
+                else:
+                    for _, per in pericias_adiadas.iterrows():
+                        with st.container(border=True):
+                            col1, col2 = st.columns([3, 1])
+                            col1.markdown(f"**{per['processo']}** — {per['cliente']}")
+                            col2.markdown(f"⏸️ {per['tipo_pericia']}")
+                            st.caption(f"📋 Laudo: {per['descricao_laudo'] if per['descricao_laudo'] else 'Sem descrição'}")
+                            st.caption(f"👤 Perito: {per['perito_responsavel']} | 📅 Novo prazo: {per['data_prazo'].strftime('%d/%m/%Y')}")
+                            st.caption(f"Responsável: {per['responsavel']} | 📝 {per['observacoes'] if per['observacoes'] else 'Sem observações'}")
 
     with tab6:
         st.subheader("📅 Audiências Agendadas")
