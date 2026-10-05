@@ -25,18 +25,6 @@ import pandas as pd
 import streamlit as st
 from supabase import Client, create_client
 
-# ===== IMPORTAR FILTROS AVANÇADOS =====
-try:
-    from components_filters import renderizar_filtros_sidebar, aplicar_filtros, exibir_resumo_filtros
-except ImportError:
-    def renderizar_filtros_sidebar(*args, **kwargs):
-        return {}
-    def aplicar_filtros(df, *args, **kwargs):
-        return df
-    def exibir_resumo_filtros(*args, **kwargs):
-        pass
-
-
 # ===== CONFIG =====
 st.set_page_config(page_title="Controladoria Jurídica", page_icon="⚖️", layout="wide")
 
@@ -4345,7 +4333,7 @@ def main() -> None:
         st.toast(st.session_state.aviso)
         st.session_state.aviso = None
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🔬 Perícias", "📅 Audiências"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab_filtros = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🔬 Perícias", "📅 Audiências", "🔍 Filtros Avançados"])
 
     with tab1:
         # ===== PASSO 1: CARDS COM CORES DINÂMICAS =====
@@ -4619,6 +4607,38 @@ def main() -> None:
             col3.metric("❌ Canceladas", len(audiencias_canceladas))
 
             st.divider()
+
+    with tab_filtros:
+        st.subheader("🔍 Filtros Avançados para Prazos")
+        st.divider()
+        
+        if df_prazos.empty:
+            st.info("Nenhum prazo para filtrar.")
+        else:
+            # ✅ USAR FUNÇÃO 1: Renderizar os filtros na sidebar
+            filtros = renderizar_filtros_sidebar(
+                df_prazos,
+                RESPONSAVEIS,
+                TIPOS,
+                PRIORIDADES
+            )
+            
+            st.divider()
+            
+            # ✅ USAR FUNÇÃO 2: Aplicar os filtros
+            df_filtrado = aplicar_filtros(df_prazos, filtros)
+            
+            # ✅ USAR FUNÇÃO 3: Exibir resumo
+            exibir_resumo_filtros(df_prazos, df_filtrado)
+            
+            st.divider()
+            
+            # Exibir tabela com os dados filtrados
+            if not df_filtrado.empty:
+                st.subheader("📋 Resultados")
+                tabela_status(df_filtrado, df_processos, prefix="tab_filtros_avancados")
+            else:
+                st.info("Nenhum resultado com os filtros selecionados.")
 
             aud_tab1, aud_tab2, aud_tab3 = st.tabs([
                 f"📅 Agendadas ({len(audiencias_agendadas)})",
