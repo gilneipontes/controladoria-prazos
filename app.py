@@ -4249,51 +4249,6 @@ def main() -> None:
     st.title("⚖️ Controladoria Jurídica")
     st.caption(f"Hoje: {hoje():%d/%m/%Y}")
 
-    # ===== JANELAS DE CADASTRO (modal no centro da tela) =====
-    janela = st.session_state.pop("janela_aberta", None)
-    if janela == "novo_prazo":
-        janela_novo_prazo(df_processos)
-    elif janela == "nova_audiencia":
-        janela_nova_audiencia(df_processos)
-    elif janela == "nova_pericia":
-        janela_nova_pericia(df_processos)
-    elif janela == "demanda_admin":
-        janela_demanda_admin()
-    elif janela == "novo_processo":
-        janela_novo_processo()
-    elif janela == "despacho":
-        janela_despacho(df_processos)
-    elif janela == "processos":
-        janela_processos(df_processos, df_prazos)
-
-    # ===== VERIFICAR SE PRECISA ABRIR MODAL DO CLIENTE =====
-    if st.session_state.get("modal_cliente"):
-        cliente_modal = st.session_state.pop("modal_cliente")
-        modal_ficha_cliente(cliente_modal, df_prazos, df_processos, df_audiencias)
-
-    # ===== VERIFICAR SE PRECISA ABRIR JANELA DE EDITAR (após modal fechar) =====
-    if st.session_state.get("editar_prazo_id"):
-        id_editar = st.session_state.pop("editar_prazo_id")
-        janela_editar_prazo(id_editar, df_prazos, df_processos)
-
-    # ===== CONFIRMAÇÃO PARA CONCLUIR PRAZO =====
-    if st.session_state.get("confirmar_concluir"):
-        id_concluir = st.session_state.get("confirmar_concluir")
-        prazo_concluir = df_prazos[df_prazos["id"] == id_concluir]
-
-        if not prazo_concluir.empty:
-            prazo_info = prazo_concluir.iloc[0]
-            janela_confirmar_concluir(id_concluir, prazo_info)
-
-    # ===== ABRIR O PRAZO DIRETO (após clique na tabela) =====
-    if st.session_state.get("abrir_prazo_id"):
-        id_para_abrir = st.session_state.pop("abrir_prazo_id")
-        janela_ver_prazo(id_para_abrir, df_prazos, df_processos)
-
-    if st.session_state.aviso:
-        st.toast(st.session_state.aviso)
-        st.session_state.aviso = None
-
     # ===== PASSO 2: RENDERIZAR VISÃO CARDS HIERÁRQUICA =====
     if aba == "🎴 Cards":
         dashboard_cards_hierarquico(df_prazos, df_audiencias, df_processos)
@@ -4634,7 +4589,48 @@ def main() -> None:
                         use_container_width=True
                     )
 
-    # ===== MODAL COM DETALHES COMPLETOS (FORA DE TODOS OS CONTEXTOS DE ABAS) =====
+    # ===== JANELAS DE CADASTRO (FORA DE TODOS OS CONTEXTOS) =====
+    janela = st.session_state.pop("janela_aberta", None)
+    if janela == "novo_prazo":
+        janela_novo_prazo(df_processos)
+    elif janela == "nova_audiencia":
+        janela_nova_audiencia(df_processos)
+    elif janela == "nova_pericia":
+        janela_nova_pericia(df_processos)
+    elif janela == "demanda_admin":
+        janela_demanda_admin()
+    elif janela == "novo_processo":
+        janela_novo_processo()
+    elif janela == "despacho":
+        janela_despacho(df_processos)
+    elif janela == "processos":
+        janela_processos(df_processos, df_prazos)
+
+    # ===== VERIFICAR SE PRECISA ABRIR MODAL DO CLIENTE =====
+    if st.session_state.get("modal_cliente"):
+        cliente_modal = st.session_state.pop("modal_cliente")
+        modal_ficha_cliente(cliente_modal, df_prazos, df_processos, df_audiencias)
+
+    # ===== VERIFICAR SE PRECISA ABRIR JANELA DE EDITAR =====
+    if st.session_state.get("editar_prazo_id"):
+        id_editar = st.session_state.pop("editar_prazo_id")
+        janela_editar_prazo(id_editar, df_prazos, df_processos)
+
+    # ===== CONFIRMAÇÃO PARA CONCLUIR PRAZO =====
+    if st.session_state.get("confirmar_concluir"):
+        id_concluir = st.session_state.get("confirmar_concluir")
+        prazo_concluir = df_prazos[df_prazos["id"] == id_concluir]
+
+        if not prazo_concluir.empty:
+            prazo_info = prazo_concluir.iloc[0]
+            janela_confirmar_concluir(id_concluir, prazo_info)
+
+    # ===== ABRIR O PRAZO DIRETO =====
+    if st.session_state.get("abrir_prazo_id"):
+        id_para_abrir = st.session_state.pop("abrir_prazo_id")
+        janela_ver_prazo(id_para_abrir, df_prazos, df_processos)
+
+    # ===== MODAL COM DETALHES COMPLETOS =====
     if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
         id_prazo = st.session_state.id_modal
         prazo = df_prazos[df_prazos["id"] == id_prazo]
@@ -4642,6 +4638,11 @@ def main() -> None:
         if not prazo.empty:
             prazo = prazo.iloc[0]
             modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
+
+    # ===== AVISOS =====
+    if st.session_state.aviso:
+        st.toast(st.session_state.aviso)
+        st.session_state.aviso = None
 
 if __name__ == "__main__":
     main()
