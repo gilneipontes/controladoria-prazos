@@ -14,15 +14,6 @@ TZ = ZoneInfo("America/Sao_Paulo")
 def renderizar_filtros_sidebar(df_prazos: pd.DataFrame, responsaveis: list, tipos: list, prioridades: list) -> dict:
     """
     Renderiza os filtros avançados na sidebar e retorna os valores selecionados.
-
-    Args:
-        df_prazos: DataFrame com todos os prazos
-        responsaveis: Lista de responsáveis
-        tipos: Lista de tipos de prazos
-        prioridades: Lista de prioridades
-
-    Returns:
-        dict com os filtros aplicados
     """
 
     # Inicializar session state para filtros
@@ -145,13 +136,6 @@ def renderizar_filtros_sidebar(df_prazos: pd.DataFrame, responsaveis: list, tipo
 def aplicar_filtros(df_prazos: pd.DataFrame, filtros: dict) -> pd.DataFrame:
     """
     Aplica os filtros ao DataFrame de prazos.
-
-    Args:
-        df_prazos: DataFrame com todos os prazos
-        filtros: dict com os filtros a aplicar
-
-    Returns:
-        DataFrame filtrado
     """
 
     df_filtrado = df_prazos.copy()
@@ -211,10 +195,6 @@ def aplicar_filtros(df_prazos: pd.DataFrame, filtros: dict) -> pd.DataFrame:
 def exibir_resumo_filtros(df_original: pd.DataFrame, df_filtrado: pd.DataFrame) -> None:
     """
     Exibe um resumo dos resultados dos filtros.
-
-    Args:
-        df_original: DataFrame original
-        df_filtrado: DataFrame após aplicar filtros
     """
 
     qtd_total = len(df_original)
