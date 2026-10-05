@@ -25,6 +25,8 @@ import pandas as pd
 import streamlit as st
 from supabase import Client, create_client
 
+
+
 # ===== CONFIG =====
 st.set_page_config(page_title="Controladoria Jurídica", page_icon="⚖️", layout="wide")
 
@@ -4110,6 +4112,146 @@ def fazer_backup_separado():
         return None
 
 
+
+# ===== FUNÇÕES DE FILTRO AVANÇADO =====
+def renderizar_filtros_sidebar(df_prazos, responsaveis, tipos, prioridades):
+    """Renderiza os filtros avançados na sidebar."""
+    with st.sidebar:
+        st.markdown("---")
+        st.subheader("🔍 Filtros Avançados")
+
+        filtros = {}
+
+        # Filtro por responsável
+        filtros['responsaveis'] = st.multiselect(
+            "👤 Responsável",
+            options=responsaveis,
+            default=responsaveis,
+            key="filtro_resp"
+        )
+
+        # Filtro por status
+        status_options = ["Ativo", "Concluído", "Arquivado"]
+        filtros['status'] = st.multiselect(
+            "📊 Status",
+            options=status_options,
+            default=["Ativo"],
+            key="filtro_status"
+        )
+
+        # Filtro por tipo
+        filtros['tipos'] = st.multiselect(
+            "📋 Tipo",
+            options=tipos,
+            default=tipos,
+            key="filtro_tipo"
+        )
+
+        # Filtro por prioridade
+        filtros['prioridades'] = st.multiselect(
+            "🔴 Prioridade",
+            options=prioridades,
+            default=prioridades,
+            key="filtro_prior"
+        )
+
+        # Filtro por intervalo de datas
+        col1, col2 = st.columns(2)
+        with col1:
+            filtros['data_inicio'] = st.date_input(
+                "📅 Data Inicial",
+                value=pd.Timestamp.now(tz="America/Sao_Paulo").date() - pd.Timedelta(days=30),
+                key="filtro_data_inicio"
+            )
+        with col2:
+            filtros['data_fim'] = st.date_input(
+                "📅 Data Final",
+                value=pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=90),
+                key="filtro_data_fim"
+            )
+
+        # Filtro por texto (cliente, processo)
+        filtros['texto'] = st.text_input(
+            "🔎 Buscar (Cliente, Processo)",
+            placeholder="Digite cliente ou número do processo...",
+            key="filtro_texto"
+        )
+
+        st.markdown("---")
+
+    return filtros
+
+
+def aplicar_filtros(df_prazos, filtros):
+    """Aplica os filtros ao DataFrame de prazos."""
+    df = df_prazos.copy()
+
+    # Filtro por responsável
+    if filtros.get('responsaveis'):
+        df = df[df['responsavel'].isin(filtros['responsaveis'])]
+
+    # Filtro por status
+    if filtros.get('status'):
+        status_filter = []
+        for s in filtros['status']:
+            if s == "Ativo":
+                status_filter.append(df[(~df['concluido']) & (~df['arquivado'])].index)
+            elif s == "Concluído":
+                status_filter.append(df[df['concluido']].index)
+            elif s == "Arquivado":
+                status_filter.append(df[df['arquivado']].index)
+        if status_filter:
+            df = df.loc[pd.Index(set(pd.Index([]).union(*status_filter)))]
+
+    # Filtro por tipo
+    if filtros.get('tipos'):
+        df = df[df['tipo'].isin(filtros['tipos'])]
+
+    # Filtro por prioridade
+    if filtros.get('prioridades'):
+        df = df[df['prioridade'].isin(filtros['prioridades'])]
+
+    # Filtro por data
+    if filtros.get('data_inicio'):
+        df = df[df['data_fatal'] >= pd.Timestamp(filtros['data_inicio'])]
+    if filtros.get('data_fim'):
+        df = df[df['data_fatal'] <= pd.Timestamp(filtros['data_fim'])]
+
+    # Filtro por texto
+    if filtros.get('texto'):
+        texto = filtros['texto'].lower()
+        df = df[
+            (df['cliente'].str.lower().str.contains(texto, na=False)) |
+            (df['processo'].str.lower().str.contains(texto, na=False))
+        ]
+
+    return df
+
+
+def exibir_resumo_filtros(df_original, df_filtrado):
+    """Exibe resumo das buscas com métricas."""
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "Total de Prazos",
+        len(df_original),
+        f"{len(df_original) - len(df_filtrado)} excluídos" if len(df_original) > 0 else ""
+    )
+
+    col2.metric(
+        "Resultado da Busca",
+        len(df_filtrado),
+        f"{(len(df_filtrado) / len(df_original) * 100):.1f}%" if len(df_original) > 0 else "0%"
+    )
+
+    if len(df_original) > 0:
+        percentual = (len(df_filtrado) / len(df_original) * 100)
+        col3.metric("Percentual", f"{percentual:.1f}%")
+    else:
+        col3.metric("Percentual", "0%")
+
+
+
 def main() -> None:
     init_estado()
     aplicar_tema(carregar_tema())
@@ -4334,6 +4476,7 @@ def main() -> None:
         st.session_state.aviso = None
 
     tab1, tab2, tab3, tab4, tab5, tab6, tab_filtros = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🔬 Perícias", "📅 Audiências", "🔍 Filtros Avançados"])
+
 
     with tab1:
         # ===== PASSO 1: CARDS COM CORES DINÂMICAS =====
@@ -4608,38 +4751,6 @@ def main() -> None:
 
             st.divider()
 
-    with tab_filtros:
-        st.subheader("🔍 Filtros Avançados para Prazos")
-        st.divider()
-        
-        if df_prazos.empty:
-            st.info("Nenhum prazo para filtrar.")
-        else:
-            # ✅ USAR FUNÇÃO 1: Renderizar os filtros na sidebar
-            filtros = renderizar_filtros_sidebar(
-                df_prazos,
-                RESPONSAVEIS,
-                TIPOS,
-                PRIORIDADES
-            )
-            
-            st.divider()
-            
-            # ✅ USAR FUNÇÃO 2: Aplicar os filtros
-            df_filtrado = aplicar_filtros(df_prazos, filtros)
-            
-            # ✅ USAR FUNÇÃO 3: Exibir resumo
-            exibir_resumo_filtros(df_prazos, df_filtrado)
-            
-            st.divider()
-            
-            # Exibir tabela com os dados filtrados
-            if not df_filtrado.empty:
-                st.subheader("📋 Resultados")
-                tabela_status(df_filtrado, df_processos, prefix="tab_filtros_avancados")
-            else:
-                st.info("Nenhum resultado com os filtros selecionados.")
-
             aud_tab1, aud_tab2, aud_tab3 = st.tabs([
                 f"📅 Agendadas ({len(audiencias_agendadas)})",
                 f"✅ Realizadas ({len(audiencias_realizadas)})",
@@ -4678,6 +4789,24 @@ def main() -> None:
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
+
+
+    with tab_filtros:
+        st.subheader("🔍 Filtros Avançados para Prazos")
+        st.divider()
+        if df_prazos.empty:
+            st.info("Nenhum prazo para filtrar.")
+        else:
+            filtros = renderizar_filtros_sidebar(df_prazos, RESPONSAVEIS, TIPOS, PRIORIDADES)
+            st.divider()
+            df_filtrado = aplicar_filtros(df_prazos, filtros)
+            exibir_resumo_filtros(df_prazos, df_filtrado)
+            st.divider()
+            if not df_filtrado.empty:
+                st.subheader("📋 Resultados")
+                tabela_status(df_filtrado, df_processos, prefix="tab_filtros_avancados")
+            else:
+                st.info("Nenhum resultado com os filtros selecionados.")
 
 if __name__ == "__main__":
     main()
