@@ -3323,7 +3323,7 @@ def janela_demanda_admin() -> None:
     sidebar_demanda_admin()
 
 @st.dialog("📂 Abrir Prazo?", width="large")
-def janela_confirmar_abrir_prazo(prazo: dict, df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+def janela_confirmar_abrir_prazo(prazo: dict) -> None:
     st.markdown(f"""
     **{prazo['titulo']}**
 
@@ -3336,7 +3336,8 @@ def janela_confirmar_abrir_prazo(prazo: dict, df_prazos: pd.DataFrame, df_proces
     with col_sim:
         if st.button("✅ Abrir", use_container_width=True, type="primary", key=f"btn_conf_abrir_{prazo['id']}"):
             st.session_state.id_prazo_modal_confirmacao = None
-            janela_ver_prazo(int(prazo["id"]), df_prazos, df_processos)
+            st.session_state.abrir_prazo_id = int(prazo["id"])
+            st.rerun()
 
     with col_nao:
         if st.button("❌ Cancelar", use_container_width=True, key=f"btn_conf_cancelar_{prazo['id']}"):
@@ -4227,7 +4228,12 @@ def main() -> None:
         prazo_row = df_prazos[df_prazos["id"] == id_prazo_confirmacao]
         if not prazo_row.empty:
             prazo_dict = prazo_row.iloc[0].to_dict()
-            janela_confirmar_abrir_prazo(prazo_dict, df_prazos, df_processos)
+            janela_confirmar_abrir_prazo(prazo_dict)
+
+    # ===== ABRIR O PRAZO APÓS CONFIRMAR NO DIALOG =====
+    if st.session_state.get("abrir_prazo_id"):
+        id_para_abrir = st.session_state.pop("abrir_prazo_id")
+        janela_ver_prazo(id_para_abrir, df_prazos, df_processos)
 
     if st.session_state.aviso:
         st.toast(st.session_state.aviso)
