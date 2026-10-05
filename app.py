@@ -2793,25 +2793,19 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
     # Exibir tabela com botões para abrir prazo
     st.caption("👉 Clique no botão 🔍 para abrir o prazo, consultar e editar.")
 
-    # Criar colunas para exibição com botões
-    col_prazo, col_cliente, col_processo, col_resp, col_data, col_desc, col_prio, col_dias, col_acao = st.columns([2, 2, 1.5, 1.5, 1.5, 2, 1, 1, 0.8])
+    # Criar colunas para exibição com botões - Ordem: Cliente, Processo, Prazo, Data Fatal, Responsável, Ação
+    col_cliente, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([2.5, 2, 2, 1.8, 1.8, 0.7])
 
-    with col_prazo:
-        st.markdown("**Prazo**")
     with col_cliente:
         st.markdown("**Cliente**")
     with col_processo:
         st.markdown("**Processo**")
-    with col_resp:
-        st.markdown("**Responsável**")
+    with col_prazo:
+        st.markdown("**Prazo**")
     with col_data:
         st.markdown("**Data Fatal**")
-    with col_desc:
-        st.markdown("**Descrição**")
-    with col_prio:
-        st.markdown("**Prioridade**")
-    with col_dias:
-        st.markdown("**Dias**")
+    with col_resp:
+        st.markdown("**Responsável**")
     with col_acao:
         st.markdown("**Ação**")
 
@@ -2819,31 +2813,18 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
 
     # Exibir cada linha com botão
     for idx, (_, row) in enumerate(df_filtrado.iterrows()):
-        col_prazo, col_cliente, col_processo, col_resp, col_data, col_desc, col_prio, col_dias, col_acao = st.columns([2, 2, 1.5, 1.5, 1.5, 2, 1, 1, 0.8])
+        col_cliente, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([2.5, 2, 2, 1.8, 1.8, 0.7])
 
-        with col_prazo:
-            st.caption(row["titulo"])
         with col_cliente:
             st.caption(row["cliente"])
         with col_processo:
             st.caption(str(row["processo"]) if row["processo"] else "—")
-        with col_resp:
-            st.caption(row["responsavel"])
+        with col_prazo:
+            st.caption(row["titulo"])
         with col_data:
             st.caption(formatar_data_brasil(row["data_fatal"]))
-        with col_desc:
-            st.caption(row["descricao"][:30] + "..." if len(str(row["descricao"])) > 30 else row["descricao"])
-        with col_prio:
-            st.caption(row["prioridade"])
-        with col_dias:
-            dias = None
-            try:
-                data_fatal = pd.to_datetime(row["data_fatal"]).date()
-                hoje_date = pd.Timestamp.now(tz="America/Sao_Paulo").date()
-                dias = (data_fatal - hoje_date).days
-            except:
-                dias = None
-            st.caption(str(dias) if dias is not None else "—")
+        with col_resp:
+            st.caption(row["responsavel"])
         with col_acao:
             if st.button("🔍", key=f"btn_ver_prazo_{row['id']}", help="Abrir prazo", use_container_width=True):
                 st.session_state.abrir_prazo_id = int(row["id"])
