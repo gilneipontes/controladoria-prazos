@@ -2847,6 +2847,7 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
         with col_acao:
             if st.button("🔍", key=f"btn_ver_prazo_{row['id']}", help="Abrir prazo", use_container_width=True):
                 st.session_state.abrir_prazo_id = int(row["id"])
+                st.rerun()
 
     st.divider()
 
