@@ -3821,7 +3821,7 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
     st.divider()
     st.subheader("⚙️ Ações Rápidas")
 
-    col_acao1, col_acao2, col_acao3 = st.columns(3)
+    col_acao1, col_acao2, col_acao3, col_acao4 = st.columns(4)
 
     with col_acao1:
         if not prazo['concluido']:
@@ -3837,6 +3837,11 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
             st.rerun()
 
     with col_acao3:
+        if st.button("🗑️ Excluir", use_container_width=True, key=f"btn_excluir_{id_prazo}", type="secondary"):
+            st.session_state.modo_modal = "confirmar_excluir"
+            st.rerun()
+
+    with col_acao4:
         if st.button("🔙 Fechar", use_container_width=True, key=f"btn_fechar_{id_prazo}"):
             st.session_state.modal_aberta = False
             st.rerun()
@@ -3914,6 +3919,25 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
         if cancelar:
             st.session_state.modo_modal = None
             st.rerun()
+
+    # ===== MODO CONFIRMAÇÃO DE EXCLUSÃO =====
+    if st.session_state.get("modo_modal") == "confirmar_excluir":
+        st.divider()
+        st.markdown("### ⚠️ Confirmar Exclusão")
+        st.warning(f"Tem certeza que deseja excluir permanentemente o prazo **'{prazo['titulo']}'**? Esta ação não pode ser desfeita!")
+
+        col_del1, col_del2 = st.columns(2)
+        with col_del1:
+            if st.button("🗑️ Sim, Excluir Definitivamente", use_container_width=True, type="primary", key=f"btn_confirmar_excl_{id_prazo}"):
+                excluir_prazo(id_prazo)
+                st.session_state.aviso = f"✅ Prazo '{prazo['titulo']}' excluído com sucesso!"
+                st.session_state.modal_aberta = False
+                st.rerun()
+
+        with col_del2:
+            if st.button("❌ Cancelar", use_container_width=True, key=f"btn_cancel_excl_{id_prazo}"):
+                st.session_state.modo_modal = None
+                st.rerun()
 
 
 # ============================================
