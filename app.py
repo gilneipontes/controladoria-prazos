@@ -32,6 +32,7 @@ TZ = ZoneInfo("America/Sao_Paulo")
 TABELA_PRAZOS = "prazos"
 TABELA_PROCESSOS = "processos"
 TABELA_AUDIENCIAS = "audiencias"
+TABELA_PERICIAS = "pericias"
 
 # Advogados responsáveis. Cada escritório pode definir os seus no Streamlit
 # (Settings → Secrets), com uma linha assim:  RESPONSAVEIS = ["Dr. Fulano", "Dra. Beltrana"]
@@ -102,6 +103,14 @@ COLUNAS_AUDIENCIAS = [
 FORMATOS_AUDIENCIA = ["Presencial", "Virtual"]
 TIPOS_AUDIENCIA = ["Inicial", "Continuação", "Sentença", "Outra"]
 STATUS_AUDIENCIA = ["Agendada", "Realizada", "Cancelada"]
+
+COLUNAS_PERICIAS = [
+    "id", "created_at", "processo", "cliente", "tipo_pericia", "descricao_laudo",
+    "data_requisicao", "data_prazo", "data_conclusao", "status", "perito_responsavel", "observacoes", "responsavel"
+]
+
+TIPOS_PERICIA = ["Contábil", "Médica", "Técnica", "Engenharia", "Psicológica", "Ambiental", "Outra"]
+STATUS_PERICIA = ["Requisitada", "Em andamento", "Concluída", "Cancelada", "Adiada"]
 
 # ===== ATALHOS DE TÍTULO (lista que aparece na busca do "Novo Prazo") =====
 ATALHOS = {
@@ -395,6 +404,21 @@ def carregar_audiencias() -> pd.DataFrame:
         st.error(f"Erro ao carregar audiências: {e}")
         return pd.DataFrame(columns=COLUNAS_AUDIENCIAS)
 
+@st.cache_data(ttl=300)
+def carregar_pericias() -> pd.DataFrame:
+    try:
+        resp = supabase().table(TABELA_PERICIAS).select("*").order("data_prazo").execute()
+        if not resp.data:
+            return pd.DataFrame(columns=COLUNAS_PERICIAS)
+        df = pd.DataFrame(resp.data, columns=COLUNAS_PERICIAS)
+        df["data_requisicao"] = pd.to_datetime(df["data_requisicao"], errors="coerce").dt.date
+        df["data_prazo"] = pd.to_datetime(df["data_prazo"], errors="coerce").dt.date
+        df["data_conclusao"] = pd.to_datetime(df["data_conclusao"], errors="coerce").dt.date
+        return df
+    except Exception as e:
+        st.warning(f"Tabela de perícias não encontrada. Execute o schema no Supabase.")
+        return pd.DataFrame(columns=COLUNAS_PERICIAS)
+
 def inserir_prazo(registro: dict) -> None:
     supabase().table(TABELA_PRAZOS).insert(registro).execute()
     carregar_prazos.clear()
@@ -531,6 +555,18 @@ def atualizar_audiencia(id_audiencia: int, campos: dict) -> None:
 def excluir_audiencia(id_audiencia: int) -> None:
     supabase().table(TABELA_AUDIENCIAS).delete().eq("id", id_audiencia).execute()
     carregar_audiencias.clear()
+
+def inserir_pericia(registro: dict) -> None:
+    supabase().table(TABELA_PERICIAS).insert(registro).execute()
+    carregar_pericias.clear()
+
+def atualizar_pericia(id_pericia: int, campos: dict) -> None:
+    supabase().table(TABELA_PERICIAS).update(campos).eq("id", id_pericia).execute()
+    carregar_pericias.clear()
+
+def excluir_pericia(id_pericia: int) -> None:
+    supabase().table(TABELA_PERICIAS).delete().eq("id", id_pericia).execute()
+    carregar_pericias.clear()
 
 def enriquecer(df: pd.DataFrame) -> pd.DataFrame:
     ref = np.datetime64(hoje())
@@ -1463,6 +1499,113 @@ def sidebar_nova_audiencia(processos_df: pd.DataFrame) -> None:
                 st.session_state.form_v += 1
                 st.rerun()
 
+def sidebar_nova_pericia(processos_df: pd.DataFrame) -> None:
+    v = st.session_state.form_v
+
+    processos_ativos = processos_df[processos_df["ativo"]].sort_values("numero")
+
+    st.write("**Processo ou cliente** \\*")
+    busca = st.text_input(
+        "Digite o número do processo ou o nome do cliente",
+        value="",
+        placeholder="Ex: 5014993 ou HELENA",
+        key=f"busca_proc_per_{v}",
+        label_visibility="collapsed"
+    ).strip()
+
+    processo = None
+    cliente = ""
+
+    if busca:
+        # Busca por NOME do cliente (ignora maiúsculas e acentos)
+        busca_sem_acentos = remover_acentos(busca)
+        mascara_nome = processos_ativos["cliente"].apply(remover_acentos).str.contains(busca_sem_acentos, na=False, regex=False)
+
+        # Busca por NÚMERO (com ou sem pontos e traços)
+        mascara_numero = processos_ativos["numero"].fillna("").str.contains(busca, case=False, regex=False)
+        digitos = re.sub(r"\D", "", busca)
+        if len(digitos) >= 3:
+            mascara_numero = mascara_numero | processos_ativos["numero"].fillna("").str.replace(r"\D", "", regex=True).str.contains(digitos, regex=False)
+
+        processos_filtrados = processos_ativos[mascara_nome | mascara_numero]
+
+        if not processos_filtrados.empty:
+            st.caption(f"📋 {len(processos_filtrados)} processo(s) encontrado(s):")
+
+            clientes_por_numero = dict(zip(processos_filtrados["numero"], processos_filtrados["cliente"]))
+            processo = st.selectbox(
+                "Selecione:",
+                options=processos_filtrados["numero"].values,
+                format_func=lambda x: f"{x} — {clientes_por_numero.get(x, '')}",
+                index=0,
+                label_visibility="collapsed",
+                key=f"sel_proc_per_{v}"
+            )
+        else:
+            st.warning(f"❌ Nenhum processo encontrado com '{busca}'")
+
+    if processo:
+        cliente = processos_ativos[processos_ativos["numero"] == processo]["cliente"].values[0]
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"**Cliente**")
+            st.markdown(f"### **{cliente}**")
+        with col2:
+            st.markdown(f"**Processo**")
+            st.markdown(f"### **{processo}**")
+
+        st.success(f"✅ Processo selecionado: **{processo}**")
+
+    with st.form(f"cad_per_{v}"):
+        col1, col2 = st.columns(2)
+        with col1:
+            tipo_pericia = col1.selectbox("Tipo de Perícia *", TIPOS_PERICIA, index=0, key=f"per_tipo_{v}")
+        with col2:
+            responsavel = col2.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"per_resp_{v}")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            data_requisicao = col1.date_input("Data Requisição *", value=None, format="DD/MM/YYYY", key=f"per_data_req_{v}")
+        with col2:
+            data_prazo = col2.date_input("Data Prazo *", value=None, format="DD/MM/YYYY", key=f"per_data_prazo_{v}")
+
+        perito_responsavel = st.text_input("Perito Responsável *", value="", placeholder="Ex: Dr. João Silva", key=f"per_perito_{v}")
+
+        descricao_laudo = st.text_area("Descrição do Laudo", value="", placeholder="Descrição da perícia a ser realizada...", key=f"per_desc_{v}", height=100)
+
+        status = st.selectbox("Status", STATUS_PERICIA, index=0, key=f"per_status_{v}")
+
+        observacoes = st.text_area("Observações", value="", placeholder="Observações adicionais...", key=f"per_obs_{v}")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
+                if not processo or not data_requisicao or not data_prazo or not perito_responsavel or not tipo_pericia:
+                    st.error("Preencha todos os campos obrigatórios!")
+                elif data_requisicao > data_prazo:
+                    st.error("Data de requisição deve ser menor ou igual à data do prazo!")
+                else:
+                    inserir_pericia({
+                        "processo": processo,
+                        "cliente": cliente,
+                        "tipo_pericia": tipo_pericia,
+                        "descricao_laudo": descricao_laudo or None,
+                        "data_requisicao": data_requisicao.isoformat(),
+                        "data_prazo": data_prazo.isoformat(),
+                        "perito_responsavel": perito_responsavel,
+                        "status": status,
+                        "observacoes": observacoes or None,
+                        "responsavel": responsavel
+                    })
+                    st.session_state.form_v += 1
+                    st.session_state.aviso = "✅ Perícia salva com sucesso!"
+                    st.rerun()
+        with c2:
+            if st.form_submit_button("🗑️ Limpar", use_container_width=True):
+                st.session_state.form_v += 1
+                st.rerun()
+
 def _so_digitos(texto) -> str:
     """Mantém apenas os números (ignora pontos, traços e espaços)."""
     if pd.isna(texto):
@@ -2068,14 +2211,16 @@ def janela_ver_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd.Da
         st.rerun()
 
 
-def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_processos: pd.DataFrame = None) -> None:
+def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_processos: pd.DataFrame = None, df_pericias: pd.DataFrame = None) -> None:
     """
     PASSO 2: Visão Cards Hierárquica
     PASSO 3: Integração com Modal de Ficha Integral
-    Agrupa prazos e audiências por cliente em cards aninhados.
+    Agrupa prazos, audiências e perícias por cliente em cards aninhados.
     """
     if df_processos is None:
         df_processos = pd.DataFrame()
+    if df_pericias is None:
+        df_pericias = pd.DataFrame()
     st.markdown("# 📌 Visão Cards")
     st.caption("🎯 Organize seus dados por cliente com cards hierárquicos")
 
@@ -2200,6 +2345,58 @@ def dashboard_cards_hierarquico(df_prazos: pd.DataFrame, df_audiencias: pd.DataF
                                         status_colors = {"Agendada": "#3498db", "Realizada": "#2ecc71", "Cancelada": "#e74c3c"}
                                         status_color = status_colors.get(aud["status"], "#95a5a6")
                                         st.markdown(f"<div style='background-color: {status_color}; padding: 4px 8px; border-radius: 3px; text-align: center; font-size: 11px; font-weight: bold; color: white;'>{aud['status']}</div>", unsafe_allow_html=True)
+
+    # ===== SEÇÃO PERÍCIAS =====
+    st.divider()
+
+    # Filtrar perícias em aberto (não concluídas e não canceladas)
+    if df_pericias.empty:
+        pericias_ativas = df_pericias
+    else:
+        pericias_ativas = df_pericias[
+            (df_pericias["status"] != "Concluída") &
+            (df_pericias["status"] != "Cancelada")
+        ].sort_values("data_prazo")
+
+    with st.expander(f"🔬 **PERÍCIAS** · {len(pericias_ativas)} em aberto", expanded=False):
+        if df_pericias.empty or pericias_ativas.empty:
+            st.info("📋 Nenhuma perícia cadastrada no momento.")
+            st.caption("ℹ️ As perícias serão listadas aqui quando cadastradas no sistema.")
+        else:
+            # Agrupar perícias por cliente
+            clientes_com_pericias = []
+            for cliente in pericias_ativas["cliente"].dropna().unique():
+                pericias_cliente = pericias_ativas[pericias_ativas["cliente"] == cliente]
+                data_proxima_prazo = pericias_cliente["data_prazo"].min()
+                clientes_com_pericias.append((cliente, data_proxima_prazo, pericias_cliente))
+
+            clientes_com_pericias.sort(key=lambda x: x[1])
+
+            for cliente, _, pericias_cliente in clientes_com_pericias:
+                qtd_pericias = len(pericias_cliente)
+                proxima_prazo = pericias_cliente.iloc[0]["data_prazo"].strftime("%d/%m") if pd.notna(pericias_cliente.iloc[0]["data_prazo"]) else "—"
+
+                if qtd_pericias > 0:
+                    with st.expander(f"👤 **{cliente}** | 🔬 {qtd_pericias} | 📅 próximo prazo: {proxima_prazo}"):
+                        for _, pericia in pericias_cliente.iterrows():
+                            with st.container(border=True):
+                                col1, col2 = st.columns([2, 1])
+
+                                with col1:
+                                    st.markdown(f"**📌 Processo:** `{pericia['processo']}`")
+                                    st.markdown(f"**🔬 Tipo:** {pericia['tipo_pericia']}")
+                                    if pericia['descricao_laudo']:
+                                        st.markdown(f"**📋 Descrição:** {pericia['descricao_laudo'][:100]}...")
+
+                                with col2:
+                                    st.markdown(f"**📅 Prazo:** {pericia['data_prazo'].strftime('%d/%m/%Y') if pd.notna(pericia['data_prazo']) else '—'}")
+                                    if pericia['perito_responsavel']:
+                                        st.markdown(f"**👤 Perito:** {pericia['perito_responsavel']}")
+
+                                # Status badge
+                                status_colors = {"Requisitada": "#3498db", "Em andamento": "#f39c12", "Concluída": "#2ecc71", "Cancelada": "#e74c3c", "Adiada": "#9b59b6"}
+                                status_color = status_colors.get(pericia["status"], "#95a5a6")
+                                st.markdown(f"<div style='background-color: {status_color}; padding: 4px 8px; border-radius: 3px; text-align: center; font-size: 11px; font-weight: bold; color: white;'>{pericia['status']}</div>", unsafe_allow_html=True)
 
 @st.dialog("📋 Ficha Integral do Cliente", width="large")
 def modal_ficha_cliente(cliente: str, df_prazos: pd.DataFrame, df_processos: pd.DataFrame, df_audiencias: pd.DataFrame) -> None:
@@ -2683,10 +2880,13 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
         df_filtrado = df_filtrado[df_filtrado["cliente"] == cliente_selecionado]
 
     # Filtro de data
+    # First, remove records without conclusion date
+    df_filtrado = df_filtrado[df_filtrado["concluido_em"].notna()]
+
     if pd.notna(data_inicio):
-        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"]).dt.date >= data_inicio]
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"], errors='coerce').dt.date >= data_inicio]
     if pd.notna(data_fim):
-        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"]).dt.date <= data_fim]
+        df_filtrado = df_filtrado[pd.to_datetime(df_filtrado["concluido_em"], errors='coerce').dt.date <= data_fim]
 
     # Filtro de responsável
     if filtro_responsavel != "Todos":
@@ -3063,6 +3263,10 @@ def janela_novo_prazo(processos_df: pd.DataFrame) -> None:
 @st.dialog("📅 Nova Audiência", width="large")
 def janela_nova_audiencia(processos_df: pd.DataFrame) -> None:
     sidebar_nova_audiencia(processos_df)
+
+@st.dialog("🔬 Nova Perícia", width="large")
+def janela_nova_pericia(processos_df: pd.DataFrame) -> None:
+    sidebar_nova_pericia(processos_df)
 
 @st.dialog("⚖️ Novo Processo", width="large")
 def janela_novo_processo() -> None:
@@ -3761,6 +3965,7 @@ def main() -> None:
         df_prazos = carregar_prazos()
         df_processos = carregar_processos()
         df_audiencias = carregar_audiencias()
+        df_pericias = carregar_pericias()
     except Exception as exc:
         st.error(f"Erro: {exc}")
         st.stop()
@@ -3772,6 +3977,7 @@ def main() -> None:
         acoes_cadastro = {
             "📋 Novo Prazo": "novo_prazo",
             "📅 Nova Audiência": "nova_audiencia",
+            "🔬 Nova Perícia": "nova_pericia",
             "⚖️ Novo Processo": "novo_processo",
             "📝 Colar Despacho": "despacho",
         }
@@ -3821,7 +4027,43 @@ def main() -> None:
             carregar_tema.clear()
             st.rerun()
 
-        painel_aparencia()
+        # ===== CONFIGURAÇÕES DO SISTEMA =====
+        with st.expander("⚙️ Configurações do Sistema"):
+            painel_aparencia()
+
+            st.divider()
+
+            st.caption("💾 BACKUP")
+
+            col_backup1, col_backup2 = st.columns(2)
+
+            with col_backup1:
+                if st.button("📥 Backup Completo", use_container_width=True, key="backup_completo_sidebar"):
+                    backup_data = fazer_backup_completo()
+                    if backup_data:
+                        timestamp = dt.datetime.now(TZ).strftime("%Y%m%d_%H%M%S")
+                        nome_arquivo = f"backup_completo_{timestamp}.csv"
+                        st.download_button(
+                            label="⬇️ Baixar CSV",
+                            data=backup_data,
+                            file_name=nome_arquivo,
+                            mime="text/csv",
+                            use_container_width=True,
+                        )
+
+            with col_backup2:
+                if st.button("📋 Backup Detalhado", use_container_width=True, key="backup_detalhado_sidebar"):
+                    backup_data = fazer_backup_separado()
+                    if backup_data:
+                        timestamp = dt.datetime.now(TZ).strftime("%Y%m%d_%H%M%S")
+                        nome_arquivo = f"backup_detalhado_{timestamp}.txt"
+                        st.download_button(
+                            label="⬇️ Baixar TXT",
+                            data=backup_data,
+                            file_name=nome_arquivo,
+                            mime="text/plain",
+                            use_container_width=True,
+                        )
 
         st.divider()
 
@@ -3857,6 +4099,8 @@ def main() -> None:
         janela_novo_prazo(df_processos)
     elif janela == "nova_audiencia":
         janela_nova_audiencia(df_processos)
+    elif janela == "nova_pericia":
+        janela_nova_pericia(df_processos)
     elif janela == "novo_processo":
         janela_novo_processo()
     elif janela == "despacho":
@@ -3917,42 +4161,6 @@ def main() -> None:
         )
 
         prazos_ativos = df_prazos[~df_prazos["concluido"] & ~df_prazos["arquivado"]]
-
-
-        # ===== BACKUP =====
-        st.caption("💾 BACKUP")
-
-        col_backup1, col_backup2 = st.columns(2)
-
-        with col_backup1:
-            if st.button("📥 Backup Completo", use_container_width=True):
-                backup_data = fazer_backup_completo()
-                if backup_data:
-                    timestamp = dt.datetime.now(TZ).strftime("%Y%m%d_%H%M%S")
-                    nome_arquivo = f"backup_completo_{timestamp}.csv"
-                    st.download_button(
-                        label="⬇️ Baixar CSV",
-                        data=backup_data,
-                        file_name=nome_arquivo,
-                        mime="text/csv",
-                        use_container_width=True,
-                    )
-
-        with col_backup2:
-            if st.button("📋 Backup Detalhado", use_container_width=True):
-                backup_data = fazer_backup_separado()
-                if backup_data:
-                    timestamp = dt.datetime.now(TZ).strftime("%Y%m%d_%H%M%S")
-                    nome_arquivo = f"backup_detalhado_{timestamp}.txt"
-                    st.download_button(
-                        label="⬇️ Baixar TXT",
-                        data=backup_data,
-                        file_name=nome_arquivo,
-                        mime="text/plain",
-                        use_container_width=True,
-                    )
-
-        st.divider()
 
 
         # Aplicar filtro de responsável se não for "Todos"
