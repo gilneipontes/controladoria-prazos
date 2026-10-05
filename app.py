@@ -2806,7 +2806,7 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
     if linhas:
         selecionado = df_filtrado.iloc[linhas[0]]
         id_prazo_selecionado = int(selecionado["id"])
-        st.session_state.id_prazo_modal_confirmacao = id_prazo_selecionado
+        st.session_state.abrir_prazo_id = id_prazo_selecionado
 
     st.divider()
 
@@ -3321,28 +3321,6 @@ def janela_nova_pericia(processos_df: pd.DataFrame) -> None:
 @st.dialog("📌 Demanda Administrativa", width="large")
 def janela_demanda_admin() -> None:
     sidebar_demanda_admin()
-
-@st.dialog("📂 Abrir Prazo?", width="large")
-def janela_confirmar_abrir_prazo(prazo: dict) -> None:
-    st.markdown(f"""
-    **{prazo['titulo']}**
-
-    Cliente: {prazo['cliente']}
-    Data Fatal: {formatar_data_brasil(prazo['data_fatal'])}
-    """)
-
-    col_sim, col_nao = st.columns(2)
-
-    with col_sim:
-        if st.button("✅ Abrir", use_container_width=True, type="primary", key=f"btn_conf_abrir_{prazo['id']}"):
-            st.session_state.id_prazo_modal_confirmacao = None
-            st.session_state.abrir_prazo_id = int(prazo["id"])
-            st.rerun()
-
-    with col_nao:
-        if st.button("❌ Cancelar", use_container_width=True, key=f"btn_conf_cancelar_{prazo['id']}"):
-            st.session_state.id_prazo_modal_confirmacao = None
-            st.rerun()
 
 @st.dialog("⚖️ Novo Processo", width="large")
 def janela_novo_processo() -> None:
@@ -4221,16 +4199,7 @@ def main() -> None:
         id_editar = st.session_state.pop("editar_prazo_id")
         janela_editar_prazo(id_editar, df_prazos, df_processos)
 
-    # ===== VERIFICAR SE PRECISA ABRIR CONFIRMAÇÃO DE PRAZO (após seleção na tabela) =====
-    if st.session_state.get("id_prazo_modal_confirmacao"):
-        id_prazo_confirmacao = st.session_state.get("id_prazo_modal_confirmacao")
-        # Encontrar o prazo na dataframe
-        prazo_row = df_prazos[df_prazos["id"] == id_prazo_confirmacao]
-        if not prazo_row.empty:
-            prazo_dict = prazo_row.iloc[0].to_dict()
-            janela_confirmar_abrir_prazo(prazo_dict)
-
-    # ===== ABRIR O PRAZO APÓS CONFIRMAR NO DIALOG =====
+    # ===== ABRIR O PRAZO DIRETO (após clique na tabela) =====
     if st.session_state.get("abrir_prazo_id"):
         id_para_abrir = st.session_state.pop("abrir_prazo_id")
         janela_ver_prazo(id_para_abrir, df_prazos, df_processos)
