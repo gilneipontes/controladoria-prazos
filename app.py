@@ -1,5 +1,5 @@
 """
-Controladoria Jurídica - KAIPPER E PONTES - SEMANA 1 EM PROGRESSO
+Controladoria Jurídica - SEMANA 1 EM PROGRESSO
 PASSO 1: Cards com cores dinâmicas ✅
 PASSO 2: Visão Cards Hierárquica ✅
 PASSO 3: Modal com Ficha Integral do Cliente (3 abas) ✅
@@ -8,8 +8,7 @@ PASSO 5: Ações rápidas dentro do Modal - EM CONSTRUÇÃO
 PASSO 6: Visão Calendário/Agenda - EM CONSTRUÇÃO
 """
 # ============================================
-# CONTROLADORIA JURÍDICA - KAIPPER E PONTES
-# SISTEMA DE GESTÃO DE PRAZOS
+# CONTROLADORIA JURÍDICA - SISTEMA DE PRAZOS
 # Versão: 4.0 - SEMANA 1 EM PROGRESSO - 28/09/2026
 # PASSOS IMPLEMENTADOS: 1, 2, 3
 # ============================================
@@ -4343,15 +4342,6 @@ def main() -> None:
         # ===== RENDERIZAR CARDS EM VEZ DE TABELA =====
         renderizar_cards_prazos(prazos_ativos, df_processos)
 
-    # ===== MODAL COM DETALHES COMPLETOS (FORA DO CONTEXTO DE ABAS) =====
-    if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
-        id_prazo = st.session_state.id_modal
-        prazo = df_prazos[df_prazos["id"] == id_prazo]
-
-        if not prazo.empty:
-            prazo = prazo.iloc[0]
-            modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
-
     with tab2:
         # ===== PASSO 5: FILTRO NA TAB 2 =====
         st.subheader("📋 Relatório de Prazos")
@@ -4643,6 +4633,15 @@ def main() -> None:
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
+
+    # ===== MODAL COM DETALHES COMPLETOS (FORA DE TODOS OS CONTEXTOS DE ABAS) =====
+    if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
+        id_prazo = st.session_state.id_modal
+        prazo = df_prazos[df_prazos["id"] == id_prazo]
+
+        if not prazo.empty:
+            prazo = prazo.iloc[0]
+            modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
 
 if __name__ == "__main__":
     main()
