@@ -25,6 +25,18 @@ import pandas as pd
 import streamlit as st
 from supabase import Client, create_client
 
+# ===== IMPORTAR FILTROS AVANÇADOS =====
+try:
+    from components_filters import renderizar_filtros_sidebar, aplicar_filtros, exibir_resumo_filtros
+except ImportError:
+    def renderizar_filtros_sidebar(*args, **kwargs):
+        return {}
+    def aplicar_filtros(df, *args, **kwargs):
+        return df
+    def exibir_resumo_filtros(*args, **kwargs):
+        pass
+
+
 # ===== CONFIG =====
 st.set_page_config(page_title="Controladoria Jurídica", page_icon="⚖️", layout="wide")
 
