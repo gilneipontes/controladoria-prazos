@@ -2805,9 +2805,37 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
     linhas = evento.selection.rows if evento is not None else []
     if linhas:
         selecionado = df_filtrado.iloc[linhas[0]]
-        st.success(f"Selecionado: **{selecionado['titulo']}** — {selecionado['cliente']} — fatal {formatar_data_brasil(selecionado['data_fatal'])}")
-        if st.button("📂 Abrir prazo", type="primary", use_container_width=True, key="abrir_prazo_listado"):
-            janela_ver_prazo(int(selecionado["id"]), df_prazos, df_processos)
+        id_prazo_selecionado = int(selecionado["id"])
+
+        # Abrir modal automaticamente quando seleciona
+        if st.session_state.get("id_prazo_modal_confirmacao") != id_prazo_selecionado:
+            st.session_state.id_prazo_modal_confirmacao = id_prazo_selecionado
+            st.session_state.abrir_modal_confirmacao = True
+            st.rerun()
+
+        # Modal de confirmação
+        if st.session_state.get("abrir_modal_confirmacao"):
+            with st.container(border=True):
+                st.markdown(f"""
+                ### 📂 Abrir Prazo?
+
+                **{selecionado['titulo']}**
+                Cliente: {selecionado['cliente']}
+                Data Fatal: {formatar_data_brasil(selecionado['data_fatal'])}
+                """)
+
+                col_sim, col_nao = st.columns(2)
+
+                with col_sim:
+                    if st.button("✅ Abrir", use_container_width=True, type="primary", key="modal_abrir_sim"):
+                        st.session_state.abrir_modal_confirmacao = False
+                        janela_ver_prazo(id_prazo_selecionado, df_prazos, df_processos)
+
+                with col_nao:
+                    if st.button("❌ Cancelar", use_container_width=True, key="modal_abrir_nao"):
+                        st.session_state.abrir_modal_confirmacao = False
+                        st.session_state.id_prazo_modal_confirmacao = None
+                        st.rerun()
 
     st.divider()
 
