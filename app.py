@@ -3878,9 +3878,7 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
     with col_acao1:
         if not prazo['concluido']:
             if st.button("✅ Concluir Agora", use_container_width=True, key=f"btn_concl_{id_prazo}", type="primary"):
-                atualizar_prazo(id_prazo, {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
-                st.session_state.aviso = f"✅ '{prazo['titulo']}' concluído!"
-                st.session_state.modal_aberta = False
+                st.session_state.confirmar_concluir = id_prazo
                 st.rerun()
 
     with col_acao2:
@@ -4251,6 +4249,37 @@ def main() -> None:
     if st.session_state.get("editar_prazo_id"):
         id_editar = st.session_state.pop("editar_prazo_id")
         janela_editar_prazo(id_editar, df_prazos, df_processos)
+
+    # ===== CONFIRMAÇÃO PARA CONCLUIR PRAZO =====
+    if st.session_state.get("confirmar_concluir"):
+        id_concluir = st.session_state.get("confirmar_concluir")
+        prazo_concluir = df_prazos[df_prazos["id"] == id_concluir]
+
+        if not prazo_concluir.empty:
+            prazo_info = prazo_concluir.iloc[0]
+
+            with st.dialog("✅ Confirmar Conclusão", width="large"):
+                st.markdown(f"""
+                ## Tem certeza que deseja concluir este prazo?
+
+                **Prazo:** {prazo_info['titulo']}
+                **Cliente:** {prazo_info['cliente']}
+                **Data Fatal:** {formatar_data_brasil(prazo_info['data_fatal'])}
+                """)
+
+                col_sim, col_nao = st.columns(2)
+
+                with col_sim:
+                    if st.button("✅ Sim, Concluir", use_container_width=True, type="primary", key=f"btn_conf_concl_sim_{id_concluir}"):
+                        atualizar_prazo(id_concluir, {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
+                        st.session_state.aviso = f"✅ '{prazo_info['titulo']}' concluído!"
+                        st.session_state.confirmar_concluir = None
+                        st.rerun()
+
+                with col_nao:
+                    if st.button("❌ Cancelar", use_container_width=True, key=f"btn_conf_concl_nao_{id_concluir}"):
+                        st.session_state.confirmar_concluir = None
+                        st.rerun()
 
     # ===== ABRIR O PRAZO DIRETO (após clique na tabela) =====
     if st.session_state.get("abrir_prazo_id"):
