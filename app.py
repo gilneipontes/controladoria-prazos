@@ -4318,12 +4318,15 @@ def main() -> None:
 
     # ===== MODAL COM DETALHES COMPLETOS =====
     if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
-        id_prazo = st.session_state.id_modal
-        prazo = df_prazos[df_prazos["id"] == id_prazo]
+        try:
+            id_prazo = st.session_state.id_modal
+            prazo_df = df_prazos[df_prazos["id"] == id_prazo]
 
-        if not prazo.empty:
-            prazo = prazo.iloc[0]
-            modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
+            if not prazo_df.empty:
+                prazo_info = prazo_df.iloc[0]
+                modal_detalhes_prazo(prazo_info, id_prazo, df_prazos, df_processos)
+        except Exception as e:
+            st.error(f"Erro ao abrir detalhes do prazo: {e}")
 
     # ===== AVISOS =====
     if st.session_state.aviso:
