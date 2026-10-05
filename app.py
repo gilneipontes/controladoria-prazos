@@ -4186,6 +4186,10 @@ def aplicar_filtros(df_prazos, filtros):
     """Aplica os filtros ao DataFrame de prazos."""
     df = df_prazos.copy()
 
+    # Converter data_fatal para datetime se não estiver
+    if 'data_fatal' in df.columns:
+        df['data_fatal'] = pd.to_datetime(df['data_fatal'], errors='coerce')
+
     # Filtro por responsável
     if filtros.get('responsaveis'):
         df = df[df['responsavel'].isin(filtros['responsaveis'])]
@@ -4212,18 +4216,26 @@ def aplicar_filtros(df_prazos, filtros):
         df = df[df['prioridade'].isin(filtros['prioridades'])]
 
     # Filtro por data
-    if filtros.get('data_inicio'):
-        df = df[df['data_fatal'] >= pd.Timestamp(filtros['data_inicio'])]
-    if filtros.get('data_fim'):
-        df = df[df['data_fatal'] <= pd.Timestamp(filtros['data_fim'])]
+    if filtros.get('data_inicio') and 'data_fatal' in df.columns:
+        try:
+            data_inicio = pd.Timestamp(filtros['data_inicio'])
+            df = df[df['data_fatal'].dt.date >= filtros['data_inicio']]
+        except Exception:
+            pass
+
+    if filtros.get('data_fim') and 'data_fatal' in df.columns:
+        try:
+            data_fim = pd.Timestamp(filtros['data_fim'])
+            df = df[df['data_fatal'].dt.date <= filtros['data_fim']]
+        except Exception:
+            pass
 
     # Filtro por texto
-    if filtros.get('texto'):
+    if filtros.get('texto') and 'cliente' in df.columns:
         texto = filtros['texto'].lower()
-        df = df[
-            (df['cliente'].str.lower().str.contains(texto, na=False)) |
-            (df['processo'].str.lower().str.contains(texto, na=False))
-        ]
+        mask_cliente = df['cliente'].fillna('').str.lower().str.contains(texto, na=False)
+        mask_processo = df['processo'].fillna('').str.lower().str.contains(texto, na=False)
+        df = df[mask_cliente | mask_processo]
 
     return df
 
