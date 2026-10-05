@@ -3976,10 +3976,10 @@ def main() -> None:
         st.caption("➕ CADASTRAR")
         acoes_cadastro = {
             "📋 Novo Prazo": "novo_prazo",
-            "📅 Nova Audiência": "nova_audiencia",
-            "🔬 Nova Perícia": "nova_pericia",
             "⚖️ Novo Processo": "novo_processo",
             "📝 Colar Despacho": "despacho",
+            "📅 Nova Audiência": "nova_audiencia",
+            "🔬 Nova Perícia": "nova_pericia",
         }
         for rotulo, janela in acoes_cadastro.items():
             st.button(
