@@ -3805,12 +3805,14 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
         st.info("Nenhum cliente cadastrado nos processos.")
         return
 
+    clientes_com_todos = ["📌 Todos os Clientes"] + clientes_unicos
+
     col1, col2 = st.columns(2)
 
     with col1:
         cliente_selecionado = st.selectbox(
             "👤 Selecione o Cliente",
-            clientes_unicos,
+            clientes_com_todos,
             key="rel_cliente_fase_cliente",
             index=0
         )
@@ -3838,23 +3840,30 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
 
     st.divider()
 
-    if not cliente_selecionado:
-        st.warning("Selecione um cliente para continuar.")
-        return
-
     # ===== FILTRAR DADOS DO CLIENTE =====
-    # Obter processos do cliente
-    processos_cliente = df_processos[df_processos["cliente"] == cliente_selecionado]
+    # Verificar se "Todos os Clientes" foi selecionado
+    if cliente_selecionado == "📌 Todos os Clientes":
+        # Mostrar todos os prazos (de todos os clientes)
+        processos_cliente = df_processos.copy()
+        prazos_cliente = df_prazos.copy()
+    else:
+        # Obter processos do cliente específico
+        processos_cliente = df_processos[df_processos["cliente"] == cliente_selecionado]
 
-    # Filtrar prazos do cliente (SEMPRE pega todos os prazos do cliente)
-    prazos_cliente = df_prazos[df_prazos["cliente"] == cliente_selecionado].copy()
+        # Filtrar prazos do cliente específico
+        prazos_cliente = df_prazos[df_prazos["cliente"] == cliente_selecionado].copy()
+
+        if prazos_cliente.empty:
+            st.warning(f"Nenhum prazo encontrado para {cliente_selecionado}.")
+            return
 
     # Se uma fase específica foi selecionada, filtrar pelos processos daquela fase
     if fase_selecionada != "Todas as Fases":
         processos_fase = processos_cliente[processos_cliente["fase"] == fase_selecionada]
 
         if processos_fase.empty:
-            st.warning(f"Nenhum processo encontrado para {cliente_selecionado} na fase '{fase_selecionada}'.")
+            filtro_label = "todos os clientes" if cliente_selecionado == "📌 Todos os Clientes" else cliente_selecionado
+            st.warning(f"Nenhum processo encontrado para {filtro_label} na fase '{fase_selecionada}'.")
             return
 
         numeros_processos = processos_fase["numero"].tolist()
@@ -3862,7 +3871,8 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
 
     # Se nenhum prazo encontrado (mesmo com "Todas as Fases")
     if prazos_cliente.empty:
-        st.warning(f"Nenhum prazo encontrado para {cliente_selecionado}.")
+        filtro_label = "todos os clientes" if cliente_selecionado == "📌 Todos os Clientes" else cliente_selecionado
+        st.warning(f"Nenhum prazo encontrado para {filtro_label}.")
         return
 
     # ===== APLICAR FILTRO DE STATUS =====
@@ -3884,7 +3894,9 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
     # ===== MÉTRICAS GERAIS =====
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("👤 Cliente", cliente_selecionado)
+    # Mostrar label apropriado para cliente
+    cliente_label = "Todos os Clientes" if cliente_selecionado == "📌 Todos os Clientes" else cliente_selecionado
+    col1.metric("👤 Cliente", cliente_label)
     col2.metric("⚖️ Processos", len(processos_cliente))
     col3.metric("📋 Total de Prazos", len(prazos_cliente))
 
