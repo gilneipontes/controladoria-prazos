@@ -1993,103 +1993,80 @@ def mostra_card_prazo(prazo, df_processos: pd.DataFrame = None) -> None:
             st.markdown(f"**📝 Observações:**")
             st.caption(prazo['descricao'])
 
-        # Se o prazo está ABERTO, mostrar botão para marcar como concluído
-        if not prazo.get("concluido"):
-            st.divider()
-            col_space, col_btn = st.columns([3, 1])
+        st.divider()
 
+        # ===== AÇÕES BASEADAS NO STATUS =====
+        if not prazo.get("concluido"):
+            # PRAZO ABERTO - Mostrar botão para marcar como concluído
+            col_space, col_btn = st.columns([3, 1])
             with col_btn:
                 if st.button("✅ Marcar Concluído", key=f"btn_marcar_conc_{prazo['id']}", use_container_width=True):
                     st.session_state[f"marcar_concluido_{prazo['id']}"] = True
 
-        # Modal para marcar como concluído (com seleção de data)
-        if st.session_state.get(f"marcar_concluido_{prazo['id']}", False):
-            st.divider()
-            st.info("📅 **Marcar Prazo como Concluído**")
-            st.caption("Selecione a data em que este prazo foi concluído:")
-
-            with st.form(f"form_marcar_conc_{prazo['id']}"):
-                data_conclusao = st.date_input(
-                    "Data de conclusão",
-                    value=hoje(),
-                    format="DD/MM/YYYY",
-                    key=f"input_marcar_conc_{prazo['id']}"
-                )
-
-                col_salvar, col_cancelar = st.columns(2)
-                with col_salvar:
-                    if st.form_submit_button("✅ Confirmar Conclusão", type="primary", use_container_width=True):
-                        # Converter para ISO com hora meio-dia
-                        data_iso = dt.datetime.combine(data_conclusao, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
-
-                        atualizar_campos({prazo['id']: {
-                            "concluido": True,
-                            "concluido_em": data_iso
-                        }})
-
-                        carregar_prazos.clear()
-                        st.session_state[f"marcar_concluido_{prazo['id']}"] = False
-                        st.success(f"✅ Marcado como concluído em {data_conclusao.strftime('%d/%m/%Y')}!")
-                        st.rerun()
-
-                with col_cancelar:
-                    if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                        st.session_state[f"marcar_concluido_{prazo['id']}"] = False
-                        st.rerun()
-
-        # Se o prazo está concluído, mostrar data de conclusão com botão para editar
-        if prazo.get("concluido"):
-            st.divider()
+            # FORMULÁRIO para marcar como concluído
+            if st.session_state.get(f"marcar_concluido_{prazo['id']}", False):
+                st.info("📅 **Marcar Prazo como Concluído**")
+                st.caption("Selecione a data em que este prazo foi concluído:")
+                with st.form(f"form_marcar_conc_{prazo['id']}"):
+                    data_conclusao = st.date_input(
+                        "Data de conclusão",
+                        value=hoje(),
+                        format="DD/MM/YYYY",
+                        key=f"input_marcar_conc_{prazo['id']}"
+                    )
+                    col_salvar, col_cancelar = st.columns(2)
+                    with col_salvar:
+                        if st.form_submit_button("✅ Confirmar Conclusão", type="primary", use_container_width=True):
+                            data_iso = dt.datetime.combine(data_conclusao, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
+                            atualizar_campos({prazo['id']: {"concluido": True, "concluido_em": data_iso}})
+                            carregar_prazos.clear()
+                            st.session_state[f"marcar_concluido_{prazo['id']}"] = False
+                            st.success(f"✅ Marcado como concluído em {data_conclusao.strftime('%d/%m/%Y')}!")
+                            st.rerun()
+                    with col_cancelar:
+                        if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                            st.session_state[f"marcar_concluido_{prazo['id']}"] = False
+                            st.rerun()
+        else:
+            # PRAZO CONCLUÍDO - Mostrar data de conclusão com botão editar
             col_data, col_btn = st.columns([3, 1])
-
             with col_data:
                 if pd.notna(prazo.get("concluido_em")):
                     data_conc = pd.Timestamp(prazo["concluido_em"]).strftime("%d/%m/%Y")
                     st.markdown(f"✅ **Concluído em:** {data_conc}")
                 else:
                     st.markdown(f"✅ **Concluído em:** (sem data)")
-
             with col_btn:
                 if st.button("✏️ Editar", key=f"btn_editar_data_{prazo['id']}", use_container_width=True):
                     st.session_state[f"editar_data_conclusao_{prazo['id']}"] = True
 
-        # Modal para editar data de conclusão
-        if st.session_state.get(f"editar_data_conclusao_{prazo['id']}", False):
-            st.divider()
-            st.info("📅 **Corrigir Data de Conclusão**")
-
-            if pd.notna(prazo.get("concluido_em")):
-                data_atual = pd.Timestamp(prazo["concluido_em"]).date()
-            else:
-                data_atual = hoje()
-
-            with st.form(f"form_editar_data_{prazo['id']}"):
-                nova_data = st.date_input(
-                    "Selecione a data correta",
-                    value=data_atual,
-                    format="DD/MM/YYYY",
-                    key=f"input_data_{prazo['id']}"
-                )
-
-                col_salvar, col_cancelar = st.columns(2)
-                with col_salvar:
-                    if st.form_submit_button("✅ Salvar", type="primary", use_container_width=True):
-                        # Converter para ISO com hora meio-dia
-                        data_iso = dt.datetime.combine(nova_data, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
-
-                        atualizar_campos({prazo['id']: {
-                            "concluido_em": data_iso
-                        }})
-
-                        carregar_prazos.clear()
-                        st.session_state[f"editar_data_conclusao_{prazo['id']}"] = False
-                        st.success(f"✅ Data atualizada para {nova_data.strftime('%d/%m/%Y')}!")
-                        st.rerun()
-
-                with col_cancelar:
-                    if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                        st.session_state[f"editar_data_conclusao_{prazo['id']}"] = False
-                        st.rerun()
+            # FORMULÁRIO para editar data de conclusão
+            if st.session_state.get(f"editar_data_conclusao_{prazo['id']}", False):
+                st.info("📅 **Corrigir Data de Conclusão**")
+                if pd.notna(prazo.get("concluido_em")):
+                    data_atual = pd.Timestamp(prazo["concluido_em"]).date()
+                else:
+                    data_atual = hoje()
+                with st.form(f"form_editar_data_{prazo['id']}"):
+                    nova_data = st.date_input(
+                        "Selecione a data correta",
+                        value=data_atual,
+                        format="DD/MM/YYYY",
+                        key=f"input_data_{prazo['id']}"
+                    )
+                    col_salvar, col_cancelar = st.columns(2)
+                    with col_salvar:
+                        if st.form_submit_button("✅ Salvar", type="primary", use_container_width=True):
+                            data_iso = dt.datetime.combine(nova_data, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
+                            atualizar_campos({prazo['id']: {"concluido_em": data_iso}})
+                            carregar_prazos.clear()
+                            st.session_state[f"editar_data_conclusao_{prazo['id']}"] = False
+                            st.success(f"✅ Data atualizada para {nova_data.strftime('%d/%m/%Y')}!")
+                            st.rerun()
+                    with col_cancelar:
+                        if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                            st.session_state[f"editar_data_conclusao_{prazo['id']}"] = False
+                            st.rerun()
 
 def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
     if df.empty:
