@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hmac
+import os
 import re
 from zoneinfo import ZoneInfo
 
@@ -24,8 +25,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from supabase import Client, create_client
-
-
 
 # ===== CONFIG =====
 st.set_page_config(page_title="Controladoria Jurídica", page_icon="⚖️", layout="wide")
@@ -382,6 +381,10 @@ def carregar_prazos() -> pd.DataFrame:
     df = pd.DataFrame(resp.data, columns=COLUNAS_PRAZOS)
     for col in ("data_fatal", "data_interna"):
         df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
+
+    # Garantir que concluido_em seja datetime
+    df["concluido_em"] = pd.to_datetime(df["concluido_em"], errors="coerce")
+
     df["concluido"] = df["concluido"].fillna(False).astype(bool)
     df["arquivado"] = df["arquivado"].fillna(False).astype(bool)
     return df
@@ -432,7 +435,27 @@ def inserir_processo(registro: dict) -> None:
 def atualizar_campos(atualizacoes: dict[int, dict]) -> None:
     for id_prazo, campos in atualizacoes.items():
         if campos:
-            supabase().table(TABELA_PRAZOS).update(campos).eq("id", id_prazo).execute()
+            print(f"\n{'='*70}")
+            print(f"[ATUALIZAR] ID={id_prazo}")
+            print(f"[ENVIAR] {campos}")
+            try:
+                resp = supabase().table(TABELA_PRAZOS).update(campos).eq("id", id_prazo).execute()
+                print(f"[SUPABASE] Resposta OK: {resp.data}")
+
+                # Verificar o que foi salvo
+                import time
+                time.sleep(0.3)
+                verificar = supabase().table(TABELA_PRAZOS).select("id, concluido, concluido_em").eq("id", id_prazo).execute()
+                if verificar.data:
+                    rec = verificar.data[0]
+                    print(f"[BANCO] concluido={rec.get('concluido')}, concluido_em={rec.get('concluido_em')}")
+                else:
+                    print(f"[ERRO] ID={id_prazo} não encontrado!")
+            except Exception as e:
+                print(f"[ERRO] {e}")
+                import traceback
+                traceback.print_exc()
+            print(f"{'='*70}\n")
     carregar_prazos.clear()
 
 def atualizar_prazo(id_prazo: int, campos: dict) -> None:
@@ -449,7 +472,7 @@ def atualizar_prazo(id_prazo: int, campos: dict) -> None:
     try:
         # Campos válidos para prazos
         campos_validos = {"titulo", "descricao", "processo", "data_interna",
-                         "data_fatal", "responsavel", "prioridade", "cliente", "concluido", "arquivado"}
+                         "data_fatal", "responsavel", "prioridade", "cliente", "concluido", "concluido_em", "arquivado"}
         campos_filtrados = {k: v for k, v in campos.items() if k in campos_validos}
 
         if not campos_filtrados:
@@ -1123,6 +1146,25 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                 nova_interna = col1.date_input("Prazo Interno", value=prazo["data_interna"], format="DD/MM/YYYY", key=f"edit_interna_{prefix}_{id_prazo}")
                 nova_fatal = col2.date_input("Data Fatal", value=prazo["data_fatal"], format="DD/MM/YYYY", key=f"edit_fatal_{prefix}_{id_prazo}")
 
+                # Se o prazo está concluído, permitir editar a data de conclusão
+                if prazo.get("concluido"):
+                    st.divider()
+                    st.info("📅 **Data de Conclusão**")
+
+                    if pd.notna(prazo.get("concluido_em")):
+                        data_conc_atual = pd.Timestamp(prazo["concluido_em"]).date()
+                    else:
+                        data_conc_atual = hoje()
+
+                    nova_conclusao = st.date_input(
+                        "Alterar data de conclusão",
+                        value=data_conc_atual,
+                        format="DD/MM/YYYY",
+                        key=f"edit_conclusao_{prefix}_{id_prazo}"
+                    )
+                else:
+                    nova_conclusao = None
+
                 nova_descricao = st.text_area("Observações", value=prazo["descricao"] or "", key=f"edit_desc_{prefix}_{id_prazo}")
 
                 if nova_fatal:
@@ -1142,14 +1184,22 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                 c1, c2 = st.columns(2)
                 with c1:
                     if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
-                        atualizar_campos({id_prazo: {
+                        campos_atualizar = {
                             "titulo": novo_titulo,
                             "responsavel": novo_responsavel,
                             "prioridade": nova_prioridade,
                             "data_fatal": nova_fatal.isoformat(),
                             "data_interna": nova_interna.isoformat() if nova_interna else None,
                             "descricao": nova_descricao or None
-                        }})
+                        }
+
+                        # Se o prazo é concluído e a data foi alterada
+                        if prazo.get("concluido") and nova_conclusao:
+                            # Converter a data para timestamp ISO
+                            data_conc_iso = dt.datetime.combine(nova_conclusao, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
+                            campos_atualizar["concluido_em"] = data_conc_iso
+
+                        atualizar_campos({id_prazo: campos_atualizar})
                         st.session_state.aviso = "✅ Prazo atualizado!"
                         st.session_state[modal_key_aberta] = False
                         st.session_state.editor_v += 1
@@ -1200,12 +1250,28 @@ def tabela_status(df: pd.DataFrame, processos_df: pd.DataFrame = None, prefix: s
                         else:
                             obs_nova = f"✅ CONCLUÍDO: {anotacoes}"
 
-                        atualizar_campos({id_prazo: {
-                            "concluido": True,
-                            "concluido_em": dt.datetime.now(TZ).isoformat(),
-                            "descricao": obs_nova
-                        }})
-                        st.session_state.aviso = "✅ Prazo concluído com anotações!"
+                        data_conclusao = dt.datetime.now(TZ)
+                        data_iso = data_conclusao.isoformat()
+                        data_apenas = data_conclusao.strftime('%d/%m/%Y')
+
+                        st.write(f"🔧 Salvando: ID={id_prazo}, data={data_iso}")
+                        print(f"[DEBUG] ID={id_prazo}, concluido_em={data_iso}")
+
+                        # Salvar diretamente no Supabase
+                        try:
+                            resp = supabase().table(TABELA_PRAZOS).update({
+                                "concluido": True,
+                                "concluido_em": data_iso,
+                                "descricao": obs_nova
+                            }).eq("id", id_prazo).execute()
+                            st.write(f"✅ Salvo! Resposta: {resp.data}")
+                            print(f"[OK] Resposta: {resp.data}")
+                        except Exception as e:
+                            st.error(f"❌ Erro: {str(e)}")
+                            print(f"[ERRO] {str(e)}")
+
+                        carregar_prazos.clear()
+                        st.success(f"✅ Concluído em {data_apenas}!")
                         st.session_state[modal_key_aberta] = False
                         st.session_state.editor_v += 1
                         st.rerun()
@@ -1927,6 +1993,104 @@ def mostra_card_prazo(prazo, df_processos: pd.DataFrame = None) -> None:
             st.markdown(f"**📝 Observações:**")
             st.caption(prazo['descricao'])
 
+        # Se o prazo está ABERTO, mostrar botão para marcar como concluído
+        if not prazo.get("concluido"):
+            st.divider()
+            col_space, col_btn = st.columns([3, 1])
+
+            with col_btn:
+                if st.button("✅ Marcar Concluído", key=f"btn_marcar_conc_{prazo['id']}", use_container_width=True):
+                    st.session_state[f"marcar_concluido_{prazo['id']}"] = True
+
+        # Modal para marcar como concluído (com seleção de data)
+        if st.session_state.get(f"marcar_concluido_{prazo['id']}", False):
+            st.divider()
+            st.info("📅 **Marcar Prazo como Concluído**")
+            st.caption("Selecione a data em que este prazo foi concluído:")
+
+            with st.form(f"form_marcar_conc_{prazo['id']}"):
+                data_conclusao = st.date_input(
+                    "Data de conclusão",
+                    value=hoje(),
+                    format="DD/MM/YYYY",
+                    key=f"input_marcar_conc_{prazo['id']}"
+                )
+
+                col_salvar, col_cancelar = st.columns(2)
+                with col_salvar:
+                    if st.form_submit_button("✅ Confirmar Conclusão", type="primary", use_container_width=True):
+                        # Converter para ISO com hora meio-dia
+                        data_iso = dt.datetime.combine(data_conclusao, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
+
+                        atualizar_campos({prazo['id']: {
+                            "concluido": True,
+                            "concluido_em": data_iso
+                        }})
+
+                        carregar_prazos.clear()
+                        st.session_state[f"marcar_concluido_{prazo['id']}"] = False
+                        st.success(f"✅ Marcado como concluído em {data_conclusao.strftime('%d/%m/%Y')}!")
+                        st.rerun()
+
+                with col_cancelar:
+                    if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                        st.session_state[f"marcar_concluido_{prazo['id']}"] = False
+                        st.rerun()
+
+        # Se o prazo está concluído, mostrar data de conclusão com botão para editar
+        if prazo.get("concluido"):
+            st.divider()
+            col_data, col_btn = st.columns([3, 1])
+
+            with col_data:
+                if pd.notna(prazo.get("concluido_em")):
+                    data_conc = pd.Timestamp(prazo["concluido_em"]).strftime("%d/%m/%Y")
+                    st.markdown(f"✅ **Concluído em:** {data_conc}")
+                else:
+                    st.markdown(f"✅ **Concluído em:** (sem data)")
+
+            with col_btn:
+                if st.button("✏️ Editar", key=f"btn_editar_data_{prazo['id']}", use_container_width=True):
+                    st.session_state[f"editar_data_conclusao_{prazo['id']}"] = True
+
+        # Modal para editar data de conclusão
+        if st.session_state.get(f"editar_data_conclusao_{prazo['id']}", False):
+            st.divider()
+            st.info("📅 **Corrigir Data de Conclusão**")
+
+            if pd.notna(prazo.get("concluido_em")):
+                data_atual = pd.Timestamp(prazo["concluido_em"]).date()
+            else:
+                data_atual = hoje()
+
+            with st.form(f"form_editar_data_{prazo['id']}"):
+                nova_data = st.date_input(
+                    "Selecione a data correta",
+                    value=data_atual,
+                    format="DD/MM/YYYY",
+                    key=f"input_data_{prazo['id']}"
+                )
+
+                col_salvar, col_cancelar = st.columns(2)
+                with col_salvar:
+                    if st.form_submit_button("✅ Salvar", type="primary", use_container_width=True):
+                        # Converter para ISO com hora meio-dia
+                        data_iso = dt.datetime.combine(nova_data, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
+
+                        atualizar_campos({prazo['id']: {
+                            "concluido_em": data_iso
+                        }})
+
+                        carregar_prazos.clear()
+                        st.session_state[f"editar_data_conclusao_{prazo['id']}"] = False
+                        st.success(f"✅ Data atualizada para {nova_data.strftime('%d/%m/%Y')}!")
+                        st.rerun()
+
+                with col_cancelar:
+                    if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                        st.session_state[f"editar_data_conclusao_{prazo['id']}"] = False
+                        st.rerun()
+
 def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
     if df.empty:
         st.info("Nenhuma audiência cadastrada.")
@@ -2256,32 +2420,6 @@ def formulario_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos
 def _limpar_janela_edicao(prefixo: str) -> None:
     for chave in [c for c in st.session_state if str(c).startswith(prefixo + "_")]:
         del st.session_state[chave]
-
-
-@st.dialog("✅ Confirmar Conclusão", width="large")
-def janela_confirmar_concluir(id_prazo: int, prazo_info: dict) -> None:
-    """Dialog de confirmação antes de concluir um prazo."""
-    st.markdown(f"""
-    ## Tem certeza que deseja concluir este prazo?
-
-    **Prazo:** {prazo_info['titulo']}
-    **Cliente:** {prazo_info['cliente']}
-    **Data Fatal:** {formatar_data_brasil(prazo_info['data_fatal'])}
-    """)
-
-    col_sim, col_nao = st.columns(2)
-
-    with col_sim:
-        if st.button("✅ Sim, Concluir", use_container_width=True, type="primary", key=f"btn_conf_concl_sim_{id_prazo}"):
-            atualizar_prazo(id_prazo, {"concluido": True, "concluido_em": dt.datetime.now(TZ).isoformat()})
-            st.session_state.aviso = f"✅ '{prazo_info['titulo']}' concluído!"
-            st.session_state.confirmar_concluir = None
-            st.rerun()
-
-    with col_nao:
-        if st.button("❌ Cancelar", use_container_width=True, key=f"btn_conf_concl_nao_{id_prazo}"):
-            st.session_state.confirmar_concluir = None
-            st.rerun()
 
 
 @st.dialog("📂 Prazo", width="large")
@@ -3255,17 +3393,660 @@ def relatorio_audiencias(df_audiencias: pd.DataFrame) -> None:
         hide_index=True
     )
 
+def gerar_relatorio_cliente_excel(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, cliente: str, fase: str):
+    """Gera Excel com o relatório de cliente e fase"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    import tempfile
+
+    if df_prazos.empty:
+        return None
+
+    # Filtrar dados do cliente
+    prazos_cliente = df_prazos[df_prazos["cliente"] == cliente].copy()
+
+    if not prazos_cliente.empty:
+        processos_cliente = df_processos[df_processos["cliente"] == cliente]
+        if fase != "Todas as Fases":
+            processos_cliente = processos_cliente[processos_cliente["fase"] == fase]
+
+        numeros_processos = processos_cliente["numero"].tolist()
+        prazos_cliente = prazos_cliente[prazos_cliente["processo"].isin(numeros_processos)]
+
+    if prazos_cliente.empty:
+        return None
+
+    # Preparar dados para export
+    df_export = prazos_cliente[["titulo", "processo", "data_fatal", "responsavel", "prioridade", "concluido", "concluido_em"]].copy()
+
+    # Adicionar informações do processo (parte adversária)
+    df_processos_info = df_processos[["numero", "parte_contraria"]].drop_duplicates(subset=["numero"])
+    df_export = df_export.merge(df_processos_info, left_on="processo", right_on="numero", how="left")
+    df_export["parte_contraria"] = df_export["parte_contraria"].fillna("—")
+    df_export = df_export.drop(columns=["numero"])
+
+    df_export = df_export.rename(columns={
+        "titulo": "Prazo",
+        "processo": "Nº Processo",
+        "parte_contraria": "Parte Adversária",
+        "data_fatal": "Data Fatal",
+        "responsavel": "Responsável",
+        "prioridade": "Prioridade",
+        "concluido": "Status",
+        "concluido_em": "Data Conclusão"
+    })
+
+    # Formatar datas
+    try:
+        df_export["Data Fatal"] = pd.to_datetime(df_export["Data Fatal"]).dt.strftime("%d/%m/%Y")
+    except:
+        df_export["Data Fatal"] = df_export["Data Fatal"].astype(str)
+
+    # Formatar Data Conclusão com tratamento robusto
+    df_export["Data Conclusão"] = df_export["Data Conclusão"].astype(str).replace("None", "").replace("NaT", "").str.strip()
+
+    def formatar_data_conclusao(data_str):
+        if not data_str or data_str in ["None", "NaT", "nan", ""]:
+            return "—"
+        try:
+            data = pd.Timestamp(data_str)
+            if pd.isna(data):
+                return "—"
+            return data.strftime("%d/%m/%Y")
+        except:
+            return "—"
+
+    df_export["Data Conclusão"] = df_export["Data Conclusão"].apply(formatar_data_conclusao)
+
+    # Formatar status
+    df_export["Status"] = df_export["Status"].apply(lambda x: "✅ Concluído" if x else "🔴 Em Aberto")
+
+    # Reordenar colunas conforme solicitado
+    df_export = df_export[["Parte Adversária", "Nº Processo", "Prazo", "Data Fatal", "Responsável", "Prioridade", "Status", "Data Conclusão"]]
+
+    # Criar workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Relatório"
+
+    # Estilos
+    header_fill = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    title_font = Font(bold=True, size=14)
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    left_alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    # Título
+    ws.merge_cells("A1:H1")
+    title_cell = ws["A1"]
+    title_cell.value = f"Relatório de Prazos - {cliente}"
+    title_cell.font = title_font
+    title_cell.alignment = center_alignment
+
+    # Fase
+    ws.merge_cells("A2:H2")
+    phase_cell = ws["A2"]
+    phase_cell.value = f"Fase: {fase}"
+    phase_cell.font = Font(italic=True)
+    phase_cell.alignment = center_alignment
+
+    ws.append([])  # Linha em branco
+
+    # Cabeçalho da tabela
+    colunas = ["Parte Adversária", "Nº Processo", "Prazo", "Data Fatal", "Responsável", "Prioridade", "Status", "Data Conclusão"]
+    larguras = [25, 20, 30, 15, 18, 12, 18, 18]
+
+    for col_num, (titulo, largura) in enumerate(zip(colunas, larguras), 1):
+        cell = ws.cell(row=4, column=col_num)
+        cell.value = titulo
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center_alignment
+        cell.border = border
+        ws.column_dimensions[cell.column_letter].width = largura
+
+    # Dados
+    for row_num, (_, row) in enumerate(df_export.iterrows(), 5):
+        for col_num, titulo in enumerate(colunas, 1):
+            cell = ws.cell(row=row_num, column=col_num)
+            cell.value = row[titulo]
+            cell.border = border
+            # Centralizar: Nº Processo (2), Data Fatal (4), Prioridade (6), Status (7)
+            cell.alignment = center_alignment if col_num in [2, 4, 6, 7] else left_alignment
+
+    # Configuração de impressão
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_title_rows = "4:4"
+    ws.freeze_panes = "A5"
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        wb.save(tmp.name)
+        return tmp.name
+
+def gerar_relatorio_cliente_pdf(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, cliente: str, fase: str):
+    """Gera PDF com o relatório de cliente e fase"""
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    import tempfile
+    from datetime import datetime
+
+    if df_prazos.empty:
+        return None
+
+    # Filtrar dados do cliente
+    prazos_cliente = df_prazos[df_prazos["cliente"] == cliente].copy()
+
+    if not prazos_cliente.empty:
+        processos_cliente = df_processos[df_processos["cliente"] == cliente]
+        if fase != "Todas as Fases":
+            processos_cliente = processos_cliente[processos_cliente["fase"] == fase]
+
+        numeros_processos = processos_cliente["numero"].tolist()
+        prazos_cliente = prazos_cliente[prazos_cliente["processo"].isin(numeros_processos)]
+
+    if prazos_cliente.empty:
+        return None
+
+    # Preparar dados
+    prazos_cliente = enriquecer(prazos_cliente).sort_values("data_fatal")
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        pdf_path = tmp.name
+
+    doc = SimpleDocTemplate(pdf_path, pagesize=landscape(A4), topMargin=0.5*inch, bottomMargin=0.5*inch)
+    story = []
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        textColor=colors.HexColor("#1f4788"),
+        spaceAfter=6,
+        alignment=1  # center
+    )
+    subtitle_style = ParagraphStyle(
+        'CustomSubtitle',
+        parent=styles['Normal'],
+        fontSize=11,
+        textColor=colors.HexColor("#555555"),
+        spaceAfter=12,
+        alignment=1  # center
+    )
+
+    # Título
+    story.append(Paragraph(f"Relatório de Prazos - {cliente}", title_style))
+    story.append(Paragraph(f"Fase: {fase} | Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M')}", subtitle_style))
+    story.append(Spacer(1, 0.3*inch))
+
+    # Tabela de prazos em aberto
+    prazos_abertos = prazos_cliente[(~prazos_cliente["concluido"]) & (~prazos_cliente["arquivado"])]
+
+    if not prazos_abertos.empty:
+        story.append(Paragraph("📋 PRAZOS EM ABERTO", ParagraphStyle(
+            'SectionTitle',
+            parent=styles['Heading2'],
+            fontSize=12,
+            textColor=colors.HexColor("#d32f2f"),
+            spaceAfter=10
+        )))
+
+        dados_abertos = [["Urgência", "Prazo", "Processo", "Data Fatal", "Responsável", "Prioridade"]]
+        for _, row in prazos_abertos.iterrows():
+            dados_abertos.append([
+                row.get("faixa", "—"),
+                row["titulo"],
+                str(row["processo"]) if row["processo"] else "—",
+                formatar_data_brasil(row["data_fatal"]),
+                row["responsavel"],
+                row["prioridade"]
+            ])
+
+        table_abertos = Table(dados_abertos, colWidths=[1.5*inch, 2.2*inch, 1.8*inch, 1.5*inch, 1.5*inch, 1.2*inch])
+        table_abertos.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1f4788")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f5f5f5")]),
+        ]))
+        story.append(table_abertos)
+        story.append(Spacer(1, 0.3*inch))
+
+    # Tabela de prazos concluídos
+    prazos_concluidos = prazos_cliente[prazos_cliente["concluido"]]
+
+    if not prazos_concluidos.empty:
+        story.append(Paragraph("✅ PRAZOS CONCLUÍDOS", ParagraphStyle(
+            'SectionTitle',
+            parent=styles['Heading2'],
+            fontSize=12,
+            textColor=colors.HexColor("#388e3c"),
+            spaceAfter=10
+        )))
+
+        dados_concluidos = [["Prazo", "Processo", "Data Fatal", "Concluído em", "Responsável"]]
+        for _, row in prazos_concluidos.iterrows():
+            data_conc = pd.to_datetime(row["concluido_em"]).strftime("%d/%m/%Y") if pd.notna(row["concluido_em"]) else "—"
+            dados_concluidos.append([
+                row["titulo"],
+                str(row["processo"]) if row["processo"] else "—",
+                formatar_data_brasil(row["data_fatal"]),
+                data_conc,
+                row["responsavel"]
+            ])
+
+        table_concluidos = Table(dados_concluidos, colWidths=[2.5*inch, 1.8*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+        table_concluidos.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1f4788")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f5f5f5")]),
+        ]))
+        story.append(table_concluidos)
+
+    doc.build(story)
+    return pdf_path
+
+def gerar_relatorio_cliente_pdf_simples(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, cliente: str, fase: str):
+    """Gera PDF simples com o relatório de cliente e fase usando fpdf2"""
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        return None
+
+    import tempfile
+    from datetime import datetime
+
+    if df_prazos.empty:
+        return None
+
+    # Filtrar dados do cliente
+    prazos_cliente = df_prazos[df_prazos["cliente"] == cliente].copy()
+
+    if not prazos_cliente.empty:
+        processos_cliente = df_processos[df_processos["cliente"] == cliente]
+        if fase != "Todas as Fases":
+            processos_cliente = processos_cliente[processos_cliente["fase"] == fase]
+
+        numeros_processos = processos_cliente["numero"].tolist()
+        prazos_cliente = prazos_cliente[prazos_cliente["processo"].isin(numeros_processos)]
+
+    if prazos_cliente.empty:
+        return None
+
+    # Preparar dados
+    prazos_cliente = enriquecer(prazos_cliente).sort_values("data_fatal")
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        pdf_path = tmp.name
+
+    try:
+        pdf = FPDF(orientation='L', unit='mm', format='A4')
+        pdf.add_page()
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.set_text_color(31, 71, 136)
+        pdf.cell(0, 10, f"Relatorio de Prazos - {cliente}", ln=True, align="C")
+
+        pdf.set_font("Helvetica", "I", 10)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(0, 8, f"Fase: {fase} | Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
+        pdf.ln(5)
+
+        # Prazos em aberto
+        prazos_abertos = prazos_cliente[(~prazos_cliente["concluido"]) & (~prazos_cliente["arquivado"])]
+
+        if not prazos_abertos.empty:
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.set_text_color(211, 47, 47)
+            pdf.cell(0, 8, "PRAZOS EM ABERTO", ln=True)
+            pdf.ln(2)
+
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_fill_color(31, 71, 136)
+
+            col_widths = [25, 50, 30, 25, 35, 20]
+            headers = ["Urgencia", "Prazo", "Processo", "Data Fatal", "Responsavel", "Prioridade"]
+
+            for header, width in zip(headers, col_widths):
+                pdf.cell(width, 8, header, border=1, align="C", fill=True)
+            pdf.ln()
+
+            pdf.set_font("Helvetica", "", 8)
+            pdf.set_text_color(0, 0, 0)
+
+            for idx, (_, row) in enumerate(prazos_abertos.iterrows()):
+                fill = idx % 2 == 0
+                if fill:
+                    pdf.set_fill_color(245, 245, 245)
+
+                faixa = str(row.get("faixa", "—"))[:20]
+                prazo = str(row["titulo"])[:20]
+                processo = str(row["processo"]) if row["processo"] else "—"
+                data = formatar_data_brasil(row["data_fatal"])
+                resp = str(row["responsavel"])[:15]
+                prior = str(row["prioridade"])
+
+                valores = [faixa, prazo, processo, data, resp, prior]
+
+                for valor, width in zip(valores, col_widths):
+                    pdf.cell(width, 7, str(valor), border=1, align="C", fill=fill)
+                pdf.ln()
+
+            pdf.ln(3)
+
+        # Prazos concluídos
+        prazos_concluidos = prazos_cliente[prazos_cliente["concluido"]]
+
+        if not prazos_concluidos.empty:
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.set_text_color(56, 142, 60)
+            pdf.cell(0, 8, "PRAZOS CONCLUIDOS", ln=True)
+            pdf.ln(2)
+
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_fill_color(31, 71, 136)
+
+            col_widths = [60, 30, 25, 25, 35]
+            headers = ["Prazo", "Processo", "Data Fatal", "Concluido", "Responsavel"]
+
+            for header, width in zip(headers, col_widths):
+                pdf.cell(width, 8, header, border=1, align="C", fill=True)
+            pdf.ln()
+
+            pdf.set_font("Helvetica", "", 8)
+            pdf.set_text_color(0, 0, 0)
+
+            for idx, (_, row) in enumerate(prazos_concluidos.iterrows()):
+                fill = idx % 2 == 0
+                if fill:
+                    pdf.set_fill_color(245, 245, 245)
+
+                prazo = str(row["titulo"])[:20]
+                processo = str(row["processo"]) if row["processo"] else "—"
+                data_fatal = formatar_data_brasil(row["data_fatal"])
+                data_conc = pd.to_datetime(row["concluido_em"]).strftime("%d/%m/%Y") if pd.notna(row["concluido_em"]) else "—"
+                resp = str(row["responsavel"])[:15]
+
+                valores = [prazo, processo, data_fatal, data_conc, resp]
+
+                for valor, width in zip(valores, col_widths):
+                    pdf.cell(width, 7, str(valor), border=1, align="C", fill=fill)
+                pdf.ln()
+
+        pdf.output(pdf_path)
+        return pdf_path
+
+    except Exception as e:
+        return None
+
+def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+    """
+    Relatório filtrado por Cliente e Fase do Processo
+    Exibe: Último prazo concluído e prazos em aberto
+    """
+    st.markdown("### 🔍 Filtro por Cliente & Fase")
+    st.caption("Visualize o último prazo concluído e todos os prazos em aberto para um cliente específico")
+
+    if df_prazos.empty:
+        st.info("Nenhum prazo cadastrado.")
+        return
+
+    if df_processos.empty:
+        st.info("Nenhum processo cadastrado.")
+        return
+
+    st.divider()
+
+    # ===== SELEÇÃO DE CLIENTE =====
+    clientes_unicos = sorted(df_processos["cliente"].dropna().unique().tolist())
+
+    if not clientes_unicos:
+        st.info("Nenhum cliente cadastrado nos processos.")
+        return
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        cliente_selecionado = st.selectbox(
+            "👤 Selecione o Cliente",
+            clientes_unicos,
+            key="rel_cliente_fase_cliente",
+            index=0
+        )
+
+    # ===== SELEÇÃO DE FASE (OPCIONAL) =====
+    with col2:
+        fases_com_todos = ["Todas as Fases"] + FASES_PROCESSO
+        fase_selecionada = st.selectbox(
+            "📋 Selecione a Fase",
+            fases_com_todos,
+            key="rel_cliente_fase_fase",
+            index=0
+        )
+
+    # ===== SELEÇÃO DE STATUS (NOVO) =====
+    col3, col4 = st.columns([2, 2])
+    with col3:
+        status_filtro = st.selectbox(
+            "📊 Filtro de Status",
+            ["Todos", "Apenas Abertos", "Apenas Concluídos"],
+            key="rel_cliente_fase_status",
+            index=0,
+            help="Selecione para filtrar prazos por status"
+        )
+
+    st.divider()
+
+    if not cliente_selecionado:
+        st.warning("Selecione um cliente para continuar.")
+        return
+
+    # ===== FILTRAR DADOS DO CLIENTE =====
+    # Obter processos do cliente
+    processos_cliente = df_processos[df_processos["cliente"] == cliente_selecionado]
+
+    # Filtrar prazos do cliente (SEMPRE pega todos os prazos do cliente)
+    prazos_cliente = df_prazos[df_prazos["cliente"] == cliente_selecionado].copy()
+
+    # Se uma fase específica foi selecionada, filtrar pelos processos daquela fase
+    if fase_selecionada != "Todas as Fases":
+        processos_fase = processos_cliente[processos_cliente["fase"] == fase_selecionada]
+
+        if processos_fase.empty:
+            st.warning(f"Nenhum processo encontrado para {cliente_selecionado} na fase '{fase_selecionada}'.")
+            return
+
+        numeros_processos = processos_fase["numero"].tolist()
+        prazos_cliente = prazos_cliente[prazos_cliente["processo"].isin(numeros_processos)]
+
+    # Se nenhum prazo encontrado (mesmo com "Todas as Fases")
+    if prazos_cliente.empty:
+        st.warning(f"Nenhum prazo encontrado para {cliente_selecionado}.")
+        return
+
+    # ===== APLICAR FILTRO DE STATUS =====
+    if status_filtro == "Apenas Abertos":
+        prazos_cliente = prazos_cliente[(~prazos_cliente["concluido"]) & (~prazos_cliente["arquivado"])]
+    elif status_filtro == "Apenas Concluídos":
+        prazos_cliente = prazos_cliente[prazos_cliente["concluido"]]
+    # Se "Todos", mantém todos os prazos (já filtrado por cliente e fase)
+
+    if prazos_cliente.empty:
+        st.warning(f"Nenhum prazo encontrado com o filtro '{status_filtro}'.")
+        return
+
+    # Atualizar lista de processos para mostrar apenas os que têm prazos
+    processos_com_prazos = prazos_cliente["processo"].unique().tolist()
+    if fase_selecionada == "Todas as Fases":
+        processos_cliente = processos_cliente[processos_cliente["numero"].isin(processos_com_prazos)]
+
+    # ===== MÉTRICAS GERAIS =====
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("👤 Cliente", cliente_selecionado)
+    col2.metric("⚖️ Processos", len(processos_cliente))
+    col3.metric("📋 Total de Prazos", len(prazos_cliente))
+
+    # Métricas de status
+    if status_filtro == "Todos":
+        prazos_abertos = prazos_cliente[(~prazos_cliente["concluido"]) & (~prazos_cliente["arquivado"])]
+        prazos_concluidos = prazos_cliente[prazos_cliente["concluido"]]
+        col4.metric("📊 Status", f"{len(prazos_abertos)} abertos | {len(prazos_concluidos)} concluídos")
+    elif status_filtro == "Apenas Abertos":
+        col4.metric("🔴 Em Aberto", len(prazos_cliente))
+    else:  # Apenas Concluídos
+        col4.metric("✅ Concluídos", len(prazos_cliente))
+
+    st.divider()
+
+    # ===== SEPARAR ABERTOS E CONCLUÍDOS PARA DISPLAY =====
+    prazos_abertos_display = prazos_cliente[(~prazos_cliente["concluido"]) & (~prazos_cliente["arquivado"])]
+    prazos_concluidos_display = prazos_cliente[prazos_cliente["concluido"]]
+
+    # ===== TÍTULO PRINCIPAL =====
+    if status_filtro == "Todos":
+        st.markdown("### 📊 Relatório de Prazos")
+        st.caption(f"Total: {len(prazos_abertos_display)} abertos | {len(prazos_concluidos_display)} concluídos")
+    elif status_filtro == "Apenas Abertos":
+        st.markdown("### 🔴 Prazos em Aberto")
+        st.caption(f"Total: {len(prazos_cliente)} prazos")
+    else:
+        st.markdown("### ✅ Prazos Concluídos")
+        st.caption(f"Total: {len(prazos_cliente)} prazos (clique no 🔍 para editar e registrar data)")
+
+    # ===== EXIBIR PRAZOS =====
+    if prazos_cliente.empty:
+        st.info("Nenhum prazo encontrado com este filtro.")
+    else:
+        # Preparar dados para exibição
+        if status_filtro == "Todos":
+            # Combinar abertos e concluídos, abertos primeiro
+            todos_prazos = pd.concat([prazos_abertos_display, prazos_concluidos_display], ignore_index=True)
+            todos_prazos = enriquecer(todos_prazos).sort_values("data_fatal")
+        elif status_filtro == "Apenas Abertos":
+            todos_prazos = enriquecer(prazos_abertos_display).sort_values("data_fatal")
+        else:
+            todos_prazos = prazos_concluidos_display.sort_values("data_fatal", ascending=False)
+
+        # Cabeçalho da tabela
+        col_faixa, col_prazo, col_processo, col_data, col_resp, col_status, col_acao = st.columns([1, 2, 1.5, 1.3, 1.3, 1.2, 0.6])
+
+        with col_faixa:
+            if status_filtro == "Todos":
+                st.markdown("**Urgência**")
+            else:
+                st.markdown("**Status**")
+        with col_prazo:
+            st.markdown("**Prazo**")
+        with col_processo:
+            st.markdown("**Processo**")
+        with col_data:
+            st.markdown("**Data Fatal**")
+        with col_resp:
+            st.markdown("**Responsável**")
+        with col_status:
+            st.markdown("**Conclusão**")
+        with col_acao:
+            st.markdown("**Ação**")
+
+        st.divider()
+
+        # Exibir cada prazo
+        for idx, (_, row) in enumerate(todos_prazos.iterrows()):
+            col_faixa, col_prazo, col_processo, col_data, col_resp, col_status, col_acao = st.columns([1, 2, 1.5, 1.3, 1.3, 1.2, 0.6])
+
+            with col_faixa:
+                if status_filtro == "Todos" and not row.get("concluido"):
+                    st.caption(row.get("faixa", "—"))
+                elif row.get("concluido"):
+                    st.caption("✅")
+                else:
+                    st.caption("🔴")
+
+            with col_prazo:
+                st.caption(row["titulo"])
+
+            with col_processo:
+                st.caption(str(row["processo"]) if row["processo"] else "—")
+
+            with col_data:
+                st.caption(formatar_data_brasil(row["data_fatal"]))
+
+            with col_resp:
+                st.caption(row["responsavel"])
+
+            with col_status:
+                if row.get("concluido"):
+                    if pd.notna(row.get("concluido_em")):
+                        data_conc = pd.to_datetime(row["concluido_em"]).strftime("%d/%m/%Y")
+                        st.caption(f"✅ {data_conc}")
+                    else:
+                        st.caption("✅ (sem data)")
+                else:
+                    st.caption("🔴 Aberto")
+
+            with col_acao:
+                if st.button("🔍", key=f"btn_rel_cliente_fase_{row['id']}", help="Abrir prazo", use_container_width=True):
+                    st.session_state.abrir_prazo_id = int(row["id"])
+                    st.rerun()
+
+    st.divider()
+
+    # ===== EXPORTAR RELATÓRIO =====
+    st.markdown("### 📥 Exportar Relatório")
+
+    try:
+        excel_path = gerar_relatorio_cliente_excel(df_prazos, df_processos, cliente_selecionado, fase_selecionada)
+        if excel_path and os.path.exists(excel_path):
+            with open(excel_path, "rb") as f:
+                st.download_button(
+                    label="📊 Baixar em Excel",
+                    data=f.read(),
+                    file_name=f"relatorio_{cliente_selecionado.replace(' ', '_')}_{fase_selecionada.replace(' ', '_')}_{pd.Timestamp.now(tz='America/Sao_Paulo').strftime('%d_%m_%Y')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+        else:
+            st.warning("❌ Erro ao gerar Excel")
+    except Exception as e:
+        st.error(f"❌ Erro ao criar Excel: {str(e)}")
+
 def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, df_audiencias: pd.DataFrame) -> None:
     """
-    PASSO 2.5: Dashboard de Relatórios com 3 abas
+    PASSO 2.5: Dashboard de Relatórios com 4 abas
     - Prazos Ativos
     - Prazos Concluídos
     - Audiências
+    - Cliente & Fase
     """
     st.markdown("# 📊 Relatórios")
     st.caption("Extraia pautas e relatórios de seu sistema")
 
-    tab1, tab2, tab3 = st.tabs(["📋 Prazos Ativos", "✅ Concluídos", "📅 Audiências"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 Prazos Ativos", "✅ Concluídos", "📅 Audiências", "🔍 Cliente & Fase"])
 
     with tab1:
         relatorio_prazos_ativos(df_prazos, df_processos)
@@ -3275,6 +4056,9 @@ def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, d
 
     with tab3:
         relatorio_audiencias(df_audiencias)
+
+    with tab4:
+        relatorio_cliente_fase(df_prazos, df_processos)
 
 def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
     """Gerencia visualização de clientes (catálogo)."""
@@ -3906,7 +4690,14 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
     with col_acao1:
         if not prazo['concluido']:
             if st.button("✅ Concluir Agora", use_container_width=True, key=f"btn_concl_{id_prazo}", type="primary"):
-                st.session_state.confirmar_concluir = id_prazo
+                data_conclusao = dt.datetime.now(TZ)
+                atualizar_prazo(id_prazo, {
+                    "concluido": True,
+                    "concluido_em": data_conclusao.isoformat()
+                })
+                data_formatada = data_conclusao.strftime("%d/%m/%Y às %H:%M")
+                st.session_state.aviso = f"✅ '{prazo['titulo']}' concluído em {data_formatada}! Data será exibida no relatório Excel."
+                st.session_state.modal_aberta = False
                 st.rerun()
 
     with col_acao2:
@@ -3962,6 +4753,26 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
                 value=prazo["prioridade"] if prazo["prioridade"] in PRIORIDADES else "Normal",
             )
 
+            # Campo para marcar como concluído e registrar data de conclusão
+            col_status1, col_status2 = st.columns(2)
+            with col_status1:
+                novo_concluido = st.checkbox(
+                    "✅ Prazo Concluído",
+                    value=prazo["concluido"] if prazo["concluido"] else False,
+                    key=f"check_concl_{id_prazo}"
+                )
+
+            with col_status2:
+                if novo_concluido:
+                    nova_data_conclusao = st.date_input(
+                        "Data de Conclusão *",
+                        value=pd.to_datetime(prazo["concluido_em"]).date() if pd.notna(prazo["concluido_em"]) else None,
+                        format="DD/MM/YYYY",
+                        key=f"date_concl_{id_prazo}"
+                    )
+                else:
+                    nova_data_conclusao = None
+
             nova_obs = st.text_area(
                 "O que precisa ser feito (observações):",
                 value=prazo["descricao"] or "",
@@ -3980,8 +4791,10 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
                 st.error("Preencha o título e a data fatal!")
             elif nova_interna and nova_interna > nova_fatal:
                 st.error("O prazo interno deve ser igual ou anterior à data fatal!")
+            elif novo_concluido and not nova_data_conclusao:
+                st.error("Se o prazo está concluído, indique a data de conclusão!")
             else:
-                atualizar_prazo(id_prazo, {
+                campos_update = {
                     "titulo": novo_titulo.strip(),
                     "tipo": novo_tipo,
                     "responsavel": novo_responsavel,
@@ -3989,7 +4802,19 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
                     "data_interna": nova_interna.isoformat() if nova_interna else None,
                     "data_fatal": nova_fatal.isoformat(),
                     "descricao": nova_obs or None,
-                })
+                    "concluido": novo_concluido,
+                }
+
+                # Se foi concluído, registra a data de conclusão
+                if novo_concluido and nova_data_conclusao:
+                    # Converte para datetime no final do dia
+                    dt_conclusao = dt.datetime.combine(nova_data_conclusao, dt.time(23, 59, 59))
+                    campos_update["concluido_em"] = dt_conclusao.replace(tzinfo=TZ).isoformat()
+                elif not novo_concluido:
+                    # Se desmarcar concluído, limpa a data de conclusão
+                    campos_update["concluido_em"] = None
+
+                atualizar_prazo(id_prazo, campos_update)
                 st.session_state.aviso = "✅ Prazo atualizado!"
                 st.session_state.modo_modal = None
                 st.rerun()
@@ -4205,7 +5030,10 @@ def aplicar_filtros(df_prazos, filtros):
             elif s == "Arquivado":
                 status_filter.append(df[df['arquivado']].index)
         if status_filter:
-            df = df.loc[pd.Index(set(pd.Index([]).union(*status_filter)))]
+            indices_combinados = []
+            for idx in status_filter:
+                indices_combinados.extend(idx.tolist())
+            df = df.loc[list(set(indices_combinados))]
 
     # Filtro por tipo
     if filtros.get('tipos'):
@@ -4403,6 +5231,42 @@ def main() -> None:
     st.title("⚖️ Controladoria Jurídica")
     st.caption(f"Hoje: {hoje():%d/%m/%Y}")
 
+    # ===== JANELAS DE CADASTRO (modal no centro da tela) =====
+    janela = st.session_state.pop("janela_aberta", None)
+    if janela == "novo_prazo":
+        janela_novo_prazo(df_processos)
+    elif janela == "nova_audiencia":
+        janela_nova_audiencia(df_processos)
+    elif janela == "nova_pericia":
+        janela_nova_pericia(df_processos)
+    elif janela == "demanda_admin":
+        janela_demanda_admin()
+    elif janela == "novo_processo":
+        janela_novo_processo()
+    elif janela == "despacho":
+        janela_despacho(df_processos)
+    elif janela == "processos":
+        janela_processos(df_processos, df_prazos)
+
+    # ===== VERIFICAR SE PRECISA ABRIR MODAL DO CLIENTE =====
+    if st.session_state.get("modal_cliente"):
+        cliente_modal = st.session_state.pop("modal_cliente")
+        modal_ficha_cliente(cliente_modal, df_prazos, df_processos, df_audiencias)
+
+    # ===== VERIFICAR SE PRECISA ABRIR JANELA DE EDITAR (após modal fechar) =====
+    if st.session_state.get("editar_prazo_id"):
+        id_editar = st.session_state.pop("editar_prazo_id")
+        janela_editar_prazo(id_editar, df_prazos, df_processos)
+
+    # ===== ABRIR O PRAZO DIRETO (após clique na tabela) =====
+    if st.session_state.get("abrir_prazo_id"):
+        id_para_abrir = st.session_state.pop("abrir_prazo_id")
+        janela_ver_prazo(id_para_abrir, df_prazos, df_processos)
+
+    if st.session_state.aviso:
+        st.toast(st.session_state.aviso)
+        st.session_state.aviso = None
+
     # ===== PASSO 2: RENDERIZAR VISÃO CARDS HIERÁRQUICA =====
     if aba == "🎴 Cards":
         dashboard_cards_hierarquico(df_prazos, df_audiencias, df_processos)
@@ -4429,66 +5293,7 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos_filtrados) if not df_prazos_filtrados.empty else pd.DataFrame()
 
-    # ===== JANELAS DE CADASTRO (ANTES DAS TABS - FORA DE QUALQUER CONTEXTO) =====
-    janela = st.session_state.pop("janela_aberta", None)
-    if janela == "novo_prazo":
-        janela_novo_prazo(df_processos)
-    elif janela == "nova_audiencia":
-        janela_nova_audiencia(df_processos)
-    elif janela == "nova_pericia":
-        janela_nova_pericia(df_processos)
-    elif janela == "demanda_admin":
-        janela_demanda_admin()
-    elif janela == "novo_processo":
-        janela_novo_processo()
-    elif janela == "despacho":
-        janela_despacho(df_processos)
-    elif janela == "processos":
-        janela_processos(df_processos, df_prazos)
-
-    # ===== VERIFICAR SE PRECISA ABRIR MODAL DO CLIENTE =====
-    if st.session_state.get("modal_cliente"):
-        cliente_modal = st.session_state.pop("modal_cliente")
-        modal_ficha_cliente(cliente_modal, df_prazos, df_processos, df_audiencias)
-
-    # ===== VERIFICAR SE PRECISA ABRIR JANELA DE EDITAR =====
-    if st.session_state.get("editar_prazo_id"):
-        id_editar = st.session_state.pop("editar_prazo_id")
-        janela_editar_prazo(id_editar, df_prazos, df_processos)
-
-    # ===== CONFIRMAÇÃO PARA CONCLUIR PRAZO =====
-    if st.session_state.get("confirmar_concluir"):
-        id_concluir = st.session_state.get("confirmar_concluir")
-        prazo_concluir = df_prazos[df_prazos["id"] == id_concluir]
-
-        if not prazo_concluir.empty:
-            prazo_info = prazo_concluir.iloc[0]
-            janela_confirmar_concluir(id_concluir, prazo_info)
-
-    # ===== ABRIR O PRAZO DIRETO =====
-    if st.session_state.get("abrir_prazo_id"):
-        id_para_abrir = st.session_state.pop("abrir_prazo_id")
-        janela_ver_prazo(id_para_abrir, df_prazos, df_processos)
-
-    # ===== MODAL COM DETALHES COMPLETOS =====
-    if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
-        try:
-            id_prazo = st.session_state.id_modal
-            prazo_df = df_prazos[df_prazos["id"] == id_prazo]
-
-            if not prazo_df.empty:
-                prazo_info = prazo_df.iloc[0]
-                modal_detalhes_prazo(prazo_info, id_prazo, df_prazos, df_processos)
-        except Exception as e:
-            st.error(f"Erro ao abrir detalhes do prazo: {e}")
-
-    # ===== AVISOS =====
-    if st.session_state.aviso:
-        st.toast(st.session_state.aviso)
-        st.session_state.aviso = None
-
     tab1, tab2, tab3, tab4, tab5, tab6, tab_filtros = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🔬 Perícias", "📅 Audiências", "🔍 Filtros Avançados"])
-
 
     with tab1:
         # ===== PASSO 1: CARDS COM CORES DINÂMICAS =====
@@ -4509,6 +5314,15 @@ def main() -> None:
 
         # ===== RENDERIZAR CARDS EM VEZ DE TABELA =====
         renderizar_cards_prazos(prazos_ativos, df_processos)
+
+    # ===== MODAL COM DETALHES COMPLETOS (FORA DO CONTEXTO DE ABAS) =====
+    if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
+        id_prazo = st.session_state.id_modal
+        prazo = df_prazos[df_prazos["id"] == id_prazo]
+
+        if not prazo.empty:
+            prazo = prazo.iloc[0]
+            modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
 
     with tab2:
         # ===== PASSO 5: FILTRO NA TAB 2 =====
