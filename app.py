@@ -1854,20 +1854,15 @@ def sidebar_novo_prazo(
     if titulo:
         st.caption(f"📌 Selecionado: **{titulo}**")
 
-    # ✨ NOVO: Campo Fase obrigatório ANTES do formulário
-    fase = None
-    if titulo and processo:
-        st.write("**Fase do Processo** \\*")
+    with st.form(f"cad_{v}"):
+        # ✨ NOVO: Campo Fase obrigatório DENTRO do formulário
         fase = st.selectbox(
-            "Selecione a fase",
+            "Fase do Processo *",
             options=FASES_PROCESSO,
             index=0,
-            label_visibility="collapsed",
             key=f"fase_{v}"
         )
-        st.caption(f"📌 Fase selecionada: **{fase}**")
 
-    with st.form(f"cad_{v}"):
         tipo = st.selectbox("Tipo *", TIPOS, index=0, key=f"t_{v}")
 
         responsavel = st.radio("Responsável *", RESPONSAVEIS, horizontal=True, key=f"r_{v}")
