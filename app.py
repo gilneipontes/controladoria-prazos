@@ -90,6 +90,7 @@ FERIADOS = np.array([
 
 COLUNAS_PRAZOS = [
     "id", "created_at", "tipo", "titulo", "processo", "cliente", "responsavel",
+    "fase",  # ✨ NOVO: Fase do processo
     "data_fatal", "data_interna", "prioridade", "descricao", "concluido", "concluido_em",
     "arquivado",
 ]
@@ -154,18 +155,49 @@ ATALHOS = {
 
 # Títulos usados só pelo "Colar Despacho" quando a peça não está na lista acima
 TITULOS_EXTRAS_DESPACHO = {
+    # Recursos Trabalhistas
+    "CONTR-REC-REVISTA": "Contrarrazões ao Recurso de Revista",
+    "CONTR-RO": "Contrarrazões ao Recurso Ordinário",
+    "CONTR-AGRAVO": "Contrarrazões ao Agravo",
+    "CONTR-EMB": "Contrarrazões aos Embargos",
+
+    # Processual
     "CONTR-AG": "Contraminuta de Agravo",
     "EMEND-INI": "Emenda à Petição Inicial",
     "ROL-TEST": "Rol de Testemunhas",
     "QUESITOS": "Quesitos para Perícia",
-    "MANIFEST-LAUDO": "Manifestação sobre Laudo",
+    "MANIF-LAUDO": "Manifestação sobre Laudo Pericial",
+
+    # Cálculos
     "IMP-CALC": "Impugnação aos Cálculos",
+    "CALC-LIQ": "Manifestação sobre Cálculos de Liquidação",
+
+    # Documentos e Bens
     "CONTR-DOC": "Manifestação sobre Documentos",
     "INDIC-BENS": "Indicação de Bens",
+
+    # Cumprimento e Execução
     "CUMP-SENT": "Cumprimento de Sentença",
-    "TERMO-AUD": "Data de Audiência",
-    "ALVARA": "Expedição de Alvará",
+    "IMP-CUMP": "Impugnação ao Cumprimento",
+    "REQUISICAO-RPV": "Requisição de Pequeno Valor (RPV)",
+
+    # Acordos
     "ACORDO": "Termo de Acordo",
+    "CONTR-ACORDO": "Contrarrazões ao Acordo",
+
+    # Razões e Memoriais
+    "RAZ-FIN": "Razões Finais (Memoriais)",
+    "CONTR-RAZ-FIN": "Contrarrazões às Razões Finais",
+
+    # Audiências
+    "TERMO-AUD": "Data de Audiência",
+    "CONTR-AUDIENCIA": "Manifestação sobre Audiência",
+
+    # Sentença
+    "SENTENCA": "Sentença",
+
+    # Genérico
+    "ALVARA": "Expedição de Alvará",
     "PED-SUSP": "Pedido de Suspensão",
     "PET-JUNT": "Petição de Juntada",
     "MANIF": "Manifestação",
@@ -431,6 +463,15 @@ def inserir_prazo(registro: dict) -> None:
 def inserir_processo(registro: dict) -> None:
     supabase().table(TABELA_PROCESSOS).insert(registro).execute()
     carregar_processos.clear()
+
+def atualizar_fase_processo(numero_processo: str, nova_fase: str) -> None:
+    """✨ NOVO: Atualiza a fase do processo quando um prazo é criado."""
+    try:
+        supabase().table(TABELA_PROCESSOS).update({"fase": nova_fase}).eq("numero", numero_processo).execute()
+        carregar_processos.clear()
+        print(f"✅ Fase do processo {numero_processo} atualizada para: {nova_fase}")
+    except Exception as e:
+        print(f"❌ Erro ao atualizar fase: {e}")
 
 def atualizar_campos(atualizacoes: dict[int, dict]) -> None:
     for id_prazo, campos in atualizacoes.items():
@@ -1813,6 +1854,19 @@ def sidebar_novo_prazo(
     if titulo:
         st.caption(f"📌 Selecionado: **{titulo}**")
 
+    # ✨ NOVO: Campo Fase obrigatório ANTES do formulário
+    fase = None
+    if titulo and processo:
+        st.write("**Fase do Processo** \\*")
+        fase = st.selectbox(
+            "Selecione a fase",
+            options=FASES_PROCESSO,
+            index=0,
+            label_visibility="collapsed",
+            key=f"fase_{v}"
+        )
+        st.caption(f"📌 Fase selecionada: **{fase}**")
+
     with st.form(f"cad_{v}"):
         tipo = st.selectbox("Tipo *", TIPOS, index=0, key=f"t_{v}")
 
@@ -1828,8 +1882,9 @@ def sidebar_novo_prazo(
         c1, c2 = st.columns(2)
         with c1:
             if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
-                if not processo or not data_fatal or not titulo:
-                    st.error("Preencha processo, data fatal e título!")
+                # ✨ NOVO: Validar fase obrigatória
+                if not processo or not data_fatal or not titulo or not fase:
+                    st.error("Preencha processo, data fatal, título e fase!")
                 elif data_interna and data_interna > data_fatal:
                     st.error("Prazo interno deve ser ≤ data fatal!")
                 else:
@@ -1846,18 +1901,24 @@ def sidebar_novo_prazo(
                         data_venc = prazo_existe.iloc[0]["data_fatal"].strftime("%d/%m/%Y")
                         st.error(f"⚠️ Este prazo já existe! Vencimento: {data_venc}")
                     else:
+                        # ✨ NOVO: Inserir prazo COM fase
                         inserir_prazo({
                             "tipo": tipo,
                             "titulo": titulo,
                             "processo": processo,
                             "cliente": cliente,
                             "responsavel": responsavel,
+                            "fase": fase,  # ✨ NOVO
                             "data_fatal": data_fatal.isoformat(),
                             "data_interna": data_interna.isoformat() if data_interna else None,
                             "prioridade": prioridade,
                             "descricao": observacoes or None,
                             "arquivado": False,
                         })
+
+                        # ✨ NOVO: Atualizar fase do processo
+                        atualizar_fase_processo(processo, fase)
+
                         st.session_state.form_v += 1
                         st.session_state.aviso = "✅ Prazo salvo com sucesso!"
                         st.rerun()
@@ -4768,30 +4829,56 @@ def janela_novo_processo() -> None:
 # ===== LEITURA DE DESPACHO (regras, sem IA e sem enviar o texto para fora) =====
 # Cada regra: (código do atalho, padrões procurados no texto sem acentos, prazo legal em dias úteis ou None)
 REGRAS_DESPACHO = [
-    ("CONTR-APEL", [r"contrarraz\w*.{0,80}apela", r"apela\w*.{0,120}contrarraz", r"intime-se o apelado"], 15),
-    ("CONTR-AG-INSTR", [r"contraminuta", r"contrarraz\w*.{0,80}agravo"], 15),
-    ("CONTR-RO", [r"contrarraz\w*.{0,80}recurso ordinario"], 8),
-    ("EMEND-INI", [r"emend\w*.{0,40}inicial"], 15),
+    # ===== DIREITO TRABALHISTA: RECURSOS =====
+    ("CONTR-REC-REVISTA", [r"contrarraz\w*.{0,80}revista", r"recurso de revista"], 15),  # TST
+    ("CONTR-RO", [r"contrarraz\w*.{0,80}ordinario", r"contra ordinaria"], 8),
+    ("CONTR-AGRAVO", [r"contrarraz\w*.{0,80}agravo", r"contra agravo"], 8),
+
+    # ===== DIREITO TRABALHISTA: EMBARGOS =====
+    ("EMB-DECL", [r"embargos de declarac", r"embargos declarator"], 5),
+    ("CONTR-EMB", [r"contrarraz\w*.{0,80}embargo", r"contra embargos"], 5),
+
+    # ===== DIREITO TRABALHISTA: PETIÇÕES INICIAIS =====
+    ("EMEND-INI", [r"(emend|complement)\w*.{0,40}inicial", r"emenda a inicial"], 15),
     ("REPLICA", [r"replica", r"(manifest|diga)\w*.{0,60}contestac", r"sobre a contestac"], 15),
+
+    # ===== DIREITO TRABALHISTA: PROVAS =====
     ("SPEC-PROV", [r"especific\w*.{0,40}provas", r"provas que pretende\w* produzir", r"provas a produzir"], None),
     ("ROL-TEST", [r"rol de testemunhas", r"arrol\w* testemunhas"], None),
     ("QUESITOS", [r"quesitos", r"assistente tecnico"], 15),
     ("MANIF-LAUDO", [r"(manifest|diga)\w*.{0,60}laudo", r"sobre o laudo", r"laudo pericial"], 15),
-    ("IMP-CALC-879", [r"impugn\w*.{0,40}calculo"], None),
-    ("CALC-LIQ", [r"(manifest|diga)\w*.{0,60}calculo", r"sobre os calculos", r"calculos apresentados"], None),
+
+    # ===== DIREITO TRABALHISTA: CÁLCULOS =====
+    ("CALC-LIQ", [r"(manifest|diga)\w*.{0,60}calculo", r"sobre os calculos", r"calculos apresentados", r"calculo liquido"], None),
+    ("IMP-CALC", [r"impugn\w*.{0,40}calculo", r"impugnar calculo"], None),
+
+    # ===== DIREITO TRABALHISTA: CUMPRIMENTO =====
+    ("CUMP-SENT", [r"cumprimento de sentenca", r"cumprimento da sentenca", r"execuc\w* da sentenca"], None),
+    ("IMP-CUMP", [r"impugn\w*.{0,40}cumprimento", r"impugn\w*.{0,40}execuc"], 15),
+    ("REQUISICAO-RPV", [r"requisic\w*.{0,30}pequeno valor", r"rpv", r"requisicao de rpv"], None),
+
+    # ===== DIREITO TRABALHISTA: ACORDOS =====
+    ("ACORDO", [r"acordo", r"concilia\w*", r"homologa\w* acordo"], None),
+    ("CONTR-ACORDO", [r"contrarraz\w*.{0,60}acordo", r"contra acordo"], 5),
+
+    # ===== DIREITO TRABALHISTA: RAZÕES FINAIS =====
+    ("RAZ-FIN", [r"memoriais", r"alegacoes finais", r"razoes finais"], 15),
+    ("CONTR-RAZ-FIN", [r"contrarraz\w*.{0,80}memorial", r"contrarraz\w*.{0,80}final"], 15),
+
+    # ===== DIREITO TRABALHISTA: DOCUMENTOS =====
     ("CONTR-DOC", [r"(manifest|diga)\w*.{0,60}documentos", r"sobre os documentos", r"documentos juntados"], None),
-    ("RAZ-FIN", [r"memoriais", r"alegacoes finais"], 15),
-    ("RAZ-FIN", [r"razoes finais"], None),
+    ("PET-JUNT", [r"\bjunt(e|em|ar|ando)\b", r"\bcomprov(e|em|ar)\b", r"traga\w* aos autos", r"apresent\w* (o |os )?documento"], None),
+
+    # ===== DIREITO TRABALHISTA: AUDIÊNCIAS =====
+    ("TERMO-AUD", [r"audiencia.{0,80}(designo|designada|marcada|para o dia|redesign|adiada)", r"designo audiencia", r"intimacao para audiencia"], None),
+    ("CONTR-AUDIENCIA", [r"(manifest|diga)\w*.{0,60}audiencia", r"sobre audiencia"], None),
+
+    # ===== DIREITO TRABALHISTA: SENTENÇAS =====
+    ("SENTENCA", [r"sentenca.{0,200}(publica|registra|extingo|julgo)", r"julgo (procedente|improcedente|parcial)", r"extingo o processo"], 15),
+
+    # ===== GENÉRICO =====
     ("INDIC-BENS", [r"indi\w*.{0,30}bens", r"bens (passiveis de|a) penhora"], None),
-    ("IMP-CUMP", [r"impugn\w*.{0,40}cumprimento", r"art\.? ?525"], 15),
-    ("CUMP-SENT", [r"cumprimento de sentenca", r"art\.? ?523"], None),
-    ("APELAÇÃO", [r"julgo (procedente|improcedente|parcialmente)", r"\bsentenca\b.{0,200}(publique-se|registre-se)", r"extingo o (processo|feito)"], 15),
-    ("EMB-DECL", [r"embargos de declarac", r"julgo (procedente|improcedente|parcialmente)"], 5),
-    ("TERMO-AUD", [r"audiencia.{0,80}(designo|designada|marcada|para o dia|redesign)", r"designo audiencia"], None),
-    ("ALVARA", [r"alvara"], None),
-    ("ACORDO", [r"acordo", r"conciliac"], None),
     ("PED-SUSP", [r"suspens\w* (do|o) (processo|feito)"], None),
-    ("PET-JUNT", [r"\bjunt(e|em|ar|ando)\b", r"\bcomprov(e|em|ar)\b", r"traga\w* aos autos", r"apresent\w* (o |os )?documento", r"recolh\w*.{0,40}(custas|despesa|preparo|condução|conducao|guia)"], None),
     ("MANIF", [r"manifeste-se", r"manifestem-se", r"\bdiga\b", r"\bdigam\b", r"para (que )?(se )?manifest", r"vista (a|as) parte", r"\binform(e|em|ar)\b", r"intime\w*.{0,60}para"], None),
 ]
 
@@ -4824,7 +4911,9 @@ def interpretar_despacho(texto: str, processos_df: pd.DataFrame) -> dict:
     """
     Lê o despacho e devolve:
     - processo: número encontrado no texto e cadastrado no app (ou None)
-    - sugestoes: lista de possíveis prazos, na ordem em que aparecem no texto
+    - sugestoes: lista de possíveis prazos, ordenados por relevância
+      * Prazos do CLIENTE primeiro (análise prioritária)
+      * Prazos da PARTE CONTRÁRIA depois (claramente indicados)
     """
     texto_norm = remover_acentos(texto)
     frases = _frases(texto)
@@ -4868,21 +4957,47 @@ def interpretar_despacho(texto: str, processos_df: pd.DataFrame) -> dict:
         else:
             prazo_txt = "5 dias úteis se não houver prazo expresso (art. 218, § 3º, CPC — conferir)"
 
+        # ✨ NOVO: Detectar se é prazo da PARTE CONTRÁRIA
+        é_parte_contraria = codigo.startswith("CONTR-")
+
+        # ✨ NOVO: Adicionar indicador visual e contexto
+        titulo_display = ATALHOS.get(codigo) or TITULOS_EXTRAS_DESPACHO.get(codigo, codigo)
+        if é_parte_contraria:
+            titulo_display = f"⚖️ PARTE CONTRÁRIA: {titulo_display}"
+        else:
+            titulo_display = f"📋 NOSSO PRAZO: {titulo_display}"
+
         sugestoes.append({
             "codigo": codigo,
-            "titulo": ATALHOS.get(codigo) or TITULOS_EXTRAS_DESPACHO.get(codigo, codigo),
+            "titulo": titulo_display,
             "prazo": prazo_txt,
             "trecho": trecho,
             "posicao": posicao,
+            "é_parte_contraria": é_parte_contraria,  # ✨ NOVO: Flag para ordenação
         })
 
-    # Mais específicos primeiro (na ordem do texto); "Manifestação" genérica sempre por último
-    sugestoes.sort(key=lambda x: (x["codigo"] == "MANIF", x["posicao"]))
+    # ✨ NOVO: ORDENAR PARA PRIORIZAR CLIENTE
+    # 1. Prazos nossos (cliente) primeiro, mais específicos e na ordem do texto
+    # 2. Depois prazos da parte contrária
+    # 3. "Manifestação" genérica sempre por último
+    sugestoes.sort(key=lambda x: (
+        x["é_parte_contraria"],  # False (nossos) vem antes de True (contrária)
+        x["codigo"] == "MANIF",   # Manifestação genérica sempre por último
+        x["posicao"]              # Ordem de aparição no texto
+    ))
 
     return {"processo": processo, "sugestoes": sugestoes}
 
 def _observacao_sugerida(sugestao: dict) -> str:
+    """Gera observação sugerida com contexto adicional para prazos da parte contrária."""
     linhas = [f"⏱️ Prazo: {sugestao['prazo']}"]
+
+    # ✨ NOVO: Adicionar contexto quando é parte contrária
+    if sugestao.get("é_parte_contraria"):
+        linhas.append("⚖️ **Prazo da PARTE CONTRÁRIA** — apenas para acompanhamento")
+    else:
+        linhas.append("✅ **Nosso prazo** — ação esperada")
+
     if sugestao["trecho"]:
         linhas.append(f"📄 Despacho: {sugestao['trecho']}")
     return "\n".join(linhas)
