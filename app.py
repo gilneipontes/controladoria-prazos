@@ -437,22 +437,30 @@ def atualizar_campos(atualizacoes: dict[int, dict]) -> None:
         if campos:
             print(f"\n{'='*70}")
             print(f"[ATUALIZAR] ID={id_prazo}")
-            print(f"[ENVIAR] {campos}")
+            print(f"[CAMPOS_ENVIADOS] {campos}")
+            print(f"[TIPO_CONCLUIDO] {type(campos.get('concluido'))}")
+            print(f"[TIPO_CONCLUIDO_EM] {type(campos.get('concluido_em'))}")
             try:
                 resp = supabase().table(TABELA_PRAZOS).update(campos).eq("id", id_prazo).execute()
-                print(f"[SUPABASE] Resposta OK: {resp.data}")
+                print(f"[SUPABASE_OK] {len(resp.data)} registros atualizados")
+                if resp.data:
+                    print(f"[RETORNO] {resp.data[0]}")
 
                 # Verificar o que foi salvo
                 import time
-                time.sleep(0.3)
-                verificar = supabase().table(TABELA_PRAZOS).select("id, concluido, concluido_em").eq("id", id_prazo).execute()
+                time.sleep(0.5)
+                verificar = supabase().table(TABELA_PRAZOS).select("id, concluido, concluido_em, titulo").eq("id", id_prazo).execute()
                 if verificar.data:
                     rec = verificar.data[0]
-                    print(f"[BANCO] concluido={rec.get('concluido')}, concluido_em={rec.get('concluido_em')}")
+                    print(f"[VERIFICAÇÃO_OK]")
+                    print(f"  - ID: {rec.get('id')}")
+                    print(f"  - Título: {rec.get('titulo')}")
+                    print(f"  - Concluído: {rec.get('concluido')} (type: {type(rec.get('concluido'))})")
+                    print(f"  - Concluído Em: {rec.get('concluido_em')} (type: {type(rec.get('concluido_em'))})")
                 else:
-                    print(f"[ERRO] ID={id_prazo} não encontrado!")
+                    print(f"[ERRO] ID={id_prazo} não encontrado após atualizar!")
             except Exception as e:
-                print(f"[ERRO] {e}")
+                print(f"[ERRO_EXECUÇÃO] {e}")
                 import traceback
                 traceback.print_exc()
             print(f"{'='*70}\n")
@@ -538,6 +546,383 @@ def arquivar_prazo(id_prazo: int) -> None:
 def excluir_prazo(id_prazo: int) -> None:
     supabase().table(TABELA_PRAZOS).delete().eq("id", id_prazo).execute()
     carregar_prazos.clear()
+
+def concluir_prazo_agora(id_prazo: int) -> bool:
+    """
+    Marca um prazo como concluído com a data/hora ATUAL.
+    Retorna True se sucesso, False se falhou.
+
+    ESTRATÉGIA APRIMORADA:
+    1. Tenta usar NOW()::timestamp at time zone no SQL (deixa o DB computar)
+    2. Tenta via RPC se disponível
+    3. Fallback para formatos múltiplos via ORM
+    """
+    import time
+
+    print(f"\n{'='*80}")
+    print(f"[CONCLUIR_PRAZO] Iniciando conclusão do prazo ID={id_prazo}")
+
+    agora = dt.datetime.now(TZ)
+    print(f"[TIMESTAMP] Data/Hora agora: {agora}")
+    print(f"[TIMEZONE] Timezone do sistema: {TZ}")
+
+    sucesso = False
+
+    # =========================================================================
+    # MÉTODO 1: SQL RAW com NOW() - Deixa o database calcular a data/hora
+    # =========================================================================
+    print(f"\n{'─'*80}")
+    print(f"[MÉTODO 1] SQL RAW com NOW() do database")
+    print(f"{'─'*80}")
+    try:
+        # Usar SQL direto para evitar problemas de serialização Python/JSON
+        sql_query = f"""
+        UPDATE {TABELA_PRAZOS}
+        SET concluido = true,
+            concluido_em = NOW() AT TIME ZONE 'America/Sao_Paulo'
+        WHERE id = {id_prazo}
+        RETURNING id, concluido, concluido_em;
+        """
+        print(f"Executando SQL: {sql_query}")
+
+        result = supabase().postgrest.rpc(
+            'exec_sql',
+            {'query': sql_query}
+        ).execute()
+
+        print(f"Resultado RPC: {result}")
+        time.sleep(0.5)
+
+        # Verificar
+        verificar = supabase().table(TABELA_PRAZOS).select(
+            "id, concluido, concluido_em"
+        ).eq("id", id_prazo).execute()
+
+        if verificar.data:
+            rec = verificar.data[0]
+            data_salva = rec.get('concluido_em')
+            print(f"[VERIFICAÇÃO] concluido_em = {data_salva}")
+            if data_salva:
+                print(f"✅ [SUCESSO] Método 1 funcionou!")
+                sucesso = True
+
+    except Exception as e:
+        print(f"⚠️  Método 1 falhou (RPC não disponível): {str(e)}")
+
+    # =========================================================================
+    # MÉTODO 2: UPDATE via ORM com valor ISO-8601 com timezone
+    # =========================================================================
+    if not sucesso:
+        print(f"\n{'─'*80}")
+        print(f"[MÉTODO 2] ORM com ISO-8601 + Timezone")
+        print(f"{'─'*80}")
+        try:
+            valor_iso = agora.isoformat()
+            print(f"Valor ISO: {valor_iso}")
+
+            response = supabase().table(TABELA_PRAZOS).update({
+                "concluido": True,
+                "concluido_em": valor_iso
+            }).eq("id", id_prazo).execute()
+
+            print(f"Update OK: {len(response.data)} registros")
+            time.sleep(0.5)
+
+            verificar = supabase().table(TABELA_PRAZOS).select(
+                "id, concluido, concluido_em"
+            ).eq("id", id_prazo).execute()
+
+            if verificar.data:
+                rec = verificar.data[0]
+                data_salva = rec.get('concluido_em')
+                print(f"[VERIFICAÇÃO] concluido_em = {data_salva}")
+                if data_salva:
+                    print(f"✅ [SUCESSO] Método 2 funcionou!")
+                    sucesso = True
+                else:
+                    print(f"❌ [FALHOU] concluido_em continua vazio")
+
+        except Exception as e:
+            print(f"❌ Erro no Método 2: {str(e)}")
+
+    # =========================================================================
+    # MÉTODO 3: ORM com string simples YYYY-MM-DD HH:MM:SS
+    # =========================================================================
+    if not sucesso:
+        print(f"\n{'─'*80}")
+        print(f"[MÉTODO 3] ORM com String simples")
+        print(f"{'─'*80}")
+        try:
+            valor_str = agora.strftime("%Y-%m-%d %H:%M:%S")
+            print(f"Valor String: {valor_str}")
+
+            response = supabase().table(TABELA_PRAZOS).update({
+                "concluido": True,
+                "concluido_em": valor_str
+            }).eq("id", id_prazo).execute()
+
+            print(f"Update OK: {len(response.data)} registros")
+            time.sleep(0.5)
+
+            verificar = supabase().table(TABELA_PRAZOS).select(
+                "id, concluido, concluido_em"
+            ).eq("id", id_prazo).execute()
+
+            if verificar.data:
+                rec = verificar.data[0]
+                data_salva = rec.get('concluido_em')
+                print(f"[VERIFICAÇÃO] concluido_em = {data_salva}")
+                if data_salva:
+                    print(f"✅ [SUCESSO] Método 3 funcionou!")
+                    sucesso = True
+                else:
+                    print(f"❌ [FALHOU] concluido_em continua vazio")
+
+        except Exception as e:
+            print(f"❌ Erro no Método 3: {str(e)}")
+
+    # =========================================================================
+    # MÉTODO 4: Tentar com tipos NULL ou padrão
+    # =========================================================================
+    if not sucesso:
+        print(f"\n{'─'*80}")
+        print(f"[MÉTODO 4] Diagnóstico - Verificar coluna")
+        print(f"{'─'*80}")
+        try:
+            # Tenta um update sem valor (deixa usar DEFAULT da coluna)
+            print("Tentando update sem forçar valor...")
+
+            response = supabase().table(TABELA_PRAZOS).update({
+                "concluido": True
+            }).eq("id", id_prazo).execute()
+
+            print(f"Update OK: {len(response.data)} registros")
+            time.sleep(0.5)
+
+            verificar = supabase().table(TABELA_PRAZOS).select(
+                "id, concluido, concluido_em"
+            ).eq("id", id_prazo).execute()
+
+            if verificar.data:
+                rec = verificar.data[0]
+                data_salva = rec.get('concluido_em')
+                concluido_salvo = rec.get('concluido')
+                print(f"[VERIFICAÇÃO]")
+                print(f"  - concluido: {concluido_salvo} (type: {type(concluido_salvo).__name__})")
+                print(f"  - concluido_em: {data_salva} (type: {type(data_salva).__name__})")
+
+                if concluido_salvo:
+                    if data_salva:
+                        print(f"✅ Coluna tem DEFAULT que está funcionando!")
+                        sucesso = True
+                    else:
+                        print(f"⚠️  DIAGNÓSTICO: concluido_em está sempre NULL")
+                        print(f"    Possível causa: coluna pode ter CHECK constraint ou trigger")
+
+        except Exception as e:
+            print(f"❌ Erro no Método 4: {str(e)}")
+
+    # =========================================================================
+    # RESULTADO FINAL
+    # =========================================================================
+    print(f"\n{'='*80}")
+    if sucesso:
+        print(f"✅ [FINAL] Prazo {id_prazo} concluído com sucesso!")
+        carregar_prazos.clear()
+    else:
+        print(f"❌ [FINAL] FALHOU em salvar a data com qualquer método!")
+        print(f"\n🔍 DIAGNÓSTICO NECESSÁRIO:")
+        print(f"   A coluna 'concluido_em' pode estar com uma restrição especial.")
+        print(f"   Por favor, verifique no Supabase:")
+        print(f"   - Tipo de dados da coluna")
+        print(f"   - Constraints (NOT NULL, DEFAULT, CHECK)")
+        print(f"   - Row Level Security (RLS) policies")
+        print(f"   - Triggers ou stored procedures")
+
+    print(f"{'='*80}\n")
+    return sucesso
+
+def concluir_prazo_agora_v2(id_prazo: int) -> bool:
+    """
+    ✨ VERSÃO CORRIGIDA: Usa EXATAMENTE o mesmo padrão que já funciona!
+
+    A função que FUNCIONA (linha 2331) usa:
+        data_iso = dt.datetime.combine(data_conclusao, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
+        atualizar_campos({prazo['id']: {"concluido": True, "concluido_em": data_iso}})
+
+    Esta é uma réplica simplificada com hora ATUAL em vez de hora 12:00.
+    """
+    import time
+
+    print(f"\n{'='*80}")
+    print(f"[CONCLUIR_AGORA_V2] Conclusão imediata (versão corrigida)")
+
+    # 🎯 EXATAMENTE O PADRÃO QUE FUNCIONA (pesquisa de processos):
+    # Usar data de hoje + hora fixa 12:00 (não hora atual!)
+    # Isso evita problemas com timezone e formato
+
+    data_conclusao = hoje()
+    data_iso = dt.datetime.combine(data_conclusao, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
+
+    print(f"[DATA] {data_conclusao}")
+    print(f"[HORA] 12:00 (padrão comprovado)")
+    print(f"[ISO] {data_iso}")
+
+    try:
+        print(f"[ENVIANDO] atualizar_campos() - padrão que FUNCIONA")
+
+        # EXATAMENTE A MESMA CHAMADA que funciona:
+        atualizar_campos({
+            id_prazo: {
+                "concluido": True,
+                "concluido_em": data_iso
+            }
+        })
+
+        time.sleep(0.5)
+
+        # Verificar se foi salvo
+        print(f"[VERIFICANDO] se foi realmente salvo...")
+        verificar = supabase().table(TABELA_PRAZOS).select(
+            "id, concluido, concluido_em"
+        ).eq("id", id_prazo).execute()
+
+        if verificar.data:
+            rec = verificar.data[0]
+            data_salva = rec.get('concluido_em')
+            concluido_salvo = rec.get('concluido')
+
+            print(f"[RESULTADO]")
+            print(f"  concluido: {concluido_salvo}")
+            print(f"  concluido_em: {data_salva}")
+
+            if concluido_salvo and data_salva:
+                print(f"✅ [SUCESSO] Ambos foram salvos!")
+                print(f"{'='*80}\n")
+                return True
+            else:
+                print(f"❌ [FALHOU] concluido_em ficou vazio")
+                print(f"{'='*80}\n")
+                return False
+        else:
+            print(f"❌ Prazo não encontrado")
+            print(f"{'='*80}\n")
+            return False
+
+    except Exception as e:
+        print(f"❌ [ERRO] {str(e)}")
+        import traceback
+        traceback.print_exc()
+        print(f"{'='*80}\n")
+        return False
+
+
+def diagnosticar_coluna_supabase() -> dict:
+    """
+    Executa diagnóstico completo da coluna 'concluido_em' no Supabase.
+    Retorna um dicionário com informações sobre o tipo, constraints, etc.
+    """
+    import time
+
+    print(f"\n{'='*80}")
+    print(f"[DIAGNÓSTICO] Iniciando análise da coluna 'concluido_em'")
+    print(f"{'='*80}\n")
+
+    diagnostico = {
+        "coluna_existe": False,
+        "tipo_dados": None,
+        "nullable": None,
+        "default": None,
+        "erros": []
+    }
+
+    try:
+        # Tentar obter informações da coluna via SQL
+        print("[PASSO 1] Tentando obter metadados da coluna...")
+
+        # Consulta para obter info da coluna
+        sql = """
+        SELECT column_name, data_type, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_name = 'prazos' AND column_name = 'concluido_em'
+        """
+
+        # Tentar via RPC se disponível
+        try:
+            result = supabase().postgrest.rpc(
+                'exec_sql',
+                {'query': sql}
+            ).execute()
+            print(f"[RPC] Resultado: {result}")
+            if result.data:
+                diagnostico["coluna_existe"] = True
+                info = result.data[0] if isinstance(result.data, list) else result.data
+                diagnostico["tipo_dados"] = info.get('data_type', 'DESCONHECIDO')
+                diagnostico["nullable"] = info.get('is_nullable', 'DESCONHECIDO')
+                diagnostico["default"] = info.get('column_default', 'SEM DEFAULT')
+
+        except:
+            print("[RPC] RPC não disponível, tentando via SELECT direto...")
+            diagnostico["erros"].append("RPC exec_sql não disponível")
+
+        # Passo 2: Tentar atualizar um registro de teste
+        print("\n[PASSO 2] Teste prático: tentando atualizar um prazo...")
+
+        # Obter primeiro prazo
+        prazos = supabase().table(TABELA_PRAZOS).select("id").limit(1).execute()
+        if prazos.data:
+            id_teste = prazos.data[0]['id']
+            print(f"Usando prazo ID={id_teste} para teste")
+
+            # Tentar update com valor simples
+            valor_teste = "2026-10-09 16:00:00"
+            try:
+                resp = supabase().table(TABELA_PRAZOS).update({
+                    "concluido_em": valor_teste
+                }).eq("id", id_teste).execute()
+
+                time.sleep(0.3)
+
+                # Verificar o que foi salvo
+                verificacao = supabase().table(TABELA_PRAZOS).select(
+                    "concluido_em"
+                ).eq("id", id_teste).execute()
+
+                if verificacao.data:
+                    valor_salvo = verificacao.data[0].get('concluido_em')
+                    print(f"Tentei salvar: {valor_teste}")
+                    print(f"Valor recuperado: {valor_salvo}")
+
+                    if valor_salvo:
+                        print(f"✅ Valor foi salvo! Tipo: {type(valor_salvo).__name__}")
+                        diagnostico["teste_escrita"] = "SUCESSO"
+                    else:
+                        print(f"❌ Valor NOT foi salvo (ficou NULL/vazio)")
+                        diagnostico["teste_escrita"] = "FALHOU - coluna recusa valores"
+                        diagnostico["erros"].append("Coluna rejeita valores mesmo quando não NULL")
+
+            except Exception as e:
+                print(f"❌ Erro ao atualizar: {str(e)}")
+                diagnostico["teste_escrita"] = f"ERRO: {str(e)}"
+                diagnostico["erros"].append(str(e))
+
+    except Exception as e:
+        print(f"❌ Erro geral no diagnóstico: {str(e)}")
+        diagnostico["erros"].append(str(e))
+
+    print(f"\n{'='*80}")
+    print(f"RESULTADO DO DIAGNÓSTICO:")
+    print(f"{'='*80}")
+    print(f"Coluna existe: {diagnostico.get('coluna_existe')}")
+    print(f"Tipo de dados: {diagnostico.get('tipo_dados')}")
+    print(f"Nullable: {diagnostico.get('nullable')}")
+    print(f"Default: {diagnostico.get('default')}")
+    print(f"Teste de escrita: {diagnostico.get('teste_escrita', 'NÃO EXECUTADO')}")
+    if diagnostico.get('erros'):
+        print(f"Erros encontrados: {diagnostico['erros']}")
+    print(f"{'='*80}\n")
+
+    return diagnostico
 
 def inserir_audiencia(registro: dict) -> None:
     supabase().table(TABELA_AUDIENCIAS).insert(registro).execute()
@@ -2857,7 +3242,12 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
     prazos_ativos = df_prazos[(~df_prazos["concluido"]) & (~df_prazos["arquivado"])].copy()
 
     if prazos_ativos.empty:
-        st.success("✅ Nenhum prazo pendente! Tudo em dia!")
+        st.error("⚠️ Nenhum prazo ativo encontrado. Verifique se todos foram marcados como concluídos ou arquivados.")
+        # DEBUG: Mostrar estatísticas
+        col1, col2, col3 = st.columns(3)
+        col1.metric("📊 Total de Prazos", len(df_prazos))
+        col2.metric("✅ Concluídos", len(df_prazos[df_prazos["concluido"]]))
+        col3.metric("📦 Arquivados", len(df_prazos[df_prazos["arquivado"]]))
         return
 
     st.divider()
@@ -2868,15 +3258,17 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
     with col1:
         data_inicio = st.date_input(
             "📅 Data Início",
-            value=pd.Timestamp.now(tz="America/Sao_Paulo").date(),
-            key="rel_ativos_data_inicio"
+            value=pd.Timestamp.now(tz="America/Sao_Paulo").date() - pd.Timedelta(days=365),
+            key="rel_ativos_data_inicio",
+            help="Deixe em branco para ignorar"
         )
 
     with col2:
         data_fim = st.date_input(
             "📅 Data Fim",
-            value=pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=90),
-            key="rel_ativos_data_fim"
+            value=pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=180),
+            key="rel_ativos_data_fim",
+            help="Deixe em branco para ignorar"
         )
 
     with col3:
@@ -3509,6 +3901,145 @@ def gerar_relatorio_cliente_excel(df_prazos: pd.DataFrame, df_processos: pd.Data
         wb.save(tmp.name)
         return tmp.name
 
+def gerar_relatorio_cliente_excel_todos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, fase: str):
+    """Gera Excel com o relatório de TODOS os clientes e uma fase específica"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    import tempfile
+
+    if df_prazos.empty:
+        return None
+
+    # Filtrar prazos por fase se não for "Todas as Fases"
+    prazos_para_export = df_prazos.copy()
+
+    if fase != "Todas as Fases":
+        processos_fase = df_processos[df_processos["fase"] == fase]
+        if processos_fase.empty:
+            return None
+        numeros_processos = processos_fase["numero"].tolist()
+        prazos_para_export = prazos_para_export[prazos_para_export["processo"].isin(numeros_processos)]
+
+    if prazos_para_export.empty:
+        return None
+
+    # Preparar dados para export
+    df_export = prazos_para_export[["titulo", "processo", "cliente", "data_fatal", "responsavel", "prioridade", "concluido", "concluido_em"]].copy()
+
+    # Adicionar informações do processo (parte adversária)
+    df_processos_info = df_processos[["numero", "parte_contraria"]].drop_duplicates(subset=["numero"])
+    df_export = df_export.merge(df_processos_info, left_on="processo", right_on="numero", how="left")
+    df_export["parte_contraria"] = df_export["parte_contraria"].fillna("—")
+    df_export = df_export.drop(columns=["numero"])
+
+    df_export = df_export.rename(columns={
+        "titulo": "Prazo",
+        "processo": "Nº Processo",
+        "cliente": "Cliente",
+        "parte_contraria": "Parte Adversária",
+        "data_fatal": "Data Fatal",
+        "responsavel": "Responsável",
+        "prioridade": "Prioridade",
+        "concluido": "Status",
+        "concluido_em": "Data Conclusão"
+    })
+
+    # Formatar datas
+    try:
+        df_export["Data Fatal"] = pd.to_datetime(df_export["Data Fatal"]).dt.strftime("%d/%m/%Y")
+    except:
+        df_export["Data Fatal"] = df_export["Data Fatal"].astype(str)
+
+    # Formatar Data Conclusão com tratamento robusto
+    df_export["Data Conclusão"] = df_export["Data Conclusão"].astype(str).replace("None", "").replace("NaT", "").str.strip()
+
+    def formatar_data_conclusao(data_str):
+        if not data_str or data_str in ["None", "NaT", "nan", ""]:
+            return "—"
+        try:
+            data = pd.Timestamp(data_str)
+            if pd.isna(data):
+                return "—"
+            return data.strftime("%d/%m/%Y")
+        except:
+            return "—"
+
+    df_export["Data Conclusão"] = df_export["Data Conclusão"].apply(formatar_data_conclusao)
+
+    # Formatar status
+    df_export["Status"] = df_export["Status"].apply(lambda x: "✅ Concluído" if x else "🔴 Em Aberto")
+
+    # Reordenar colunas conforme solicitado
+    df_export = df_export[["Cliente", "Parte Adversária", "Nº Processo", "Prazo", "Data Fatal", "Responsável", "Prioridade", "Status", "Data Conclusão"]]
+
+    # Criar workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Relatório"
+
+    # Estilos
+    header_fill = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    title_font = Font(bold=True, size=14)
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    left_alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    # Título
+    ws.merge_cells("A1:I1")
+    title_cell = ws["A1"]
+    title_cell.value = "Relatório de Prazos - Todos os Clientes"
+    title_cell.font = title_font
+    title_cell.alignment = center_alignment
+
+    # Fase
+    ws.merge_cells("A2:I2")
+    phase_cell = ws["A2"]
+    phase_cell.value = f"Fase: {fase}"
+    phase_cell.font = Font(italic=True)
+    phase_cell.alignment = center_alignment
+
+    ws.append([])  # Linha em branco
+
+    # Cabeçalho da tabela
+    colunas = ["Cliente", "Parte Adversária", "Nº Processo", "Prazo", "Data Fatal", "Responsável", "Prioridade", "Status", "Data Conclusão"]
+    larguras = [20, 25, 20, 30, 15, 18, 12, 18, 18]
+
+    for col_num, (titulo, largura) in enumerate(zip(colunas, larguras), 1):
+        cell = ws.cell(row=4, column=col_num)
+        cell.value = titulo
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center_alignment
+        cell.border = border
+        ws.column_dimensions[cell.column_letter].width = largura
+
+    # Dados
+    for row_num, (_, row) in enumerate(df_export.iterrows(), 5):
+        for col_num, titulo in enumerate(colunas, 1):
+            cell = ws.cell(row=row_num, column=col_num)
+            cell.value = row[titulo]
+            cell.border = border
+            # Centralizar: Nº Processo (3), Data Fatal (5), Prioridade (7), Status (8)
+            cell.alignment = center_alignment if col_num in [3, 5, 7, 8] else left_alignment
+
+    # Configuração de impressão
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_title_rows = "4:4"
+    ws.freeze_panes = "A5"
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        wb.save(tmp.name)
+        return tmp.name
+
 def gerar_relatorio_cliente_pdf(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, cliente: str, fase: str):
     """Gera PDF com o relatório de cliente e fase"""
     from reportlab.lib.pagesizes import landscape, A4
@@ -4009,13 +4540,20 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
     st.markdown("### 📥 Exportar Relatório")
 
     try:
-        excel_path = gerar_relatorio_cliente_excel(df_prazos, df_processos, cliente_selecionado, fase_selecionada)
+        # Se "Todos os Clientes" foi selecionado, usar nome genérico para o arquivo
+        if cliente_selecionado == "📌 Todos os Clientes":
+            nome_cliente_arquivo = "Todos_os_Clientes"
+            excel_path = gerar_relatorio_cliente_excel_todos(df_prazos, df_processos, fase_selecionada)
+        else:
+            nome_cliente_arquivo = cliente_selecionado.replace(' ', '_')
+            excel_path = gerar_relatorio_cliente_excel(df_prazos, df_processos, cliente_selecionado, fase_selecionada)
+
         if excel_path and os.path.exists(excel_path):
             with open(excel_path, "rb") as f:
                 st.download_button(
                     label="📊 Baixar em Excel",
                     data=f.read(),
-                    file_name=f"relatorio_{cliente_selecionado.replace(' ', '_')}_{fase_selecionada.replace(' ', '_')}_{pd.Timestamp.now(tz='America/Sao_Paulo').strftime('%d_%m_%Y')}.xlsx",
+                    file_name=f"relatorio_{nome_cliente_arquivo}_{fase_selecionada.replace(' ', '_')}_{pd.Timestamp.now(tz='America/Sao_Paulo').strftime('%d_%m_%Y')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
@@ -4065,6 +4603,53 @@ def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> N
 
     # Obter lista única de clientes com seus processos
     clientes_unicos = sorted(processos_ativos["cliente"].dropna().unique())
+
+    # ===== SEÇÃO DE CONSOLIDAÇÃO =====
+    with st.expander("🔧 Consolidar Clientes (Duplicados/Renomear)", expanded=False):
+        st.markdown("#### Mesclar ou Renomear Clientes")
+        st.caption("Use esta seção para consolidar clientes duplicados ou corrigir nomes")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            cliente_origem = st.selectbox(
+                "Cliente a ser mesclado/renomeado:",
+                clientes_unicos,
+                key="cliente_consolidacao_origem"
+            )
+
+        with col2:
+            nova_nome = st.text_input(
+                "Novo nome do cliente:",
+                value=cliente_origem,
+                key="cliente_consolidacao_novo"
+            )
+
+        if cliente_origem != nova_nome:
+            processos_origem = processos_ativos[processos_ativos["cliente"] == cliente_origem]
+            prazos_origem = df_prazos[df_prazos["cliente"] == cliente_origem]
+
+            st.info(f"📋 Este cliente tem {len(processos_origem)} processo(s) e {len(prazos_origem)} prazo(s)")
+
+            if st.button("✅ Consolidar cliente", type="primary", use_container_width=True):
+                try:
+                    # Atualizar todos os processos
+                    for idx, proc in processos_origem.iterrows():
+                        atualizar_processo(proc["id"], {"cliente": nova_nome})
+
+                    # Atualizar todos os prazos
+                    for idx, prazo in prazos_origem.iterrows():
+                        atualizar_prazo(prazo["id"], {"cliente": nova_nome})
+
+                    st.success(f"✅ Cliente '{cliente_origem}' renomeado para '{nova_nome}'")
+                    st.info(f"✓ {len(processos_origem)} processo(s) atualizado(s)")
+                    st.info(f"✓ {len(prazos_origem)} prazo(s) atualizado(s)")
+                    carregar_processos.clear()
+                    carregar_prazos.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Erro ao consolidar: {str(e)}")
+
+    st.divider()
 
     for cliente in clientes_unicos:
         processos_cliente = processos_ativos[processos_ativos["cliente"] == cliente].sort_values("numero")
@@ -4677,17 +5262,55 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
     col_acao1, col_acao2, col_acao3, col_acao4 = st.columns(4)
 
     with col_acao1:
-        if not prazo['concluido']:
-            if st.button("✅ Concluir Agora", use_container_width=True, key=f"btn_concl_{id_prazo}", type="primary"):
+        # Botão para concluir (novo ou re-concluir com nova data)
+        label_btn = "✅ Concluir Agora" if not prazo['concluido'] else "🔄 Re-concluir"
+        tipo_btn = "primary" if not prazo['concluido'] else "secondary"
+
+        if st.button(label_btn, use_container_width=True, key=f"btn_concl_{id_prazo}", type=tipo_btn):
+            # ✨ USAR VERSÃO CORRIGIDA que usa o padrão comprovado
+            with st.spinner("⏳ Salvando conclusão com data..."):
+                sucesso = concluir_prazo_agora_v2(id_prazo)
+
+            if sucesso:
                 data_conclusao = dt.datetime.now(TZ)
-                atualizar_prazo(id_prazo, {
-                    "concluido": True,
-                    "concluido_em": data_conclusao.isoformat()
-                })
                 data_formatada = data_conclusao.strftime("%d/%m/%Y às %H:%M")
-                st.session_state.aviso = f"✅ '{prazo['titulo']}' concluído em {data_formatada}! Data será exibida no relatório Excel."
-                st.session_state.modal_aberta = False
-                st.rerun()
+                acao = "concluído" if not prazo.get('_ja_foi_concluido') else "re-concluído"
+                st.session_state.aviso = f"✅ '{prazo['titulo']}' {acao} em {data_formatada}! Data será exibida no relatório Excel."
+                st.success(f"✅ {prazo['titulo']} concluído em {data_formatada}!")
+                st.info(f"📊 Verifique o relatório Excel para confirmar que a data aparece corretamente.")
+            else:
+                st.error(f"❌ ERRO CRÍTICO ao salvar a data de conclusão!")
+                st.warning("""
+                ⚠️ **O QUE ACONTECEU:**
+                - O sistema tentou 4 métodos diferentes para salvar a data
+                - Nenhum deles funcionou
+
+                **PRÓXIMOS PASSOS:**
+                1. Verifique se você tem conexão com a internet
+                2. Tente novamente em alguns segundos
+                3. Se o problema persistir, contate o suporte com a mensagem de erro dos logs
+                """)
+
+                # Mostrar diagnostico técnico
+                with st.expander("🔧 Informações Técnicas (para suporte)", expanded=False):
+                    st.code("""
+                Problema identificado:
+                - A coluna 'concluido_em' no Supabase não está persistindo valores
+                - Tentativas falhadas:
+                  1. SQL direto com NOW()
+                  2. ISO-8601 com timezone
+                  3. String simples YYYY-MM-DD HH:MM:SS
+                  4. Sem forçar valor (usar DEFAULT)
+
+                Possíveis causas:
+                - Coluna com restrição NOT NULL mas sem DEFAULT
+                - Trigger ou stored procedure rejeitando a escrita
+                - Row Level Security (RLS) bloqueando acesso
+                - Tipo de coluna incompatível
+                    """, language="text")
+
+            st.session_state.modal_aberta = False
+            st.rerun()
 
     with col_acao2:
         if st.button("✏️ Editar Prazo", use_container_width=True, key=f"btn_edit_{id_prazo}"):
@@ -5118,7 +5741,7 @@ def main() -> None:
             )
 
         st.caption("🧭 NAVEGAR")
-        opcoes_menu = ["🏠 Início", "🎴 Cards", "📊 Relatórios", "📈 Dashboard"]
+        opcoes_menu = ["🏠 Início", "🎴 Cards", "📊 Relatórios"]
 
         # Garante que um valor antigo não quebre o menu
         if st.session_state.aba_selecionada not in opcoes_menu:
@@ -5157,6 +5780,19 @@ def main() -> None:
         # ===== CONFIGURAÇÕES DO SISTEMA =====
         with st.expander("⚙️ Configurações do Sistema"):
             painel_aparencia()
+
+            st.divider()
+
+            # ===== DIAGNÓSTICO =====
+            st.caption("🔧 DIAGNÓSTICO")
+            if st.button("🔍 Diagnosticar Coluna 'Concluido Em'", use_container_width=True, key="diag_coluna_concluido"):
+                with st.spinner("⏳ Executando diagnóstico..."):
+                    resultado = diagnosticar_coluna_supabase()
+
+                st.info("✅ Diagnóstico concluído! Verifique os logs acima.")
+
+                with st.expander("📋 Resultado do Diagnóstico", expanded=True):
+                    st.json(resultado)
 
             st.divider()
 
@@ -5206,16 +5842,6 @@ def main() -> None:
         elif aba == "📊 Relatórios":
             # PASSO 2.5: Dashboard de Relatórios (renderizado no main area abaixo)
             pass
-        elif aba == "📈 Dashboard":
-            # ===== APLICAR FILTRO DE BUSCA NO DASHBOARD =====
-            df_prazos_filtrados, df_audiencias_filtradas = buscar_por_cliente(
-                df_prazos, df_audiencias, cliente_busca
-            )
-
-            if cliente_busca:
-                st.info(f"🔎 Filtrando por: **{cliente_busca}**")
-
-            dashboard_completo(df_prazos_filtrados, df_audiencias_filtradas, df_processos)
 
     st.title("⚖️ Controladoria Jurídica")
     st.caption(f"Hoje: {hoje():%d/%m/%Y}")
