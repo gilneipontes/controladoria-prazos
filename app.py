@@ -2325,8 +2325,31 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                 with col2:
                     st.markdown("**Editar:**")
                     with st.form(f"edit_{proc['id']}", clear_on_submit=False):
-                        novo_cliente = st.text_input("Cliente", value=proc["cliente"], key=f"cli_{proc['id']}")
-                        nova_parte = st.text_input("Parte Adversária", value=proc["parte_contraria"], key=f"parte_{proc['id']}")
+                        # ===== CLIENTE E PAPEL =====
+                        col_cli1, col_cli2 = st.columns(2)
+                        with col_cli1:
+                            novo_cliente = st.text_input("Cliente", value=proc["cliente"], key=f"cli_{proc['id']}")
+                        with col_cli2:
+                            papel_cliente_atual = proc.get("papel_cliente", "Autor")
+                            novo_papel_cliente = st.selectbox(
+                                "Papel",
+                                ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                                index=(["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"].index(papel_cliente_atual) if papel_cliente_atual in ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"] else 0),
+                                key=f"papel_cli_{proc['id']}"
+                            )
+
+                        # ===== PARTE ADVERSÁRIA E PAPEL =====
+                        col_parte1, col_parte2 = st.columns(2)
+                        with col_parte1:
+                            nova_parte = st.text_input("Parte Adversária", value=proc["parte_contraria"], key=f"parte_{proc['id']}")
+                        with col_parte2:
+                            papel_parte_atual = proc.get("papel_parte", "Réu")
+                            novo_papel_parte = st.selectbox(
+                                "Papel",
+                                ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                                index=(["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"].index(papel_parte_atual) if papel_parte_atual in ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"] else 1),
+                                key=f"papel_parte_{proc['id']}"
+                            )
 
                         # ===== SELETOR DE FASE =====
                         fase_atual = proc.get("fase", FASES_PROCESSO[0])
@@ -2346,14 +2369,36 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                         nova_desc = st.text_area("Descrição", value=proc["descricao"] or "", height=80, key=f"desc_{proc['id']}")
 
                         if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
-                            atualizar_processo(proc["id"], {
+                            campos_update = {
                                 "cliente": novo_cliente,
                                 "parte_contraria": nova_parte,
                                 "fase": nova_fase,
-                                "descricao": nova_desc or None
-                            })
-                            st.success("✅ Processo atualizado!")
-                            st.rerun()
+                                "descricao": nova_desc or None,
+                                "papel_cliente": novo_papel_cliente,
+                                "papel_parte": novo_papel_parte,
+                            }
+
+                            try:
+                                atualizar_processo(proc["id"], campos_update)
+                                st.success("✅ Processo atualizado!")
+                                st.rerun()
+                            except Exception as e:
+                                # Se falhar, tenta sem os campos de papel
+                                if "papel_cliente" in str(e) or "papel_parte" in str(e):
+                                    campos_compativel = {
+                                        "cliente": novo_cliente,
+                                        "parte_contraria": nova_parte,
+                                        "fase": nova_fase,
+                                        "descricao": nova_desc or None
+                                    }
+                                    try:
+                                        atualizar_processo(proc["id"], campos_compativel)
+                                        st.success("✅ Processo atualizado (sem os campos de papel)")
+                                        st.rerun()
+                                    except Exception as e2:
+                                        st.error(f"❌ Erro: {str(e2)}")
+                                else:
+                                    st.error(f"❌ Erro ao atualizar: {str(e)}")
 
             st.divider()
 
@@ -4772,11 +4817,40 @@ def abrir_janela(nome: str) -> None:
 def formulario_novo_processo() -> None:
     v = st.session_state.form_v
     with st.form("proc"):
+        # ===== NÚMERO DO PROCESSO =====
         numero = st.text_input("Nº CNJ *", value="", placeholder="0000000-00.0000.0.00.0000", key=f"pnumero_{v}")
-        cliente = st.text_input("Cliente *", value="", key=f"pcliente_{v}")
-        parte = st.text_input("Parte Adversária *", value="", key=f"pparte_{v}")
 
-        # ===== NOVA: Seletor de Fase =====
+        st.divider()
+        st.markdown("### 👤 Partes do Processo")
+
+        # ===== CLIENTE E SEU PAPEL =====
+        col_cliente1, col_cliente2 = st.columns(2)
+        with col_cliente1:
+            cliente = st.text_input("Cliente *", value="", key=f"pcliente_{v}")
+        with col_cliente2:
+            papel_cliente = st.selectbox(
+                "Papel do Cliente *",
+                ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                index=0,
+                key=f"ppapel_cliente_{v}"
+            )
+
+        # ===== PARTE ADVERSÁRIA E SEU PAPEL =====
+        col_parte1, col_parte2 = st.columns(2)
+        with col_parte1:
+            parte = st.text_input("Parte Adversária *", value="", key=f"pparte_{v}")
+        with col_parte2:
+            papel_parte = st.selectbox(
+                "Papel da Parte Adversária *",
+                ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                index=1,  # Default para "Réu"
+                key=f"ppapel_parte_{v}"
+            )
+
+        st.divider()
+        st.markdown("### 📋 Detalhes do Processo")
+
+        # ===== FASE DO PROCESSO =====
         fase = st.selectbox(
             "Fase do Processo *",
             FASES_PROCESSO,
@@ -4784,20 +4858,58 @@ def formulario_novo_processo() -> None:
             key=f"pfase_{v}"
         )
 
+        # ===== DESCRIÇÃO =====
         descricao = st.text_area("Descrição", value="", key=f"pdesc_{v}")
+
         if st.form_submit_button("💾 Salvar", type="primary", use_container_width=True):
             if numero and cliente and parte and fase:
-                inserir_processo({
+                # Tenta inserir com os novos campos (papel_cliente e papel_parte)
+                registro = {
                     "numero": numero,
                     "cliente": cliente,
+                    "papel_cliente": papel_cliente,
                     "parte_contraria": parte,
+                    "papel_parte": papel_parte,
                     "fase": fase,
                     "descricao": descricao or None,
                     "ativo": True
-                })
-                st.session_state.form_v += 1
-                st.session_state.aviso = "✅ Processo salvo com sucesso!"
-                st.rerun()
+                }
+
+                try:
+                    inserir_processo(registro)
+                    st.session_state.form_v += 1
+                    st.session_state.aviso = "✅ Processo salvo com sucesso!"
+                    st.rerun()
+                except Exception as e:
+                    # Se falhar, tenta sem os novos campos (compatibilidade com schema antigo)
+                    if "papel_cliente" in str(e) or "papel_parte" in str(e):
+                        st.warning("⚠️ Seus novos campos ainda não estão no banco de dados. Salvando dados básicos...")
+                        registro_compativel = {
+                            "numero": numero,
+                            "cliente": cliente,
+                            "parte_contraria": parte,
+                            "fase": fase,
+                            "descricao": descricao or None,
+                            "ativo": True
+                        }
+                        try:
+                            inserir_processo(registro_compativel)
+                            st.session_state.form_v += 1
+                            st.success("✅ Processo salvo (campos de papel ainda não suportados)")
+                            st.info("""
+                            📝 **Para salvar os papéis de cada parte (Autor, Réu, etc.), você precisa:**
+
+                            1. Ir ao Supabase → Tabela `processos`
+                            2. Adicionar 2 colunas novas:
+                               - `papel_cliente` (texto)
+                               - `papel_parte` (texto)
+                            3. Voltar ao app e tentar novamente!
+                            """)
+                            st.rerun()
+                        except Exception as e2:
+                            st.error(f"❌ Erro ao salvar: {str(e2)}")
+                    else:
+                        st.error(f"❌ Erro ao salvar processo: {str(e)}")
             else:
                 st.error("Preencha todos os campos obrigatórios!")
 
