@@ -561,14 +561,14 @@ def atualizar_processo(id_processo: int, campos: dict) -> None:
     Args:
         id_processo: ID do processo a atualizar
         campos: Dicionário com os campos a atualizar
-                Campos válidos: cliente, parte_contraria, descricao, fase, ativo
+                Campos válidos: cliente, parte_contraria, descricao, fase, papel_cliente, papel_parte, ativo
     """
     if not campos:
         return
 
     try:
         # Validar campos conhecidos
-        campos_validos = {"cliente", "parte_contraria", "descricao", "fase", "ativo"}
+        campos_validos = {"cliente", "parte_contraria", "descricao", "fase", "papel_cliente", "papel_parte", "ativo"}
         campos_filtrados = {k: v for k, v in campos.items() if k in campos_validos}
 
         if not campos_filtrados:
@@ -6195,6 +6195,15 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos_filtrados) if not df_prazos_filtrados.empty else pd.DataFrame()
 
+    # ===== MODAL COM DETALHES COMPLETOS (ABRIR ANTES DAS ABAS) =====
+    if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
+        id_prazo = st.session_state.id_modal
+        prazo = df_prazos[df_prazos["id"] == id_prazo]
+
+        if not prazo.empty:
+            prazo = prazo.iloc[0]
+            modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
+
     tab1, tab2, tab3, tab4, tab5, tab6, tab_filtros = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🔬 Perícias", "📅 Audiências", "🔍 Filtros Avançados"])
 
     with tab1:
@@ -6216,15 +6225,6 @@ def main() -> None:
 
         # ===== RENDERIZAR CARDS EM VEZ DE TABELA =====
         renderizar_cards_prazos(prazos_ativos, df_processos)
-
-    # ===== MODAL COM DETALHES COMPLETOS (FORA DO CONTEXTO DE ABAS) =====
-    if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
-        id_prazo = st.session_state.id_modal
-        prazo = df_prazos[df_prazos["id"] == id_prazo]
-
-        if not prazo.empty:
-            prazo = prazo.iloc[0]
-            modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
 
     with tab2:
         # ===== PASSO 5: FILTRO NA TAB 2 =====
