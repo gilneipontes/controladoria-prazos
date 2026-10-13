@@ -91,11 +91,12 @@ FERIADOS = np.array([
 COLUNAS_PRAZOS = [
     "id", "created_at", "tipo", "titulo", "processo", "cliente", "responsavel",
     "fase",  # ✨ NOVO: Fase do processo
+    "papel_cliente", "papel_parte",  # ✨ Papéis das partes (Autor, Réu, etc.)
     "data_fatal", "data_interna", "prioridade", "descricao", "concluido", "concluido_em",
     "arquivado",
 ]
 
-COLUNAS_PROCESSOS = ["id", "created_at", "numero", "cliente", "parte_contraria", "descricao", "fase", "ativo"]
+COLUNAS_PROCESSOS = ["id", "created_at", "numero", "cliente", "parte_contraria", "descricao", "fase", "papel_cliente", "papel_parte", "ativo"]
 
 COLUNAS_AUDIENCIAS = [
     "id", "created_at", "processo", "autor", "reu", "sala", "data_audiencia",
@@ -410,7 +411,19 @@ def painel_aparencia() -> None:
 @st.cache_data(ttl=60, show_spinner="Carregando prazos…")
 def carregar_prazos() -> pd.DataFrame:
     resp = supabase().table(TABELA_PRAZOS).select("*").order("data_fatal").execute()
-    df = pd.DataFrame(resp.data, columns=COLUNAS_PRAZOS)
+    if not resp.data:
+        return pd.DataFrame(columns=COLUNAS_PRAZOS)
+
+    df = pd.DataFrame(resp.data)
+
+    # Garantir que todas as colunas esperadas existem
+    for col in COLUNAS_PRAZOS:
+        if col not in df.columns:
+            df[col] = None
+
+    # Manter apenas as colunas esperadas na ordem correta
+    df = df[COLUNAS_PRAZOS]
+
     for col in ("data_fatal", "data_interna"):
         df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
 
@@ -424,7 +437,18 @@ def carregar_prazos() -> pd.DataFrame:
 @st.cache_data(ttl=60, show_spinner="Carregando processos…")
 def carregar_processos() -> pd.DataFrame:
     resp = supabase().table(TABELA_PROCESSOS).select("*").order("numero").execute()
-    df = pd.DataFrame(resp.data, columns=COLUNAS_PROCESSOS)
+    if not resp.data:
+        return pd.DataFrame(columns=COLUNAS_PROCESSOS)
+
+    df = pd.DataFrame(resp.data)
+
+    # Garantir que todas as colunas esperadas existem
+    for col in COLUNAS_PROCESSOS:
+        if col not in df.columns:
+            df[col] = None
+
+    # Manter apenas as colunas esperadas na ordem correta
+    df = df[COLUNAS_PROCESSOS]
     df["ativo"] = df["ativo"].fillna(True).astype(bool)
     return df
 
@@ -521,7 +545,9 @@ def atualizar_prazo(id_prazo: int, campos: dict) -> None:
     try:
         # Campos válidos para prazos
         campos_validos = {"titulo", "descricao", "processo", "data_interna",
-                         "data_fatal", "responsavel", "prioridade", "cliente", "concluido", "concluido_em", "arquivado"}
+                         "data_fatal", "responsavel", "prioridade", "cliente", "tipo", "fase",
+                         "papel_cliente", "papel_parte",  # ✨ NOVO: Papéis das partes
+                         "concluido", "concluido_em", "arquivado"}
         campos_filtrados = {k: v for k, v in campos.items() if k in campos_validos}
 
         if not campos_filtrados:
@@ -550,14 +576,14 @@ def atualizar_processo(id_processo: int, campos: dict) -> None:
     Args:
         id_processo: ID do processo a atualizar
         campos: Dicionário com os campos a atualizar
-                Campos válidos: cliente, parte_contraria, descricao, fase, ativo
+                Campos válidos: cliente, parte_contraria, descricao, fase, papel_cliente, papel_parte, ativo
     """
     if not campos:
         return
 
     try:
         # Validar campos conhecidos
-        campos_validos = {"cliente", "parte_contraria", "descricao", "fase", "ativo"}
+        campos_validos = {"cliente", "parte_contraria", "descricao", "fase", "papel_cliente", "papel_parte", "ativo"}
         campos_filtrados = {k: v for k, v in campos.items() if k in campos_validos}
 
         if not campos_filtrados:
@@ -1807,6 +1833,27 @@ def sidebar_novo_prazo(
 
         st.success(f"✅ Processo selecionado: **{processo}**")
 
+        # ===== PAPÉIS DAS PARTES NESTE PRAZO =====
+        st.markdown("### 📋 Qual papel cada parte representa NESTE prazo?")
+        col_papel1, col_papel2 = st.columns(2)
+        with col_papel1:
+            papel_cliente = st.selectbox(
+                f"Papel de {cliente}",
+                ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                index=0,
+                key=f"papel_cli_{v}"
+            )
+        with col_papel2:
+            papel_parte = st.selectbox(
+                f"Papel de {parte_adversaria}",
+                ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                index=1,
+                key=f"papel_parte_{v}"
+            )
+    else:
+        papel_cliente = None
+        papel_parte = None
+
     titulo = ""
     if titulo_fixo:
         # Título já escolhido (ex.: sugerido pela leitura do despacho)
@@ -1896,7 +1943,7 @@ def sidebar_novo_prazo(
                         data_venc = prazo_existe.iloc[0]["data_fatal"].strftime("%d/%m/%Y")
                         st.error(f"⚠️ Este prazo já existe! Vencimento: {data_venc}")
                     else:
-                        # ✨ NOVO: Inserir prazo COM fase
+                        # ✨ NOVO: Inserir prazo COM fase E papéis
                         inserir_prazo({
                             "tipo": tipo,
                             "titulo": titulo,
@@ -1904,6 +1951,8 @@ def sidebar_novo_prazo(
                             "cliente": cliente,
                             "responsavel": responsavel,
                             "fase": fase,  # ✨ NOVO
+                            "papel_cliente": papel_cliente,  # ✨ NOVO: Papel neste prazo
+                            "papel_parte": papel_parte,  # ✨ NOVO: Papel neste prazo
                             "data_fatal": data_fatal.isoformat(),
                             "data_interna": data_interna.isoformat() if data_interna else None,
                             "prioridade": prioridade,
@@ -2220,6 +2269,99 @@ def _so_digitos(texto) -> str:
         return ""
     return re.sub(r"\D", "", str(texto))
 
+def editar_papeis_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+    """
+    Edita os papéis (Autor/Réu) dos prazos existentes.
+    Busca por número de processo e mostra os prazos para edição.
+    """
+    st.subheader("✏️ Editar Papéis dos Prazos Existentes")
+    st.caption("Busque pelo número do processo e edite os papéis (Autor/Réu) de cada prazo")
+
+    # ===== BUSCAR POR PROCESSO =====
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        busca_proc = st.text_input(
+            "🔍 Digite o número do processo",
+            placeholder="Ex: 5001129-71.2023.8.21.0071",
+            key="busca_papeis_proc",
+            label_visibility="collapsed"
+        ).strip()
+
+    processos_filtrados = df_processos.iloc[0:0]
+
+    if busca_proc:
+        busca_lower = busca_proc.lower()
+        # Busca por NÚMERO ou CLIENTE
+        mascara = (
+            (df_processos["numero"].fillna("").str.contains(busca_lower, case=False, na=False, regex=False)) |
+            (df_processos["cliente"].fillna("").str.contains(busca_lower, case=False, na=False, regex=False))
+        )
+        processos_filtrados = df_processos[mascara]
+
+    if not busca_proc:
+        st.info("👆 Digite o número do processo acima para buscar")
+        return
+
+    if processos_filtrados.empty:
+        st.warning(f"❌ Nenhum processo encontrado com '{busca_proc}'")
+        return
+
+    # ===== LISTAR PRAZOS DO PROCESSO =====
+    for idx, proc in processos_filtrados.iterrows():
+        prazos_proc = df_prazos[df_prazos["processo"] == proc["numero"]]
+
+        if prazos_proc.empty:
+            st.info(f"✅ Processo {proc['numero']} não tem prazos cadastrados")
+            continue
+
+        st.markdown(f"### 📋 {proc['numero']} — {proc['cliente']}")
+
+        for p_idx, prazo in prazos_proc.iterrows():
+            with st.expander(f"📌 {prazo['titulo']} ({prazo['data_fatal'].strftime('%d/%m/%Y')})"):
+                col_info1, col_info2 = st.columns(2)
+                with col_info1:
+                    st.write(f"**Tipo:** {prazo['tipo']}")
+                    st.write(f"**Responsável:** {prazo['responsavel']}")
+                with col_info2:
+                    st.write(f"**Prioridade:** {prazo['prioridade']}")
+                    status = "✅ Concluído" if prazo["concluido"] else "📋 Em Aberto"
+                    st.write(f"**Status:** {status}")
+
+                st.divider()
+
+                with st.form(f"edit_papeis_{prazo['id']}"):
+                    st.markdown("**Editar Papéis:**")
+                    col_papel1, col_papel2 = st.columns(2)
+
+                    with col_papel1:
+                        papel_cli = prazo.get("papel_cliente", "Autor")
+                        novo_papel_cli = st.selectbox(
+                            f"Papel do {proc['cliente']}",
+                            ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                            index=(["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"].index(papel_cli) if papel_cli in ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"] else 0),
+                            key=f"papel_cli_edit_{prazo['id']}"
+                        )
+
+                    with col_papel2:
+                        papel_parte = prazo.get("papel_parte", "Réu")
+                        novo_papel_parte = st.selectbox(
+                            f"Papel de {proc['parte_contraria']}",
+                            ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                            index=(["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"].index(papel_parte) if papel_parte in ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"] else 1),
+                            key=f"papel_parte_edit_{prazo['id']}"
+                        )
+
+                    if st.form_submit_button("💾 Salvar Papéis", type="primary", use_container_width=True):
+                        try:
+                            atualizar_prazo(prazo["id"], {
+                                "papel_cliente": novo_papel_cli,
+                                "papel_parte": novo_papel_parte
+                            })
+                            st.success(f"✅ Papéis atualizados para '{prazo['titulo']}'!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erro ao salvar: {str(e)}")
+
 def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
     """
     Aba Processos:
@@ -2240,6 +2382,44 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
 
     processos_unicos = processos_ativos.drop_duplicates(subset=["numero"], keep="first").sort_values("numero")
     total_processos = len(processos_unicos)
+
+    # ===== RELATÓRIO DE STATUS DOS PAPÉIS =====
+    st.info("✨ **NOVO:** Campos de 'Papel do Cliente' e 'Papel da Parte Adversária' adicionados!")
+
+    try:
+        # Criar relatório de status
+        relatorio = []
+        for idx, proc in processos_unicos.iterrows():
+            papel_cli = proc.get("papel_cliente", "").strip() if pd.notna(proc.get("papel_cliente")) else ""
+            papel_parte = proc.get("papel_parte", "").strip() if pd.notna(proc.get("papel_parte")) else ""
+            status_geral = "✅ COMPLETO" if (papel_cli and papel_parte) else "⚠️ INCOMPLETO"
+
+            relatorio.append({
+                "Status": status_geral,
+                "Nº Processo": proc["numero"],
+                "Cliente": proc["cliente"][:30],
+                "Papel Cliente": papel_cli or "—",
+                "Papel Parte": papel_parte or "—",
+            })
+
+        df_relatorio = pd.DataFrame(relatorio)
+        incompletos = len(df_relatorio[df_relatorio["Status"].str.contains("INCOMPLETO")])
+        completos = len(df_relatorio) - incompletos
+
+        col_stat1, col_stat2, col_stat3 = st.columns(3)
+        col_stat1.metric("Total", len(df_relatorio))
+        col_stat2.metric("✅ Completos", completos)
+        col_stat3.metric("⚠️ Incompletos", incompletos)
+
+        if incompletos > 0:
+            st.warning(f"Você tem **{incompletos} processo(s)** para atualizar!")
+            st.dataframe(df_relatorio, use_container_width=True, hide_index=True, key="tbl_relatorio_proc")
+            st.markdown("1. Procure o processo abaixo  2. Preencha os campos  3. Salve ✨")
+        else:
+            st.success("✅ Todos com papéis preenchidos! 🎉")
+
+    except Exception as e:
+        pass
 
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -2325,31 +2505,37 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                 with col2:
                     st.markdown("**Editar:**")
                     with st.form(f"edit_{proc['id']}", clear_on_submit=False):
-                        # ===== CLIENTE E PAPEL =====
-                        col_cli1, col_cli2 = st.columns(2)
+                        # ===== CLIENTE E PAPEL (JUNTOS) =====
+                        st.markdown("### 👤 Você (Cliente)")
+                        col_cli1, col_cli2 = st.columns([2, 1])
                         with col_cli1:
-                            novo_cliente = st.text_input("Cliente", value=proc["cliente"], key=f"cli_{proc['id']}")
+                            novo_cliente = st.text_input("Nome do Cliente", value=proc["cliente"], key=f"cli_{proc['id']}")
                         with col_cli2:
                             papel_cliente_atual = proc.get("papel_cliente", "Autor")
                             novo_papel_cliente = st.selectbox(
-                                "Papel",
+                                "Qual é seu papel?",
                                 ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
                                 index=(["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"].index(papel_cliente_atual) if papel_cliente_atual in ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"] else 0),
                                 key=f"papel_cli_{proc['id']}"
                             )
 
-                        # ===== PARTE ADVERSÁRIA E PAPEL =====
-                        col_parte1, col_parte2 = st.columns(2)
+                        st.divider()
+
+                        # ===== PARTE ADVERSÁRIA E PAPEL (JUNTOS) =====
+                        st.markdown("### ⚔️ Parte Adversária")
+                        col_parte1, col_parte2 = st.columns([2, 1])
                         with col_parte1:
-                            nova_parte = st.text_input("Parte Adversária", value=proc["parte_contraria"], key=f"parte_{proc['id']}")
+                            nova_parte = st.text_input("Nome da Parte Adversária", value=proc["parte_contraria"], key=f"parte_{proc['id']}")
                         with col_parte2:
                             papel_parte_atual = proc.get("papel_parte", "Réu")
                             novo_papel_parte = st.selectbox(
-                                "Papel",
+                                "Qual é seu papel?",
                                 ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
                                 index=(["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"].index(papel_parte_atual) if papel_parte_atual in ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"] else 1),
                                 key=f"papel_parte_{proc['id']}"
                             )
+
+                        st.divider()
 
                         # ===== SELETOR DE FASE =====
                         fase_atual = proc.get("fase", FASES_PROCESSO[0])
@@ -5601,6 +5787,26 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
                 value=prazo["prioridade"] if prazo["prioridade"] in PRIORIDADES else "Normal",
             )
 
+            # ===== PAPÉIS DAS PARTES NESTE PRAZO =====
+            st.markdown("### 📋 Papéis das Partes")
+            col_papel1, col_papel2 = st.columns(2)
+            with col_papel1:
+                papel_cliente_atual = prazo.get("papel_cliente", "Autor")
+                novo_papel_cliente = st.selectbox(
+                    "Papel do Cliente",
+                    ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                    index=(["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"].index(papel_cliente_atual) if papel_cliente_atual in ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"] else 0),
+                    key=f"edt_papel_cli_{id_prazo}"
+                )
+            with col_papel2:
+                papel_parte_atual = prazo.get("papel_parte", "Réu")
+                novo_papel_parte = st.selectbox(
+                    "Papel da Parte Adversária",
+                    ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                    index=(["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"].index(papel_parte_atual) if papel_parte_atual in ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"] else 1),
+                    key=f"edt_papel_parte_{id_prazo}"
+                )
+
             # Campo para marcar como concluído e registrar data de conclusão
             col_status1, col_status2 = st.columns(2)
             with col_status1:
@@ -5649,6 +5855,8 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
                     "tipo": novo_tipo,
                     "responsavel": novo_responsavel,
                     "prioridade": nova_prioridade,
+                    "papel_cliente": novo_papel_cliente,  # ✨ NOVO
+                    "papel_parte": novo_papel_parte,  # ✨ NOVO
                     "data_interna": nova_interna.isoformat() if nova_interna else None,
                     "data_fatal": nova_fatal.isoformat(),
                     "descricao": nova_obs or None,
@@ -6006,6 +6214,11 @@ def main() -> None:
             on_click=abrir_janela,
             args=("processos",),
         )
+
+        # ===== EDITAR PAPÉIS DOS PRAZOS =====
+        if st.button("✏️ Editar Papéis dos Prazos", use_container_width=True, key="acao_editar_papeis"):
+            st.session_state.modo_edicao_papeis = True
+
         st.divider()
 
         if st.button("🔄 Recarregar Dados", use_container_width=True):
@@ -6120,6 +6333,11 @@ def main() -> None:
         st.toast(st.session_state.aviso)
         st.session_state.aviso = None
 
+    # ===== EDITAR PAPÉIS DOS PRAZOS =====
+    if st.session_state.get("modo_edicao_papeis"):
+        editar_papeis_prazos(df_prazos, df_processos)
+        st.stop()
+
     # ===== PASSO 2: RENDERIZAR VISÃO CARDS HIERÁRQUICA =====
     if aba == "🎴 Cards":
         dashboard_cards_hierarquico(df_prazos, df_audiencias, df_processos)
@@ -6146,6 +6364,15 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos_filtrados) if not df_prazos_filtrados.empty else pd.DataFrame()
 
+    # ===== MODAL COM DETALHES COMPLETOS (ABRIR ANTES DAS ABAS) =====
+    if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
+        id_prazo = st.session_state.id_modal
+        prazo = df_prazos[df_prazos["id"] == id_prazo]
+
+        if not prazo.empty:
+            prazo = prazo.iloc[0]
+            modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
+
     tab1, tab2, tab3, tab4, tab5, tab6, tab_filtros = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🔬 Perícias", "📅 Audiências", "🔍 Filtros Avançados"])
 
     with tab1:
@@ -6167,15 +6394,6 @@ def main() -> None:
 
         # ===== RENDERIZAR CARDS EM VEZ DE TABELA =====
         renderizar_cards_prazos(prazos_ativos, df_processos)
-
-    # ===== MODAL COM DETALHES COMPLETOS (FORA DO CONTEXTO DE ABAS) =====
-    if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
-        id_prazo = st.session_state.id_modal
-        prazo = df_prazos[df_prazos["id"] == id_prazo]
-
-        if not prazo.empty:
-            prazo = prazo.iloc[0]
-            modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
 
     with tab2:
         # ===== PASSO 5: FILTRO NA TAB 2 =====
