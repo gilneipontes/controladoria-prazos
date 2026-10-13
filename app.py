@@ -95,7 +95,7 @@ COLUNAS_PRAZOS = [
     "arquivado",
 ]
 
-COLUNAS_PROCESSOS = ["id", "created_at", "numero", "cliente", "parte_contraria", "descricao", "fase", "ativo"]
+COLUNAS_PROCESSOS = ["id", "created_at", "numero", "cliente", "parte_contraria", "descricao", "fase", "ativo", "papel_cliente", "papel_parte"]
 
 COLUNAS_AUDIENCIAS = [
     "id", "created_at", "processo", "autor", "reu", "sala", "data_audiencia",
@@ -2277,6 +2277,38 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
         else:
             st.metric("Total de processos", total_processos)
 
+    # ===== RELATÓRIO DE PAPÉIS INCOMPLETOS (Apenas se não estiver buscando) =====
+    if not busca:
+        try:
+            relatorio = []
+            for idx, proc in processos_unicos.iterrows():
+                papel_cli = proc.get("papel_cliente", "").strip() if pd.notna(proc.get("papel_cliente")) else ""
+                papel_parte = proc.get("papel_parte", "").strip() if pd.notna(proc.get("papel_parte")) else ""
+
+                # Mostrar apenas os incompletos
+                if not (papel_cli and papel_parte):
+                    relatorio.append({
+                        "Status": "⚠️ INCOMPLETO",
+                        "Nº Processo": proc["numero"],
+                        "Cliente": proc["cliente"][:30],
+                        "Papel Cliente": papel_cli or "—",
+                        "Papel Parte": papel_parte or "—",
+                    })
+
+            df_relatorio = pd.DataFrame(relatorio) if relatorio else pd.DataFrame()
+            incompletos = len(relatorio)
+
+            # Mostrar apenas se houver incompletos
+            if incompletos > 0:
+                st.warning(f"⚠️ Você tem **{incompletos} processo(s)** para preencher os papéis!")
+                st.dataframe(df_relatorio, use_container_width=True, hide_index=True, key="tbl_relatorio_proc")
+                st.caption("👇 Procure cada processo abaixo e preencha os papéis")
+            else:
+                st.success("✅ Todos com papéis preenchidos! 🎉")
+
+        except Exception as e:
+            print(f"[ERRO] Relatório: {e}")
+
     # ===== SEM BUSCA: NÃO LISTA NADA =====
     if not busca:
         st.caption("🔎 Digite o número do processo ou o nome do cliente para consultar como ele está agora.")
@@ -2380,6 +2412,7 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
 
                             try:
                                 atualizar_processo(proc["id"], campos_update)
+                                carregar_processos.clear()  # 🔄 Limpar cache para recarregar dados novos
                                 st.success("✅ Processo atualizado!")
                                 st.rerun()
                             except Exception as e:
@@ -2393,6 +2426,7 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                                     }
                                     try:
                                         atualizar_processo(proc["id"], campos_compativel)
+                                        carregar_processos.clear()  # 🔄 Limpar cache para recarregar dados novos
                                         st.success("✅ Processo atualizado (sem os campos de papel)")
                                         st.rerun()
                                     except Exception as e2:
@@ -3477,11 +3511,13 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
     # Exibir tabela com botões para abrir prazo
     st.caption("👉 Clique no botão 🔍 para abrir o prazo, consultar e editar.")
 
-    # Criar colunas para exibição com botões - Ordem: Cliente, Processo, Prazo, Data Fatal, Responsável, Ação
-    col_cliente, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([2.5, 2, 2, 1.8, 1.8, 0.7])
+    # Criar colunas para exibição com botões - Ordem: Cliente, Papel, Processo, Prazo, Data Fatal, Responsável, Ação
+    col_cliente, col_papel, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([2, 1.5, 1.8, 1.8, 1.8, 1.5, 0.6])
 
     with col_cliente:
         st.markdown("**Cliente**")
+    with col_papel:
+        st.markdown("**Papel**")
     with col_processo:
         st.markdown("**Processo**")
     with col_prazo:
@@ -3497,10 +3533,20 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
 
     # Exibir cada linha com botão
     for idx, (_, row) in enumerate(df_filtrado.iterrows()):
-        col_cliente, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([2.5, 2, 2, 1.8, 1.8, 0.7])
+        col_cliente, col_papel, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([2, 1.5, 1.8, 1.8, 1.8, 1.5, 0.6])
+
+        # Buscar papel do cliente no df_processos
+        papel_cliente = "—"
+        if row["processo"] and not df_processos.empty:
+            proc_match = df_processos[df_processos["numero"] == row["processo"]]
+            if not proc_match.empty:
+                papel_cli = proc_match.iloc[0].get("papel_cliente", "")
+                papel_cliente = papel_cli if papel_cli and pd.notna(papel_cli) else "—"
 
         with col_cliente:
             st.caption(row["cliente"])
+        with col_papel:
+            st.caption(f"📋 {papel_cliente}")
         with col_processo:
             st.caption(str(row["processo"]) if row["processo"] else "—")
         with col_prazo:
@@ -3665,11 +3711,13 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
     st.markdown("### 📋 Prazos Concluídos")
     st.caption("👉 Clique no botão 🔍 para ver detalhes e observações do prazo concluído.")
 
-    # Criar colunas para exibição com botões - Ordem: Cliente, Processo, Prazo, Data Fatal, Responsável, Ação
-    col_cliente, col_processo, col_prazo, col_data_fatal, col_data_conc, col_resp, col_acao = st.columns([2.2, 1.8, 1.8, 1.5, 1.5, 1.5, 0.7])
+    # Criar colunas para exibição com botões - Ordem: Cliente, Papel, Processo, Prazo, Data Fatal, Responsável, Ação
+    col_cliente, col_papel, col_processo, col_prazo, col_data_fatal, col_data_conc, col_resp, col_acao = st.columns([1.8, 1.3, 1.5, 1.5, 1.3, 1.3, 1.3, 0.6])
 
     with col_cliente:
         st.markdown("**Cliente**")
+    with col_papel:
+        st.markdown("**Papel**")
     with col_processo:
         st.markdown("**Processo**")
     with col_prazo:
@@ -3687,10 +3735,20 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
 
     # Exibir cada linha com botão
     for idx, (_, prazo) in enumerate(df_filtrado.iterrows()):
-        col_cliente, col_processo, col_prazo, col_data_fatal, col_data_conc, col_resp, col_acao = st.columns([2.2, 1.8, 1.8, 1.5, 1.5, 1.5, 0.7])
+        col_cliente, col_papel, col_processo, col_prazo, col_data_fatal, col_data_conc, col_resp, col_acao = st.columns([1.8, 1.3, 1.5, 1.5, 1.3, 1.3, 1.3, 0.6])
+
+        # Buscar papel do cliente no df_processos
+        papel_cliente = "—"
+        if prazo["processo"] and not df_processos.empty:
+            proc_match = df_processos[df_processos["numero"] == prazo["processo"]]
+            if not proc_match.empty:
+                papel_cli = proc_match.iloc[0].get("papel_cliente", "")
+                papel_cliente = papel_cli if papel_cli and pd.notna(papel_cli) else "—"
 
         with col_cliente:
             st.caption(prazo["cliente"])
+        with col_papel:
+            st.caption(f"📋 {papel_cliente}")
         with col_processo:
             st.caption(str(prazo["processo"]) if prazo["processo"] else "—")
         with col_prazo:
@@ -4574,7 +4632,7 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
             todos_prazos = prazos_concluidos_display.sort_values("data_fatal", ascending=False)
 
         # Cabeçalho da tabela
-        col_faixa, col_prazo, col_processo, col_data, col_resp, col_status, col_acao = st.columns([1, 2, 1.5, 1.3, 1.3, 1.2, 0.6])
+        col_faixa, col_prazo, col_papel, col_processo, col_data, col_resp, col_status, col_acao = st.columns([1, 1.8, 1.2, 1.3, 1.2, 1.2, 1.2, 0.5])
 
         with col_faixa:
             if status_filtro == "Todos":
@@ -4583,6 +4641,8 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
                 st.markdown("**Status**")
         with col_prazo:
             st.markdown("**Prazo**")
+        with col_papel:
+            st.markdown("**Papel**")
         with col_processo:
             st.markdown("**Processo**")
         with col_data:
@@ -4598,7 +4658,15 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
 
         # Exibir cada prazo
         for idx, (_, row) in enumerate(todos_prazos.iterrows()):
-            col_faixa, col_prazo, col_processo, col_data, col_resp, col_status, col_acao = st.columns([1, 2, 1.5, 1.3, 1.3, 1.2, 0.6])
+            col_faixa, col_prazo, col_papel, col_processo, col_data, col_resp, col_status, col_acao = st.columns([1, 1.8, 1.2, 1.3, 1.2, 1.2, 1.2, 0.5])
+
+            # Buscar papel do cliente no df_processos
+            papel_cliente = "—"
+            if row["processo"] and not df_processos.empty:
+                proc_match = df_processos[df_processos["numero"] == row["processo"]]
+                if not proc_match.empty:
+                    papel_cli = proc_match.iloc[0].get("papel_cliente", "")
+                    papel_cliente = papel_cli if papel_cli and pd.notna(papel_cli) else "—"
 
             with col_faixa:
                 if status_filtro == "Todos" and not row.get("concluido"):
@@ -4610,6 +4678,9 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
 
             with col_prazo:
                 st.caption(row["titulo"])
+
+            with col_papel:
+                st.caption(f"📋 {papel_cliente}")
 
             with col_processo:
                 st.caption(str(row["processo"]) if row["processo"] else "—")
@@ -5425,19 +5496,26 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
     # ===== SEÇÃO 1: INFORMAÇÕES PRINCIPAIS =====
     st.subheader("📌 Informações da Tarefa")
 
-    # ===== BUSCAR PARTE CONTRÁRIA =====
+    # ===== BUSCAR PARTE CONTRÁRIA E PAPÉIS =====
     parte_contraria = ""
+    papel_cliente = "—"
+    papel_parte = "—"
+
     if df_processos is not None and not df_processos.empty and prazo.get('processo'):
         proc = df_processos[df_processos['numero'] == prazo['processo']]
         if not proc.empty:
             parte_contraria = proc.iloc[0]['parte_contraria']
+            papel_cli = proc.iloc[0].get('papel_cliente', "")
+            papel_parte_val = proc.iloc[0].get('papel_parte', "")
+            papel_cliente = papel_cli if papel_cli and pd.notna(papel_cli) else "—"
+            papel_parte = papel_parte_val if papel_parte_val and pd.notna(papel_parte_val) else "—"
 
     col1, col2 = st.columns(2)
     with col1:
         st.write(f"**🔹 Processo:** `{prazo['processo']}`")
-        st.write(f"**👤 Cliente:** {prazo['cliente']}")
+        st.write(f"**👤 Cliente:** {prazo['cliente']} | 📋 `{papel_cliente}`")
         if parte_contraria:
-            st.write(f"**⚔️ Parte Contrária:** {parte_contraria}")
+            st.write(f"**⚔️ Parte Contrária:** {parte_contraria} | 📋 `{papel_parte}`")
         st.write(f"**👨‍⚖️ Responsável:** {prazo['responsavel']}")
     with col2:
         st.write(f"**📅 Data Fatal:** {prazo['data_fatal'].strftime('%d/%m/%Y')}")
