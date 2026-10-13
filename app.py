@@ -557,7 +557,7 @@ def atualizar_processo(id_processo: int, campos: dict) -> None:
 
     try:
         # Validar campos conhecidos
-        campos_validos = {"cliente", "parte_contraria", "descricao", "fase", "ativo"}
+        campos_validos = {"cliente", "parte_contraria", "descricao", "fase", "ativo", "papel_cliente", "papel_parte"}
         campos_filtrados = {k: v for k, v in campos.items() if k in campos_validos}
 
         if not campos_filtrados:
