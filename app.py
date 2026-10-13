@@ -2241,6 +2241,72 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
     processos_unicos = processos_ativos.drop_duplicates(subset=["numero"], keep="first").sort_values("numero")
     total_processos = len(processos_unicos)
 
+    # ===== RELATÓRIO DE STATUS DOS PAPÉIS =====
+    st.info("✨ **NOVO:** Campos de 'Papel do Cliente' e 'Papel da Parte Adversária' adicionados!")
+
+    with st.expander("📊 VER RELATÓRIO: Quais Processos Precisam Ser Atualizados?", expanded=True):
+        try:
+            # Criar relatório de status
+            relatorio = []
+            for idx, proc in processos_unicos.iterrows():
+                papel_cli = proc.get("papel_cliente", "").strip() if pd.notna(proc.get("papel_cliente")) else ""
+                papel_parte = proc.get("papel_parte", "").strip() if pd.notna(proc.get("papel_parte")) else ""
+
+                status_cli = "✅" if papel_cli else "⚠️"
+                status_parte = "✅" if papel_parte else "⚠️"
+                status_geral = "✅ COMPLETO" if (papel_cli and papel_parte) else "⚠️ INCOMPLETO"
+
+                relatorio.append({
+                    "Status": status_geral,
+                    "Nº Processo": proc["numero"],
+                    "Cliente": proc["cliente"][:30],
+                    "Papel Cliente": papel_cli or "—",
+                    "Papel Parte": papel_parte or "—",
+                })
+
+            df_relatorio = pd.DataFrame(relatorio)
+
+            # Contar incompletos
+            incompletos = len(df_relatorio[df_relatorio["Status"].str.contains("INCOMPLETO")])
+            completos = len(df_relatorio) - incompletos
+
+            col_stat1, col_stat2, col_stat3 = st.columns(3)
+            col_stat1.metric("Total de Processos", len(df_relatorio))
+            col_stat2.metric("✅ Completos", completos)
+            col_stat3.metric("⚠️ Incompletos", incompletos)
+
+            if incompletos > 0:
+                st.warning(f"Você tem **{incompletos} processo(s)** para atualizar!")
+                st.dataframe(
+                    df_relatorio,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Status": st.column_config.TextColumn("Status", width=120),
+                        "Nº Processo": st.column_config.TextColumn("Nº Processo", width=150),
+                        "Cliente": st.column_config.TextColumn("Cliente", width=150),
+                        "Papel Cliente": st.column_config.TextColumn("Papel Cliente", width=130),
+                        "Papel Parte": st.column_config.TextColumn("Papel Parte", width=130),
+                    }
+                )
+
+                st.markdown("""
+                ### 📝 Como Atualizar:
+
+                1. **Procure o processo** na busca abaixo (pelo número ou cliente)
+                2. **Clique para expandir**
+                3. **Na seção "Editar:" à direita, preencha:**
+                   - **Papel do Cliente** (Autor, Réu, Reclamante, etc.)
+                   - **Papel da Parte Adversária** (escolha a opção correta)
+                4. **Clique em "💾 Salvar Alterações"**
+                5. **Volte para este relatório** e veja o status mudando! ✨
+                """)
+            else:
+                st.success("✅ Todos os processos têm os papéis preenchidos! Parabéns! 🎉")
+
+        except Exception as e:
+            st.warning(f"⚠️ Não consegui gerar o relatório. Detalhe: {str(e)[:100]}")
+
     col1, col2 = st.columns([3, 1])
     with col1:
         busca = st.text_input(
