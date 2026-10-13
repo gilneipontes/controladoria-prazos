@@ -4986,23 +4986,23 @@ def formulario_novo_processo() -> None:
             else:
                 st.error("Preencha todos os campos obrigatórios!")
 
-@st.dialog("📋 Novo Prazo", width="regular")
+@st.dialog("📋 Novo Prazo", width="large")
 def janela_novo_prazo(processos_df: pd.DataFrame) -> None:
     sidebar_novo_prazo(processos_df)
 
-@st.dialog("📅 Nova Audiência", width="regular")
+@st.dialog("📅 Nova Audiência", width="large")
 def janela_nova_audiencia(processos_df: pd.DataFrame) -> None:
     sidebar_nova_audiencia(processos_df)
 
-@st.dialog("🔬 Nova Perícia", width="regular")
+@st.dialog("🔬 Nova Perícia", width="large")
 def janela_nova_pericia(processos_df: pd.DataFrame) -> None:
     sidebar_nova_pericia(processos_df)
 
-@st.dialog("📌 Demanda Administrativa", width="regular")
+@st.dialog("📌 Demanda Administrativa", width="large")
 def janela_demanda_admin() -> None:
     sidebar_demanda_admin()
 
-@st.dialog("⚖️ Novo Processo", width="regular")
+@st.dialog("⚖️ Novo Processo", width="large")
 def janela_novo_processo() -> None:
     formulario_novo_processo()
 
