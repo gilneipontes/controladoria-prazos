@@ -2241,59 +2241,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
     processos_unicos = processos_ativos.drop_duplicates(subset=["numero"], keep="first").sort_values("numero")
     total_processos = len(processos_unicos)
 
-    # ===== BOTÃO DE ATUALIZAÇÃO EM MASSA =====
-    st.info("""
-    ✨ **NOVO:** Campos de "Papel do Cliente" e "Papel da Parte Adversária" adicionados!
-
-    Se você tem processos cadastrados sem esses campos, clique no botão abaixo para preenchê-los automaticamente com valores padrão.
-    """)
-
-    col_bulk1, col_bulk2, col_bulk3 = st.columns(3)
-    with col_bulk1:
-        if st.button("⚡ Preencher Papéis em Branco (Automático)", type="primary", use_container_width=True):
-            try:
-                sb = supabase()
-                # Busca todos os processos que têm papel_cliente vazio ou NULL
-                processos_para_atualizar = sb.table(TABELA_PROCESSOS).select("id").is_(
-                    "papel_cliente", "is.null"
-                ).execute()
-
-                if processos_para_atualizar.data:
-                    atualizado_count = 0
-                    for proc in processos_para_atualizar.data:
-                        try:
-                            sb.table(TABELA_PROCESSOS).update({
-                                "papel_cliente": "Autor",
-                                "papel_parte": "Réu"
-                            }).eq("id", proc["id"]).execute()
-                            atualizado_count += 1
-                        except Exception as e:
-                            pass
-
-                    if atualizado_count > 0:
-                        st.success(f"✅ {atualizado_count} processo(s) atualizado(s) com sucesso!")
-                        st.info(f"📝 Foram preenchidos com valores padrão:\n- Papel do Cliente: **Autor**\n- Papel da Parte: **Réu**\n\nVocê pode editar cada um se precisar mudar.")
-                        carregar_processos.clear()
-                        st.rerun()
-                    else:
-                        st.warning("ℹ️ Nenhum processo com campos vazios encontrado.")
-                else:
-                    st.warning("ℹ️ Todos os processos já têm papéis definidos!")
-            except Exception as e:
-                if "papel_cliente" in str(e) or "papel_parte" in str(e):
-                    st.error("""
-                    ❌ As colunas de papel ainda não existem no banco de dados!
-
-                    **Para adicionar:**
-                    1. Vá para Supabase → Tabela `processos`
-                    2. Adicione 2 colunas:
-                       - `papel_cliente` (tipo: text)
-                       - `papel_parte` (tipo: text)
-                    3. Volte e tente novamente
-                    """)
-                else:
-                    st.error(f"❌ Erro: {str(e)}")
-
     col1, col2 = st.columns([3, 1])
     with col1:
         busca = st.text_input(
