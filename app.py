@@ -5445,6 +5445,20 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
         with st.form(f"form_edit_prazo_{id_prazo}"):
             novo_titulo = st.text_input("Título *", value=prazo["titulo"] or "")
 
+            # --- Processo (com dropdown para trocar se foi lançado no processo errado) ---
+            processos = df_processos[df_processos["ativo"]] if df_processos is not None and not df_processos.empty else pd.DataFrame()
+            numeros = list(dict.fromkeys(processos["numero"].astype(str))) if not processos.empty else []
+            if prazo["processo"] not in numeros:
+                numeros = [str(prazo["processo"])] + numeros
+            clientes = dict(zip(df_processos["numero"].astype(str), df_processos["cliente"])) if df_processos is not None and not df_processos.empty else {}
+            novo_processo = st.selectbox(
+                "Processo",
+                numeros,
+                index=numeros.index(str(prazo["processo"])) if str(prazo["processo"]) in numeros else 0,
+                format_func=lambda n: f"{n} — {clientes.get(n, prazo['cliente'])}",
+                key=f"edit_proc_{id_prazo}",
+            )
+
             col_e1, col_e2 = st.columns(2)
             with col_e1:
                 novo_tipo = st.selectbox(
@@ -5517,6 +5531,8 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
                 st.error("Se o prazo está concluído, indique a data de conclusão!")
             else:
                 campos_update = {
+                    "processo": novo_processo,
+                    "cliente": clientes.get(novo_processo, prazo["cliente"]),
                     "titulo": novo_titulo.strip(),
                     "tipo": novo_tipo,
                     "responsavel": novo_responsavel,
