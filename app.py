@@ -95,7 +95,7 @@ COLUNAS_PRAZOS = [
     "arquivado",
 ]
 
-COLUNAS_PROCESSOS = ["id", "created_at", "numero", "cliente", "parte_contraria", "descricao", "fase", "papel_cliente", "papel_parte", "ativo"]
+COLUNAS_PROCESSOS = ["id", "created_at", "numero", "cliente", "parte_contraria", "descricao", "fase", "ativo"]
 
 COLUNAS_AUDIENCIAS = [
     "id", "created_at", "processo", "autor", "reu", "sala", "data_audiencia",
@@ -424,18 +424,7 @@ def carregar_prazos() -> pd.DataFrame:
 @st.cache_data(ttl=60, show_spinner="Carregando processos…")
 def carregar_processos() -> pd.DataFrame:
     resp = supabase().table(TABELA_PROCESSOS).select("*").order("numero").execute()
-    if not resp.data:
-        return pd.DataFrame(columns=COLUNAS_PROCESSOS)
-
-    df = pd.DataFrame(resp.data)
-
-    # Garantir que todas as colunas esperadas existem
-    for col in COLUNAS_PROCESSOS:
-        if col not in df.columns:
-            df[col] = None
-
-    # Manter apenas as colunas esperadas na ordem correta
-    df = df[COLUNAS_PROCESSOS]
+    df = pd.DataFrame(resp.data, columns=COLUNAS_PROCESSOS)
     df["ativo"] = df["ativo"].fillna(True).astype(bool)
     return df
 
@@ -561,14 +550,14 @@ def atualizar_processo(id_processo: int, campos: dict) -> None:
     Args:
         id_processo: ID do processo a atualizar
         campos: Dicionário com os campos a atualizar
-                Campos válidos: cliente, parte_contraria, descricao, fase, papel_cliente, papel_parte, ativo
+                Campos válidos: cliente, parte_contraria, descricao, fase, ativo
     """
     if not campos:
         return
 
     try:
         # Validar campos conhecidos
-        campos_validos = {"cliente", "parte_contraria", "descricao", "fase", "papel_cliente", "papel_parte", "ativo"}
+        campos_validos = {"cliente", "parte_contraria", "descricao", "fase", "ativo"}
         campos_filtrados = {k: v for k, v in campos.items() if k in campos_validos}
 
         if not campos_filtrados:
@@ -2251,44 +2240,6 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
 
     processos_unicos = processos_ativos.drop_duplicates(subset=["numero"], keep="first").sort_values("numero")
     total_processos = len(processos_unicos)
-
-    # ===== RELATÓRIO DE STATUS DOS PAPÉIS =====
-    st.info("✨ **NOVO:** Campos de 'Papel do Cliente' e 'Papel da Parte Adversária' adicionados!")
-
-    try:
-        # Criar relatório de status
-        relatorio = []
-        for idx, proc in processos_unicos.iterrows():
-            papel_cli = proc.get("papel_cliente", "").strip() if pd.notna(proc.get("papel_cliente")) else ""
-            papel_parte = proc.get("papel_parte", "").strip() if pd.notna(proc.get("papel_parte")) else ""
-            status_geral = "✅ COMPLETO" if (papel_cli and papel_parte) else "⚠️ INCOMPLETO"
-
-            relatorio.append({
-                "Status": status_geral,
-                "Nº Processo": proc["numero"],
-                "Cliente": proc["cliente"][:30],
-                "Papel Cliente": papel_cli or "—",
-                "Papel Parte": papel_parte or "—",
-            })
-
-        df_relatorio = pd.DataFrame(relatorio)
-        incompletos = len(df_relatorio[df_relatorio["Status"].str.contains("INCOMPLETO")])
-        completos = len(df_relatorio) - incompletos
-
-        col_stat1, col_stat2, col_stat3 = st.columns(3)
-        col_stat1.metric("Total", len(df_relatorio))
-        col_stat2.metric("✅ Completos", completos)
-        col_stat3.metric("⚠️ Incompletos", incompletos)
-
-        if incompletos > 0:
-            st.warning(f"Você tem **{incompletos} processo(s)** para atualizar!")
-            st.dataframe(df_relatorio, use_container_width=True, hide_index=True, key="tbl_relatorio_proc")
-            st.markdown("1. Procure o processo abaixo  2. Preencha os campos  3. Salve ✨")
-        else:
-            st.success("✅ Todos com papéis preenchidos! 🎉")
-
-    except Exception as e:
-        pass
 
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -6195,15 +6146,6 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos_filtrados) if not df_prazos_filtrados.empty else pd.DataFrame()
 
-    # ===== MODAL COM DETALHES COMPLETOS (ABRIR ANTES DAS ABAS) =====
-    if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
-        id_prazo = st.session_state.id_modal
-        prazo = df_prazos[df_prazos["id"] == id_prazo]
-
-        if not prazo.empty:
-            prazo = prazo.iloc[0]
-            modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
-
     tab1, tab2, tab3, tab4, tab5, tab6, tab_filtros = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🔬 Perícias", "📅 Audiências", "🔍 Filtros Avançados"])
 
     with tab1:
@@ -6225,6 +6167,15 @@ def main() -> None:
 
         # ===== RENDERIZAR CARDS EM VEZ DE TABELA =====
         renderizar_cards_prazos(prazos_ativos, df_processos)
+
+    # ===== MODAL COM DETALHES COMPLETOS (FORA DO CONTEXTO DE ABAS) =====
+    if st.session_state.get("modal_aberta") and st.session_state.get("id_modal"):
+        id_prazo = st.session_state.id_modal
+        prazo = df_prazos[df_prazos["id"] == id_prazo]
+
+        if not prazo.empty:
+            prazo = prazo.iloc[0]
+            modal_detalhes_prazo(prazo, id_prazo, df_prazos, df_processos)
 
     with tab2:
         # ===== PASSO 5: FILTRO NA TAB 2 =====
