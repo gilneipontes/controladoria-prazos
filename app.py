@@ -29,6 +29,7 @@ import pandas as pd
 import streamlit as st
 from supabase import Client, create_client
 from calculo_prazos import FAIXAS, FERIADOS, calcular_urgencia
+from agenda_ics import gerar_ics
 
 # ===== CONFIG =====
 st.set_page_config(page_title="Controladoria Jurídica", page_icon="⚖️", layout="wide")
@@ -6345,6 +6346,16 @@ def main() -> None:
                 )
         else:
             st.info("Sem dados para exportar")
+
+        st.subheader("📅 Exportar Agenda")
+        st.caption("Gera um arquivo para importar os prazos ativos no Google Calendar, Outlook ou iPhone.")
+        st.download_button(
+            label="📅 Baixar agenda (.ics)",
+            data=gerar_ics(prazos_ativos, nome_calendario="Prazos"),
+            file_name=f"agenda_prazos_{data_hoje.strftime('%d_%m_%Y')}.ics",
+            mime="text/calendar",
+            use_container_width=True,
+        )
 
         st.subheader("🔄 Desarquivar Prazos")
         arquivados = df_prazos[df_prazos["arquivado"]]
