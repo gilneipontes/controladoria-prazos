@@ -41,9 +41,9 @@ def _quebrar_linha(linha: str) -> list[str]:
         tamanho = len(caractere.encode("utf-8"))
         if bytes_atual + tamanho > limite:
             partes.append(atual)
-            atual = caractere
-            bytes_atual = tamanho
-            limite = _LIMITE_LINHA - 1  # a continuação começa com um espaço
+            atual = " " + caractere  # continuação começa com espaço (RFC 5545)
+            bytes_atual = 1 + tamanho
+            limite = _LIMITE_LINHA
         else:
             atual += caractere
             bytes_atual += tamanho
