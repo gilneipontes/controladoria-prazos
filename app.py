@@ -17,6 +17,9 @@ from __future__ import annotations
 
 import datetime as dt
 import hmac
+import io
+import json
+import zipfile
 import os
 import re
 from zoneinfo import ZoneInfo
@@ -5777,95 +5780,109 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
 # FUNÇÕES DE BACKUP
 # ============================================
 
-@st.cache_data(ttl=300)
-def carregar_backup_data():
-    """Busca dados de todas as 3 tabelas para backup"""
-    try:
-        sb = supabase()
-
-        # Busca os dados das 3 tabelas
-        processos = sb.table(TABELA_PROCESSOS).select("*").execute().data or []
-        prazos = sb.table(TABELA_PRAZOS).select("*").execute().data or []
-        audiencias = sb.table(TABELA_AUDIENCIAS).select("*").execute().data or []
-
-        return processos, prazos, audiencias
-    except Exception as e:
-        st.error(f"Erro ao carregar dados para backup: {e}")
-        return [], [], []
+# ===== BACKUP E RESTAURAÇÃO =====
+BACKUP_VERSAO = 1
+BACKUP_TABELAS = [
+    ("processos", TABELA_PROCESSOS),
+    ("prazos", TABELA_PRAZOS),
+    ("audiencias", TABELA_AUDIENCIAS),
+    ("pericias", TABELA_PERICIAS),
+    ("configuracoes", TABELA_CONFIG),
+]
+# Tabelas que são restauradas. "configuracoes" só é salva, não restaurada automaticamente.
+RESTAURAR_TABELAS = ["processos", "prazos", "audiencias", "pericias"]
 
 
-def fazer_backup_completo():
-    """Cria arquivo CSV combinado com dados de todas as tabelas"""
-    try:
-        processos, prazos, audiencias = carregar_backup_data()
-
-        # Converte para DataFrames
-        df_processos = pd.DataFrame(processos) if processos else pd.DataFrame()
-        df_prazos = pd.DataFrame(prazos) if prazos else pd.DataFrame()
-        df_audiencias = pd.DataFrame(audiencias) if audiencias else pd.DataFrame()
-
-        # Adiciona uma coluna de tabela para identificar a origem dos dados
-        if not df_processos.empty:
-            df_processos.insert(0, '_tabela', 'PROCESSOS')
-        if not df_prazos.empty:
-            df_prazos.insert(0, '_tabela', 'PRAZOS')
-        if not df_audiencias.empty:
-            df_audiencias.insert(0, '_tabela', 'AUDIENCIAS')
-
-        # Combina todos os dados em um único DataFrame
-        dfs = [df_processos, df_prazos, df_audiencias]
-        dfs = [df for df in dfs if not df.empty]
-
-        if dfs:
-            df_backup = pd.concat(dfs, axis=0, ignore_index=True, sort=False)
-        else:
-            df_backup = pd.DataFrame()
-
-        # Converte para CSV
-        if not df_backup.empty:
-            csv_data = df_backup.to_csv(index=False, sep=';', encoding='utf-8-sig')
-            return csv_data
-        else:
-            return "Nenhum dado para fazer backup"
-
-    except Exception as e:
-        st.error(f"Erro ao criar backup: {e}")
-        return None
+def buscar_tabela_backup(nome_tabela: str) -> list:
+    """Busca todos os registros de uma tabela, em páginas, sem cache. Lança erro se falhar."""
+    sb = supabase()
+    registros = []
+    inicio = 0
+    tamanho = 1000
+    while True:
+        resp = sb.table(nome_tabela).select("*").range(inicio, inicio + tamanho - 1).execute()
+        lote = resp.data or []
+        registros.extend(lote)
+        if len(lote) < tamanho:
+            break
+        inicio += tamanho
+    return registros
 
 
-def fazer_backup_separado():
-    """Cria 3 CSVs separados (um por tabela)"""
-    try:
-        processos, prazos, audiencias = carregar_backup_data()
+def _tabela_inexistente(erro: Exception) -> bool:
+    texto = str(erro)
+    return "PGRST205" in texto or "does not exist" in texto or "Could not find the table" in texto
 
-        # Converte para DataFrames
-        df_processos = pd.DataFrame(processos) if processos else pd.DataFrame()
-        df_prazos = pd.DataFrame(prazos) if prazos else pd.DataFrame()
-        df_audiencias = pd.DataFrame(audiencias) if audiencias else pd.DataFrame()
 
-        # Cria CSVs separados
-        csv_processos = df_processos.to_csv(index=False, sep=';', encoding='utf-8-sig') if not df_processos.empty else ""
-        csv_prazos = df_prazos.to_csv(index=False, sep=';', encoding='utf-8-sig') if not df_prazos.empty else ""
-        csv_audiencias = df_audiencias.to_csv(index=False, sep=';', encoding='utf-8-sig') if not df_audiencias.empty else ""
+def gerar_backup_zip() -> bytes:
+    """Gera um ZIP com um JSON (para restaurar) e um CSV (para abrir no Excel) por tabela,
+    mais um manifesto com as contagens. Se uma tabela essencial falhar, lança o erro
+    em vez de gerar um backup incompleto."""
+    agora = dt.datetime.now(TZ)
+    manifesto = {
+        "versao": BACKUP_VERSAO,
+        "gerado_em": agora.isoformat(),
+        "tabelas": {},
+        "avisos": [],
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for nome, tabela in BACKUP_TABELAS:
+            try:
+                registros = buscar_tabela_backup(tabela)
+            except Exception as e:
+                if nome == "configuracoes" and _tabela_inexistente(e):
+                    manifesto["avisos"].append("Tabela de configurações não existe no banco; não foi incluída.")
+                    continue
+                raise
+            manifesto["tabelas"][nome] = len(registros)
+            zf.writestr(f"{nome}.json", json.dumps(registros, ensure_ascii=False, default=str, indent=2))
+            df = pd.DataFrame(registros)
+            csv_txt = df.to_csv(index=False, sep=";") if not df.empty else ""
+            zf.writestr(f"{nome}.csv", csv_txt.encode("utf-8-sig"))
+        zf.writestr("manifesto.json", json.dumps(manifesto, ensure_ascii=False, indent=2))
+    return buffer.getvalue()
 
-        # Combina os 3 em um único arquivo com separadores visuais
-        backup_completo = f"""=== BACKUP COMPLETO - {dt.datetime.now(TZ).strftime('%d/%m/%Y %H:%M')} ===
 
---- TABELA: PROCESSOS ({len(df_processos)} registros) ---
-{csv_processos}
+def restaurar_backup_zip(conteudo: bytes) -> dict:
+    """Restaura registros de um ZIP gerado por gerar_backup_zip.
+    Atualiza os registros com o mesmo ID e recria os que faltarem.
+    Não apaga nada que foi criado depois do backup. Valida as contagens antes de gravar."""
+    resumo = {}
+    with zipfile.ZipFile(io.BytesIO(conteudo)) as zf:
+        nomes = zf.namelist()
+        if "manifesto.json" not in nomes:
+            raise ValueError("arquivo inválido: manifesto.json não encontrado.")
+        manifesto = json.loads(zf.read("manifesto.json").decode("utf-8"))
+        esperados = manifesto.get("tabelas", {})
 
---- TABELA: PRAZOS ({len(df_prazos)} registros) ---
-{csv_prazos}
+        # Lê e valida tudo antes de gravar qualquer coisa
+        dados = {}
+        for nome, _tabela in BACKUP_TABELAS:
+            if nome not in RESTAURAR_TABELAS or f"{nome}.json" not in nomes:
+                continue
+            registros = json.loads(zf.read(f"{nome}.json").decode("utf-8"))
+            if nome in esperados and esperados[nome] != len(registros):
+                raise ValueError(
+                    f"backup de '{nome}' inconsistente: o manifesto diz {esperados[nome]} "
+                    f"registros e o arquivo tem {len(registros)}."
+                )
+            dados[nome] = registros
 
---- TABELA: AUDIÊNCIAS ({len(df_audiencias)} registros) ---
-{csv_audiencias}
-"""
-        return backup_completo
+    sb = supabase()
+    tabela_por_nome = dict(BACKUP_TABELAS)
+    for nome, registros in dados.items():
+        for i in range(0, len(registros), 500):
+            lote = registros[i:i + 500]
+            if lote:
+                sb.table(tabela_por_nome[nome]).upsert(lote, on_conflict="id").execute()
+        resumo[nome] = len(registros)
 
-    except Exception as e:
-        st.error(f"Erro ao criar backup: {e}")
-        return None
-
+    carregar_processos.clear()
+    carregar_prazos.clear()
+    carregar_audiencias.clear()
+    carregar_pericias.clear()
+    return resumo
 
 
 # ===== FUNÇÕES DE FILTRO AVANÇADO =====
@@ -6116,35 +6133,43 @@ def main() -> None:
 
             st.caption("💾 BACKUP")
 
-            col_backup1, col_backup2 = st.columns(2)
+            if st.button("📥 Gerar backup", use_container_width=True, key="gerar_backup_sidebar"):
+                try:
+                    with st.spinner("Gerando backup..."):
+                        st.session_state["backup_zip"] = gerar_backup_zip()
+                    st.session_state["backup_zip_nome"] = (
+                        f"backup_controladoria_{dt.datetime.now(TZ).strftime('%Y%m%d_%H%M%S')}.zip"
+                    )
+                except Exception as e:
+                    st.session_state.pop("backup_zip", None)
+                    st.error(f"Não foi possível gerar o backup, nada foi salvo. Detalhe: {e}")
 
-            with col_backup1:
-                if st.button("📥 Backup Completo", use_container_width=True, key="backup_completo_sidebar"):
-                    backup_data = fazer_backup_completo()
-                    if backup_data:
-                        timestamp = dt.datetime.now(TZ).strftime("%Y%m%d_%H%M%S")
-                        nome_arquivo = f"backup_completo_{timestamp}.csv"
-                        st.download_button(
-                            label="⬇️ Baixar CSV",
-                            data=backup_data,
-                            file_name=nome_arquivo,
-                            mime="text/csv",
-                            use_container_width=True,
-                        )
+            if st.session_state.get("backup_zip"):
+                st.download_button(
+                    "⬇️ Baixar backup (.zip)",
+                    data=st.session_state["backup_zip"],
+                    file_name=st.session_state["backup_zip_nome"],
+                    mime="application/zip",
+                    use_container_width=True,
+                    key="baixar_backup_sidebar",
+                )
 
-            with col_backup2:
-                if st.button("📋 Backup Detalhado", use_container_width=True, key="backup_detalhado_sidebar"):
-                    backup_data = fazer_backup_separado()
-                    if backup_data:
-                        timestamp = dt.datetime.now(TZ).strftime("%Y%m%d_%H%M%S")
-                        nome_arquivo = f"backup_detalhado_{timestamp}.txt"
-                        st.download_button(
-                            label="⬇️ Baixar TXT",
-                            data=backup_data,
-                            file_name=nome_arquivo,
-                            mime="text/plain",
-                            use_container_width=True,
-                        )
+            st.caption("♻️ RESTAURAR BACKUP")
+            st.caption("Atualiza os registros com o mesmo ID e recria os que faltarem. Não apaga nada criado depois do backup.")
+            arquivo_restore = st.file_uploader("Arquivo .zip do backup", type=["zip"], key="upload_restore_backup")
+            confirmar_restore = st.checkbox("Confirmo que quero restaurar este backup", key="confirma_restore")
+            if st.button(
+                "Restaurar",
+                disabled=not (arquivo_restore and confirmar_restore),
+                use_container_width=True,
+                key="btn_restaurar_backup",
+            ):
+                try:
+                    with st.spinner("Restaurando..."):
+                        resumo = restaurar_backup_zip(arquivo_restore.getvalue())
+                    st.success("Backup restaurado: " + ", ".join(f"{k}: {v} registros" for k, v in resumo.items()))
+                except Exception as e:
+                    st.error(f"Restauração não concluída. Detalhe: {e}")
 
         st.divider()
 
