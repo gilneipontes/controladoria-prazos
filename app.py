@@ -79,7 +79,18 @@ COLUNAS_AUDIENCIAS = [
 ]
 
 FORMATOS_AUDIENCIA = ["Presencial", "Virtual"]
-TIPOS_AUDIENCIA = ["Inicial", "Continuação", "Sentença", "Outra"]
+TIPOS_AUDIENCIA = [
+    # Justiça do Trabalho
+    "Audiência Una",
+    "Audiência Inicial",
+    "Audiência de Instrução",
+    # Direito Cível / CPC
+    "Audiência de Conciliação ou Mediação",
+    "Audiência de Instrução e Julgamento (AIJ)",
+    "Audiência de Saneamento",
+    "Audiência de Justificação",
+    "Outra",
+]
 STATUS_AUDIENCIA = ["Agendada", "Realizada", "Cancelada"]
 
 COLUNAS_PERICIAS = [
@@ -2718,7 +2729,11 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
                 with col1:
                     novo_formato = st.selectbox("Formato", FORMATOS_AUDIENCIA, index=FORMATOS_AUDIENCIA.index(audiencia["formato"]), key=f"edit_formato_{prefix}_{id_audiencia}")
                 with col2:
-                    novo_tipo = st.selectbox("Tipo", TIPOS_AUDIENCIA, index=TIPOS_AUDIENCIA.index(audiencia["tipo"]), key=f"edit_tipo_{prefix}_{id_audiencia}")
+                    # Audiências cadastradas antes da mudança podem ter tipos antigos
+                    # ("Inicial", "Continuação", "Sentença"): mantém o valor atual na lista.
+                    tipo_atual = audiencia["tipo"] or TIPOS_AUDIENCIA[0]
+                    opcoes_tipo = TIPOS_AUDIENCIA if tipo_atual in TIPOS_AUDIENCIA else [tipo_atual] + TIPOS_AUDIENCIA
+                    novo_tipo = st.selectbox("Tipo", opcoes_tipo, index=opcoes_tipo.index(tipo_atual), key=f"edit_tipo_{prefix}_{id_audiencia}")
 
                 nova_obs = st.text_area("Observações", value=audiencia["observacoes"] or "", height=100, key=f"edit_obs_{prefix}_{id_audiencia}")
 
