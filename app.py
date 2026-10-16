@@ -2950,6 +2950,36 @@ def janela_ver_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd.Da
     else:
         st.caption("Sem observações.")
 
+    # ===== CONCLUSÃO COM DATA ESCOLHIDA (funciona para prazos com ou sem processo) =====
+    st.divider()
+    if bool(prazo["concluido"]):
+        if pd.notna(prazo["concluido_em"]):
+            st.markdown(f"**✅ Concluído em:** {formatar_data_brasil(pd.Timestamp(prazo['concluido_em']).date())}")
+            valor_padrao = pd.Timestamp(prazo["concluido_em"]).date()
+        else:
+            st.markdown("**✅ Concluído** (sem data registrada)")
+            valor_padrao = hoje()
+        nova_data_c = st.date_input(
+            "Data da conclusão", value=valor_padrao, max_value=hoje(),
+            format="DD/MM/YYYY", key=f"ver_data_concl_{id_prazo}",
+        )
+        if st.button("💾 Salvar data de conclusão", use_container_width=True, key=f"ver_salvar_concl_{id_prazo}"):
+            iso = dt.datetime.combine(nova_data_c, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
+            atualizar_campos({id_prazo: {"concluido": True, "concluido_em": iso}})
+            st.success(f"Data de conclusão salva: {nova_data_c.strftime('%d/%m/%Y')}")
+            st.rerun()
+    else:
+        nova_data_c = st.date_input(
+            "Data da conclusão", value=hoje(), max_value=hoje(),
+            format="DD/MM/YYYY", key=f"ver_data_concl_{id_prazo}",
+        )
+        if st.button("✅ Marcar como concluído", type="primary", use_container_width=True, key=f"ver_concluir_{id_prazo}"):
+            iso = dt.datetime.combine(nova_data_c, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
+            atualizar_campos({id_prazo: {"concluido": True, "concluido_em": iso}})
+            st.success(f"Marcado como concluído em {nova_data_c.strftime('%d/%m/%Y')}")
+            st.rerun()
+
+    st.divider()
     b1, b2 = st.columns(2)
     if b1.button("✏️ Editar este prazo", type="primary", use_container_width=True, key=f"ver_editar_{id_prazo}"):
         st.session_state[modo_chave] = "editar"
