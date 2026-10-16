@@ -770,7 +770,7 @@ def concluir_prazo_agora(id_prazo: int) -> bool:
     print(f"{'='*80}\n")
     return sucesso
 
-def concluir_prazo_agora_v2(id_prazo: int) -> bool:
+def concluir_prazo_agora_v2(id_prazo: int, data_conclusao: dt.date | None = None) -> bool:
     """
     ✨ VERSÃO CORRIGIDA: Usa EXATAMENTE o mesmo padrão que já funciona!
 
@@ -789,7 +789,7 @@ def concluir_prazo_agora_v2(id_prazo: int) -> bool:
     # Usar data de hoje + hora fixa 12:00 (não hora atual!)
     # Isso evita problemas com timezone e formato
 
-    data_conclusao = hoje()
+    data_conclusao = data_conclusao or hoje()
     data_iso = dt.datetime.combine(data_conclusao, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
 
     print(f"[DATA] {data_conclusao}")
@@ -5542,21 +5542,29 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
     st.divider()
     st.subheader("⚙️ Ações Rápidas")
 
+    # Data da conclusão: padrão é hoje, mas pode escolher outra (ex.: prazo feito ontem)
+    data_concl_escolhida = st.date_input(
+        "Data da conclusão",
+        value=hoje(),
+        max_value=hoje(),
+        format="DD/MM/YYYY",
+        key=f"data_concl_rapida_{id_prazo}",
+    )
+
     col_acao1, col_acao2, col_acao3, col_acao4 = st.columns(4)
 
     with col_acao1:
-        # Botão para concluir (novo ou re-concluir com nova data)
+        # Botão para concluir (novo ou re-concluir com a data escolhida acima)
         label_btn = "✅ Concluir Agora" if not prazo['concluido'] else "🔄 Re-concluir"
         tipo_btn = "primary" if not prazo['concluido'] else "secondary"
 
         if st.button(label_btn, use_container_width=True, key=f"btn_concl_{id_prazo}", type=tipo_btn):
             # ✨ USAR VERSÃO CORRIGIDA que usa o padrão comprovado
             with st.spinner("⏳ Salvando conclusão com data..."):
-                sucesso = concluir_prazo_agora_v2(id_prazo)
+                sucesso = concluir_prazo_agora_v2(id_prazo, data_concl_escolhida or hoje())
 
             if sucesso:
-                data_conclusao = dt.datetime.now(TZ)
-                data_formatada = data_conclusao.strftime("%d/%m/%Y às %H:%M")
+                data_formatada = (data_concl_escolhida or hoje()).strftime("%d/%m/%Y")
                 acao = "concluído" if not prazo.get('_ja_foi_concluido') else "re-concluído"
                 st.session_state.aviso = f"✅ '{prazo['titulo']}' {acao} em {data_formatada}! Data será exibida no relatório Excel."
                 st.success(f"✅ {prazo['titulo']} concluído em {data_formatada}!")
