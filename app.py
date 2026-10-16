@@ -2807,25 +2807,38 @@ def formulario_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos
         if not proc.empty:
             parte_contraria = proc.iloc[0]['parte_contraria']
 
+    # Demanda administrativa = prazo sem processo (o banco guarda vazio, que aparece como "nan")
+    SEM_PROCESSO = "— sem processo (demanda administrativa) —"
+    sem_processo_atual = pd.isna(prazo["processo"]) or str(prazo["processo"]).strip().lower() in ("", "nan", "none")
+    processo_exibido = SEM_PROCESSO if sem_processo_atual else str(prazo["processo"])
+
     # Exibir cabeçalho com cliente, processo e parte contrária
-    header_text = f"👤 {prazo['cliente']}  ·  📌 {prazo['processo']}"
+    header_text = f"👤 {prazo['cliente']}  ·  📌 {processo_exibido}"
     if parte_contraria:
         header_text += f"  ·  ⚔️ {parte_contraria}"
     st.caption(header_text)
 
-    # --- Processo (caso tenha sido lançado no processo errado) ---
+    # --- Processo (ou "sem processo" para demandas administrativas) ---
     processos = df_processos[df_processos["ativo"]] if not df_processos.empty else df_processos
     numeros = list(dict.fromkeys(processos["numero"].astype(str))) if not processos.empty else []
-    if prazo["processo"] not in numeros:
-        numeros = [str(prazo["processo"])] + numeros
+    if not sem_processo_atual and processo_exibido not in numeros:
+        numeros = [processo_exibido] + numeros
+    numeros = [SEM_PROCESSO] + numeros
     clientes = dict(zip(df_processos["numero"].astype(str), df_processos["cliente"])) if not df_processos.empty else {}
     processo = st.selectbox(
         "Processo",
         numeros,
-        index=numeros.index(str(prazo["processo"])),
-        format_func=lambda n: f"{n} — {clientes.get(n, prazo['cliente'])}",
+        index=numeros.index(processo_exibido),
+        format_func=lambda n: n if n == SEM_PROCESSO else f"{n} — {clientes.get(n, prazo['cliente'])}",
         key=f"{k}_proc",
     )
+    # Nome do cliente / interessado: só digitado quando não há processo vinculado
+    if processo == SEM_PROCESSO:
+        cliente_digitado = st.text_input(
+            "Nome do cliente / interessado *",
+            value=str(prazo["cliente"]) if pd.notna(prazo["cliente"]) else "",
+            key=f"{k}_cliente",
+        )
 
     # --- Título: pode digitar ou escolher um atalho (o atalho preenche o campo) ---
     st.session_state.setdefault(f"{k}_titulo", str(prazo["titulo"]))
@@ -2876,10 +2889,12 @@ def formulario_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos
             st.error("Informe a data fatal.")
         elif data_interna and data_interna > data_fatal:
             st.error("O prazo interno deve ser igual ou anterior à data fatal.")
+        elif processo == SEM_PROCESSO and not cliente_digitado.strip():
+            st.error("Informe o nome do cliente ou interessado.")
         else:
             atualizar_prazo(int(id_prazo), {
-                "processo": processo,
-                "cliente": clientes.get(processo, prazo["cliente"]),
+                "processo": None if processo == SEM_PROCESSO else processo,
+                "cliente": cliente_digitado.strip() if processo == SEM_PROCESSO else clientes.get(processo, prazo["cliente"]),
                 "titulo": titulo.strip(),
                 "tipo": tipo,
                 "responsavel": responsavel,
