@@ -2497,6 +2497,23 @@ def mostra_card_prazo(prazo, df_processos: pd.DataFrame = None, prefix: str = ""
         # ===== AÇÕES BASEADAS NO STATUS =====
         key_prefix = f"{prefix}_" if prefix else ""
 
+        # ===== EDITAR DIRETO NO CARD (nome do cliente, título, processo, datas...) =====
+        chave_editar_card = f"{key_prefix}editar_card_{prazo['id']}"
+        if not st.session_state.get(chave_editar_card, False):
+            if st.button("✏️ Editar", key=f"{key_prefix}btn_editar_card_{prazo['id']}"):
+                st.session_state[chave_editar_card] = True
+                st.rerun()
+        else:
+            st.info("✏️ Editando este prazo")
+            formulario_editar_prazo(
+                int(prazo["id"]),
+                pd.DataFrame([prazo]),
+                df_processos if df_processos is not None else pd.DataFrame(),
+                ao_cancelar=lambda: st.session_state.pop(chave_editar_card, None),
+                key_prefix=key_prefix,
+            )
+            return
+
         if not prazo.get("concluido"):
             # PRAZO ABERTO - Mostrar botão para marcar como concluído
             col_space, col_btn = st.columns([3, 1])
@@ -2791,14 +2808,14 @@ def janela_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd
     formulario_editar_prazo(id_prazo, df_prazos, df_processos)
 
 
-def formulario_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd.DataFrame, ao_cancelar=None) -> None:
-    """Campos de edição de um prazo (usado nas janelas de edição e de consulta)."""
+def formulario_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos: pd.DataFrame, ao_cancelar=None, key_prefix: str = "") -> None:
+    """Campos de edição de um prazo (usado nas janelas de edição, de consulta e no card)."""
     encontrados = df_prazos[df_prazos["id"] == id_prazo]
     if encontrados.empty:
         st.warning("Este prazo não foi encontrado. Clique em 🔄 Recarregar Dados.")
         return
     prazo = encontrados.iloc[0]
-    k = f"ed_{id_prazo}"
+    k = f"{key_prefix}ed_{id_prazo}"
 
     # ===== BUSCAR PARTE CONTRÁRIA =====
     parte_contraria = ""
@@ -2905,6 +2922,7 @@ def formulario_editar_prazo(id_prazo: int, df_prazos: pd.DataFrame, df_processos
             })
             _limpar_janela_edicao(k)
             st.session_state.pop(f"ver_prazo_modo_{id_prazo}", None)
+            st.session_state.pop(f"{key_prefix}editar_card_{id_prazo}", None)
             st.session_state.aviso = "✅ Prazo corrigido!"
             st.rerun()
     if b2.button("Cancelar", use_container_width=True, key=f"{k}_cancelar"):
@@ -5694,18 +5712,32 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
             novo_titulo = st.text_input("Título *", value=prazo["titulo"] or "")
 
             # --- Processo (com dropdown para trocar se foi lançado no processo errado) ---
+            # Demanda administrativa = prazo sem processo (o banco guarda vazio, que aparece como "nan")
+            SEM_PROCESSO_M = "— sem processo (demanda administrativa) —"
+            sem_proc_m = pd.isna(prazo["processo"]) or str(prazo["processo"]).strip().lower() in ("", "nan", "none")
+            proc_atual_m = SEM_PROCESSO_M if sem_proc_m else str(prazo["processo"])
             processos = df_processos[df_processos["ativo"]] if df_processos is not None and not df_processos.empty else pd.DataFrame()
             numeros = list(dict.fromkeys(processos["numero"].astype(str))) if not processos.empty else []
-            if prazo["processo"] not in numeros:
-                numeros = [str(prazo["processo"])] + numeros
+            if not sem_proc_m and proc_atual_m not in numeros:
+                numeros = [proc_atual_m] + numeros
+            numeros = [SEM_PROCESSO_M] + numeros
             clientes = dict(zip(df_processos["numero"].astype(str), df_processos["cliente"])) if df_processos is not None and not df_processos.empty else {}
             novo_processo = st.selectbox(
                 "Processo",
                 numeros,
-                index=numeros.index(str(prazo["processo"])) if str(prazo["processo"]) in numeros else 0,
-                format_func=lambda n: f"{n} — {clientes.get(n, prazo['cliente'])}",
+                index=numeros.index(proc_atual_m),
+                format_func=lambda n: n if n == SEM_PROCESSO_M else f"{n} — {clientes.get(n, prazo['cliente'])}",
                 key=f"edit_proc_{id_prazo}",
             )
+            # Nome do cliente / interessado: aparece sempre que a demanda não tem processo
+            if sem_proc_m:
+                novo_cliente_adm = st.text_input(
+                    "Nome do cliente / interessado *",
+                    value=str(prazo["cliente"]) if pd.notna(prazo["cliente"]) else "",
+                    key=f"edit_cliente_adm_{id_prazo}",
+                )
+            else:
+                novo_cliente_adm = ""
 
             col_e1, col_e2 = st.columns(2)
             with col_e1:
@@ -5757,10 +5789,12 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
                 st.error("O prazo interno deve ser igual ou anterior à data fatal!")
             elif novo_concluido and not nova_data_conclusao:
                 st.error("Se o prazo está concluído, indique a data de conclusão!")
+            elif novo_processo == SEM_PROCESSO_M and not novo_cliente_adm.strip():
+                st.error("Informe o nome do cliente ou interessado.")
             else:
                 campos_update = {
-                    "processo": novo_processo,
-                    "cliente": clientes.get(novo_processo, prazo["cliente"]),
+                    "processo": None if novo_processo == SEM_PROCESSO_M else novo_processo,
+                    "cliente": novo_cliente_adm.strip() if novo_processo == SEM_PROCESSO_M else clientes.get(novo_processo, prazo["cliente"]),
                     "titulo": novo_titulo.strip(),
                     "tipo": novo_tipo,
                     "responsavel": novo_responsavel,
