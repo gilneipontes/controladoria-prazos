@@ -4680,7 +4680,8 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
                         data_conc = pd.to_datetime(row["concluido_em"]).strftime("%d/%m/%Y")
                         st.caption(f"✅ {data_conc}")
                     else:
-                        st.caption("✅ (sem data)")
+                        # DIAGNÓSTICO TEMPORÁRIO: mostra o id e o valor recebido do banco
+                        st.caption(f"✅ (sem data) [id={row['id']} valor={row.get('concluido_em')!r}]")
                 else:
                     st.caption("🔴 Aberto")
 
