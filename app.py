@@ -402,7 +402,9 @@ def carregar_prazos() -> pd.DataFrame:
         df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
 
     # Garantir que concluido_em seja datetime
-    df["concluido_em"] = pd.to_datetime(df["concluido_em"], errors="coerce")
+    # format="ISO8601" aceita datas com e sem fração de segundo na mesma coluna.
+    # Sem isso, o pandas usa o formato do primeiro valor e zera (NaT) os demais.
+    df["concluido_em"] = pd.to_datetime(df["concluido_em"], errors="coerce", format="ISO8601")
 
     df["concluido"] = df["concluido"].fillna(False).astype(bool)
     df["arquivado"] = df["arquivado"].fillna(False).astype(bool)
@@ -4680,8 +4682,7 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
                         data_conc = pd.to_datetime(row["concluido_em"]).strftime("%d/%m/%Y")
                         st.caption(f"✅ {data_conc}")
                     else:
-                        # DIAGNÓSTICO TEMPORÁRIO: mostra o id e o valor recebido do banco
-                        st.caption(f"✅ (sem data) [id={row['id']} valor={row.get('concluido_em')!r}]")
+                        st.caption("✅ (sem data)")
                 else:
                     st.caption("🔴 Aberto")
 
