@@ -5615,6 +5615,26 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
         st.divider()
         st.subheader("✏️ Editar Prazo")
 
+        # Conclusão fica FORA do st.form: dentro do form, marcar a caixa não atualiza a tela,
+        # então o campo de data nunca aparecia antes de salvar e a data não era gravada.
+        col_status1, col_status2 = st.columns(2)
+        with col_status1:
+            novo_concluido = st.checkbox(
+                "✅ Prazo Concluído",
+                value=bool(prazo["concluido"]),
+                key=f"check_concl_{id_prazo}"
+            )
+        with col_status2:
+            if novo_concluido:
+                nova_data_conclusao = st.date_input(
+                    "Data de Conclusão *",
+                    value=pd.to_datetime(prazo["concluido_em"]).date() if pd.notna(prazo["concluido_em"]) else hoje(),
+                    format="DD/MM/YYYY",
+                    key=f"date_concl_{id_prazo}"
+                )
+            else:
+                nova_data_conclusao = None
+
         with st.form(f"form_edit_prazo_{id_prazo}"):
             novo_titulo = st.text_input("Título *", value=prazo["titulo"] or "")
 
@@ -5661,26 +5681,6 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
                 PRIORIDADES,
                 value=prazo["prioridade"] if prazo["prioridade"] in PRIORIDADES else "Normal",
             )
-
-            # Campo para marcar como concluído e registrar data de conclusão
-            col_status1, col_status2 = st.columns(2)
-            with col_status1:
-                novo_concluido = st.checkbox(
-                    "✅ Prazo Concluído",
-                    value=prazo["concluido"] if prazo["concluido"] else False,
-                    key=f"check_concl_{id_prazo}"
-                )
-
-            with col_status2:
-                if novo_concluido:
-                    nova_data_conclusao = st.date_input(
-                        "Data de Conclusão *",
-                        value=pd.to_datetime(prazo["concluido_em"]).date() if pd.notna(prazo["concluido_em"]) else None,
-                        format="DD/MM/YYYY",
-                        key=f"date_concl_{id_prazo}"
-                    )
-                else:
-                    nova_data_conclusao = None
 
             nova_obs = st.text_area(
                 "O que precisa ser feito (observações):",
