@@ -4782,30 +4782,143 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
     except Exception as e:
         st.error(f"❌ Erro ao criar Excel: {str(e)}")
 
+def _excel_processos_bytes(lista: pd.DataFrame) -> bytes:
+    """Gera a planilha de processos com cabeçalho destacado, bordas, faixas zebradas,
+    largura das colunas ajustada, filtro e cabeçalho fixo (fácil de ler e de filtrar)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Processos"
+
+    colunas = list(lista.columns)
+    borda = Border(
+        left=Side(style="thin", color="BFBFBF"), right=Side(style="thin", color="BFBFBF"),
+        top=Side(style="thin", color="BFBFBF"), bottom=Side(style="thin", color="BFBFBF"),
+    )
+    cabecalho_fill = PatternFill("solid", start_color="1F3864", end_color="1F3864")
+    zebra_fill = PatternFill("solid", start_color="F2F2F2", end_color="F2F2F2")
+
+    # Cabeçalho
+    for i, nome in enumerate(colunas, start=1):
+        c = ws.cell(row=1, column=i, value=nome)
+        c.font = Font(bold=True, color="FFFFFF", size=11)
+        c.fill = cabecalho_fill
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.border = borda
+    ws.row_dimensions[1].height = 24
+
+    # Linhas
+    for r, linha in enumerate(lista.itertuples(index=False), start=2):
+        for i, valor in enumerate(linha, start=1):
+            c = ws.cell(row=r, column=i, value=("" if valor is None else valor))
+            c.alignment = Alignment(vertical="center")
+            c.border = borda
+            if r % 2 == 0:
+                c.fill = zebra_fill
+
+    # Largura das colunas conforme o conteúdo (com limite)
+    for i, nome in enumerate(colunas, start=1):
+        maior = max([len(str(nome))] + [len(str(v)) for v in lista.iloc[:, i - 1].tolist()])
+        ws.column_dimensions[get_column_letter(i)].width = min(max(maior + 3, 12), 60)
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(colunas))}{max(len(lista) + 1, 2)}"
+
+    saida = io.BytesIO()
+    wb.save(saida)
+    return saida.getvalue()
+
+
+def relatorio_processos(df_processos: pd.DataFrame) -> None:
+    """Lista de todos os processos cadastrados, com download em Excel."""
+    if df_processos is None or df_processos.empty:
+        st.info("Nenhum processo cadastrado.")
+        return
+
+    lista = df_processos[df_processos["ativo"]].copy() if "ativo" in df_processos.columns else df_processos.copy()
+    lista = (
+        lista[["numero", "cliente", "papel_cliente", "parte_contraria", "fase"]]
+        .rename(columns={
+            "numero": "Processo",
+            "cliente": "Cliente",
+            "papel_cliente": "Papel do cliente",
+            "parte_contraria": "Parte contrária",
+            "fase": "Fase",
+        })
+        .sort_values("Cliente")
+    )
+
+    lista = lista.fillna("")
+    clientes_lista = ["Todos"] + sorted(lista["Cliente"].astype(str).unique().tolist())
+    cliente_escolhido = st.selectbox("👤 Filtrar por cliente", clientes_lista, key="rel_processos_cliente")
+    if cliente_escolhido != "Todos":
+        lista = lista[lista["Cliente"].astype(str) == cliente_escolhido]
+
+    st.metric("Processos listados", len(lista))
+
+    buffer_processos = _excel_processos_bytes(lista)
+    st.download_button(
+        "📊 Baixar lista de processos (Excel)",
+        data=buffer_processos,
+        file_name=f"processos_{dt.date.today().strftime('%d_%m_%Y')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="baixar_lista_processos_relatorio",
+    )
+
+    st.dataframe(lista, use_container_width=True, hide_index=True)
+
+
 def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, df_audiencias: pd.DataFrame) -> None:
     """
-    PASSO 2.5: Dashboard de Relatórios com 4 abas
+    Dashboard de Relatórios com 5 abas
     - Prazos Ativos
     - Prazos Concluídos
     - Audiências
     - Cliente & Fase
+    - Processos (lista completa com download em Excel)
     """
     st.markdown("# 📊 Relatórios")
     st.caption("Extraia pautas e relatórios de seu sistema")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 Prazos Ativos", "✅ Concluídos", "📅 Audiências", "🔍 Cliente & Fase"])
+    # Um único lugar para todos os relatórios: escolha o tipo logo abaixo
+    opcoes_relatorio = [
+        "Prazos ativos",
+        "Prazos concluídos",
+        "Audiências",
+        "Prazos por cliente e fase",
+        "Processos por fase",
+    ]
+    # Botões de texto clicáveis (sem bolinhas). Se nenhum estiver marcado, usa o primeiro.
+    icones_relatorio = {
+        "Prazos ativos": "📋 Prazos ativos",
+        "Prazos concluídos": "✅ Concluídos",
+        "Audiências": "📅 Audiências",
+        "Prazos por cliente e fase": "🔍 Cliente & Fase",
+        "Processos por fase": "🗂️ Processos",
+    }
+    tipo_relatorio = st.pills(
+        "Tipo de relatório",
+        opcoes_relatorio,
+        default=opcoes_relatorio[0],
+        format_func=lambda opcao: icones_relatorio.get(opcao, opcao),
+        key="rel_tipo_escolhido",
+    ) or opcoes_relatorio[0]
+    st.divider()
 
-    with tab1:
+    if tipo_relatorio == "Prazos ativos":
         relatorio_prazos_ativos(df_prazos, df_processos)
-
-    with tab2:
+    elif tipo_relatorio == "Prazos concluídos":
         relatorio_prazos_concluidos(df_prazos, df_processos)
-
-    with tab3:
+    elif tipo_relatorio == "Audiências":
         relatorio_audiencias(df_audiencias)
-
-    with tab4:
+    elif tipo_relatorio == "Prazos por cliente e fase":
         relatorio_cliente_fase(df_prazos, df_processos)
+    else:
+        relatorio_processos(df_processos)
 
 def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
     """Gerencia visualização de clientes (catálogo)."""
