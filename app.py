@@ -4902,65 +4902,123 @@ def _excel_processos_bytes(lista: pd.DataFrame) -> bytes:
 
 
 def relatorio_pauta_prazos(df_prazos: pd.DataFrame) -> None:
-    """Pauta de prazos em aberto: uma linha por prazo, em ordem de vencimento, com filtros e Excel."""
+    """Pauta de prazos: pendentes, concluídos ou todos, com responsável, período e Excel."""
     st.markdown("### 🗓️ Pauta de prazos")
-    st.caption("Prazos em aberto, em ordem de vencimento. Os vencidos aparecem primeiro.")
+    st.caption("Escolha a situação dos prazos, o responsável e o período. Os vencidos aparecem primeiro.")
 
     if df_prazos is None or df_prazos.empty:
         st.info("Nenhum prazo cadastrado.")
         return
 
-    abertos = df_prazos[(~df_prazos["concluido"]) & (~df_prazos["arquivado"])].copy()
-    if abertos.empty:
-        st.info("Nenhum prazo em aberto.")
-        return
+    situacao = st.pills(
+        "📌 Situação",
+        ["Pendentes", "Concluídos", "Todos"],
+        default="Pendentes",
+        key="pauta_prazos_situacao",
+    ) or "Pendentes"
+
+    base = df_prazos[~df_prazos["arquivado"]].copy()
+    if situacao == "Pendentes":
+        base = base[~base["concluido"]]
+    elif situacao == "Concluídos":
+        base = base[base["concluido"]]
 
     c1, c2 = st.columns(2)
     with c1:
         responsavel_sel = st.selectbox("👤 Responsável", ["Todos"] + RESPONSAVEIS, key="pauta_prazos_resp")
     with c2:
-        opcoes_periodo = ["Próximos 7 dias", "Próximos 30 dias", "Todos os abertos"]
-        periodo = st.pills(
-            "📅 Período",
-            opcoes_periodo,
-            default=opcoes_periodo[0],
-            key="pauta_prazos_periodo",
-        ) or opcoes_periodo[0]
+        if situacao == "Pendentes":
+            opcoes_periodo = ["Próximos 7 dias", "Próximos 30 dias", "Todos os pendentes"]
+        elif situacao == "Concluídos":
+            opcoes_periodo = ["Todos os concluídos", "Últimos 15 dias", "Últimos 30 dias", "Personalizado"]
+        else:
+            opcoes_periodo = None
+
+        if opcoes_periodo:
+            periodo = st.pills(
+                "📅 Período" if situacao == "Pendentes" else "📅 Período da conclusão",
+                opcoes_periodo,
+                default=opcoes_periodo[0],
+                key=f"pauta_prazos_periodo_{situacao}",
+            ) or opcoes_periodo[0]
+        else:
+            periodo = None
+            st.caption("Mostra pendentes e concluídos, sem filtro de período.")
+
+    if periodo == "Personalizado":
+        if st.button("📅 Escolher datas", key="pauta_abrir_datas"):
+            _janela_periodo_personalizado()
+        ini_p = st.session_state.get("rel_cf_periodo_ini")
+        fim_p = st.session_state.get("rel_cf_periodo_fim")
+        if ini_p and fim_p:
+            st.caption(f"Período escolhido: {ini_p.strftime('%d/%m/%Y')} a {fim_p.strftime('%d/%m/%Y')}")
+
+    usar_inicio = st.checkbox("📆 Mostrar a partir de uma data", key="pauta_usar_inicio")
+    inicio_sel = None
+    if usar_inicio:
+        inicio_sel = st.date_input(
+            "A partir de (data fatal ou data da conclusão, conforme a situação)",
+            value=hoje() - dt.timedelta(days=30),
+            format="DD/MM/YYYY",
+            key="pauta_inicio",
+        )
 
     if responsavel_sel != "Todos":
-        abertos = abertos[abertos["responsavel"] == responsavel_sel]
+        base = base[base["responsavel"] == responsavel_sel]
 
-    # Vencidos entram sempre; o período limita só até quantos dias à frente
-    dias = {"Próximos 7 dias": 7, "Próximos 30 dias": 30}.get(periodo)
-    if dias is not None:
-        limite = pd.Timestamp(hoje() + dt.timedelta(days=dias))
-        abertos = abertos[pd.to_datetime(abertos["data_fatal"]) <= limite]
+    if usar_inicio and inicio_sel is not None and not base.empty:
+        if situacao == "Concluídos":
+            datas_ini = pd.to_datetime(base["concluido_em"], errors="coerce").dt.date
+            base = base[[pd.notna(d) and d >= inicio_sel for d in datas_ini]]
+        else:
+            base = base[[d >= inicio_sel for d in base["data_fatal"]]]
 
-    abertos = abertos.sort_values("data_fatal")
-    if abertos.empty:
+    if situacao == "Pendentes":
+        # Vencidos entram sempre; o período limita só até quantos dias à frente
+        dias = {"Próximos 7 dias": 7, "Próximos 30 dias": 30}.get(periodo)
+        if dias is not None and not base.empty:
+            limite = pd.Timestamp(hoje() + dt.timedelta(days=dias))
+            base = base[pd.to_datetime(base["data_fatal"]) <= limite]
+    elif situacao == "Concluídos" and not base.empty:
+        ini, fim = _intervalo_periodo(periodo)
+        if ini is not None and fim is not None:
+            datas_conc = pd.to_datetime(base["concluido_em"], errors="coerce").dt.date
+            mascara = [pd.notna(d) and ini <= d <= fim for d in datas_conc]
+            base = base[mascara]
+
+    if base.empty:
         st.info("Nenhum prazo neste filtro.")
         return
 
-    hoje_ref = hoje()
-    tabela = pd.DataFrame({
-        "Data fatal": pd.to_datetime(abertos["data_fatal"]).dt.strftime("%d/%m/%Y"),
-        "Situação": abertos["data_fatal"].apply(
-            lambda d: "⚠️ Vencido" if d < hoje_ref else ("🔴 Hoje" if d == hoje_ref else "")
-        ),
-        "Cliente": abertos["cliente"].fillna("—").astype(str),
-        "Prazo": abertos["titulo"].fillna("—").astype(str),
-        "Processo": abertos["processo"].apply(
-            lambda p: "—" if pd.isna(p) or str(p).strip().lower() in ("", "nan", "none") else str(p)
-        ),
-        "Responsável": abertos["responsavel"].fillna("—").astype(str),
-        "Prioridade": abertos["prioridade"].fillna("—").astype(str),
-    }).reset_index(drop=True)
+    base = base.sort_values("concluido_em", ascending=False) if situacao == "Concluídos" else base.sort_values("data_fatal")
 
+    hoje_ref = hoje()
+    situacoes_linha = [
+        "✅ Concluído" if concl else ("⚠️ Vencido" if d < hoje_ref else ("🔴 Hoje" if d == hoje_ref else ""))
+        for concl, d in zip(base["concluido"], base["data_fatal"])
+    ]
+    tabela = pd.DataFrame({
+        "Data fatal": pd.to_datetime(base["data_fatal"]).dt.strftime("%d/%m/%Y"),
+        "Situação": situacoes_linha,
+    })
+    if situacao != "Pendentes":
+        tabela["Concluído em"] = pd.to_datetime(base["concluido_em"], errors="coerce").dt.strftime("%d/%m/%Y").fillna("—")
+    tabela["Cliente"] = base["cliente"].fillna("—").astype(str).values
+    tabela["Prazo"] = base["titulo"].fillna("—").astype(str).values
+    tabela["Processo"] = [
+        "—" if pd.isna(p) or str(p).strip().lower() in ("", "nan", "none") else str(p)
+        for p in base["processo"]
+    ]
+    tabela["Responsável"] = base["responsavel"].fillna("—").astype(str).values
+    tabela["Prioridade"] = base["prioridade"].fillna("—").astype(str).values
+    tabela = tabela.reset_index(drop=True)
+
+    slug = {"Pendentes": "pendentes", "Concluídos": "concluidos", "Todos": "todos"}[situacao]
     st.metric("Prazos listados", len(tabela))
     st.download_button(
         "📊 Baixar pauta (Excel)",
         data=_excel_processos_bytes(tabela),
-        file_name=f"pauta_prazos_{hoje_ref.strftime('%d_%m_%Y')}.xlsx",
+        file_name=f"pauta_prazos_{slug}_{hoje_ref.strftime('%d_%m_%Y')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
         key="baixar_pauta_prazos",
