@@ -4882,9 +4882,90 @@ def _excel_processos_bytes(lista: pd.DataFrame) -> bytes:
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:{get_column_letter(len(colunas))}{max(len(lista) + 1, 2)}"
 
+    # Preparação para impressão: paisagem, largura inteira em uma folha,
+    # cabeçalho repetido em cada página e margens estreitas
+    from openpyxl.worksheet.properties import PageSetupProperties
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.print_title_rows = "1:1"
+    ws.page_margins.left = ws.page_margins.right = 0.4
+    ws.page_margins.top = ws.page_margins.bottom = 0.6
+    ws.oddFooter.center.text = "Página &P de &N"
+    ws.oddFooter.center.size = 9
+
     saida = io.BytesIO()
     wb.save(saida)
     return saida.getvalue()
+
+
+def relatorio_pauta_prazos(df_prazos: pd.DataFrame) -> None:
+    """Pauta de prazos em aberto: uma linha por prazo, em ordem de vencimento, com filtros e Excel."""
+    st.markdown("### 🗓️ Pauta de prazos")
+    st.caption("Prazos em aberto, em ordem de vencimento. Os vencidos aparecem primeiro.")
+
+    if df_prazos is None or df_prazos.empty:
+        st.info("Nenhum prazo cadastrado.")
+        return
+
+    abertos = df_prazos[(~df_prazos["concluido"]) & (~df_prazos["arquivado"])].copy()
+    if abertos.empty:
+        st.info("Nenhum prazo em aberto.")
+        return
+
+    c1, c2 = st.columns(2)
+    with c1:
+        responsavel_sel = st.selectbox("👤 Responsável", ["Todos"] + RESPONSAVEIS, key="pauta_prazos_resp")
+    with c2:
+        opcoes_periodo = ["Próximos 7 dias", "Próximos 30 dias", "Todos os abertos"]
+        periodo = st.pills(
+            "📅 Período",
+            opcoes_periodo,
+            default=opcoes_periodo[0],
+            key="pauta_prazos_periodo",
+        ) or opcoes_periodo[0]
+
+    if responsavel_sel != "Todos":
+        abertos = abertos[abertos["responsavel"] == responsavel_sel]
+
+    # Vencidos entram sempre; o período limita só até quantos dias à frente
+    dias = {"Próximos 7 dias": 7, "Próximos 30 dias": 30}.get(periodo)
+    if dias is not None:
+        limite = pd.Timestamp(hoje() + dt.timedelta(days=dias))
+        abertos = abertos[pd.to_datetime(abertos["data_fatal"]) <= limite]
+
+    abertos = abertos.sort_values("data_fatal")
+    if abertos.empty:
+        st.info("Nenhum prazo neste filtro.")
+        return
+
+    hoje_ref = hoje()
+    tabela = pd.DataFrame({
+        "Data fatal": pd.to_datetime(abertos["data_fatal"]).dt.strftime("%d/%m/%Y"),
+        "Situação": abertos["data_fatal"].apply(
+            lambda d: "⚠️ Vencido" if d < hoje_ref else ("🔴 Hoje" if d == hoje_ref else "")
+        ),
+        "Cliente": abertos["cliente"].fillna("—").astype(str),
+        "Prazo": abertos["titulo"].fillna("—").astype(str),
+        "Processo": abertos["processo"].apply(
+            lambda p: "—" if pd.isna(p) or str(p).strip().lower() in ("", "nan", "none") else str(p)
+        ),
+        "Responsável": abertos["responsavel"].fillna("—").astype(str),
+        "Prioridade": abertos["prioridade"].fillna("—").astype(str),
+    }).reset_index(drop=True)
+
+    st.metric("Prazos listados", len(tabela))
+    st.download_button(
+        "📊 Baixar pauta (Excel)",
+        data=_excel_processos_bytes(tabela),
+        file_name=f"pauta_prazos_{hoje_ref.strftime('%d_%m_%Y')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="baixar_pauta_prazos",
+    )
+    st.dataframe(tabela, use_container_width=True, hide_index=True)
 
 
 def relatorio_processos(df_processos: pd.DataFrame) -> None:
@@ -4911,6 +4992,11 @@ def relatorio_processos(df_processos: pd.DataFrame) -> None:
     cliente_escolhido = st.selectbox("👤 Filtrar por cliente", clientes_lista, key="rel_processos_cliente")
     if cliente_escolhido != "Todos":
         lista = lista[lista["Cliente"].astype(str) == cliente_escolhido]
+
+    fases_lista = ["Todas as Fases"] + FASES_PROCESSO
+    fase_escolhida = st.selectbox("📋 Filtrar por fase", fases_lista, key="rel_processos_fase")
+    if fase_escolhida != "Todas as Fases":
+        lista = lista[lista["Fase"].astype(str) == fase_escolhida]
 
     st.metric("Processos listados", len(lista))
 
@@ -4942,6 +5028,7 @@ def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, d
     # Um único lugar para todos os relatórios: escolha o tipo logo abaixo
     opcoes_relatorio = [
         "Prazos ativos",
+        "Pauta de prazos",
         "Prazos concluídos",
         "Audiências",
         "Prazos por cliente e fase",
@@ -4950,6 +5037,7 @@ def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, d
     # Botões de texto clicáveis (sem bolinhas). Se nenhum estiver marcado, usa o primeiro.
     icones_relatorio = {
         "Prazos ativos": "📋 Prazos ativos",
+        "Pauta de prazos": "🗓️ Pauta de prazos",
         "Prazos concluídos": "✅ Concluídos",
         "Audiências": "📅 Audiências",
         "Prazos por cliente e fase": "🔍 Cliente & Fase",
@@ -4966,6 +5054,8 @@ def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, d
 
     if tipo_relatorio == "Prazos ativos":
         relatorio_prazos_ativos(df_prazos, df_processos)
+    elif tipo_relatorio == "Pauta de prazos":
+        relatorio_pauta_prazos(df_prazos)
     elif tipo_relatorio == "Prazos concluídos":
         relatorio_prazos_concluidos(df_prazos, df_processos)
     elif tipo_relatorio == "Audiências":
