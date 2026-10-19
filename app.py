@@ -6576,7 +6576,7 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos_filtrados) if not df_prazos_filtrados.empty else pd.DataFrame()
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab_filtros = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🔬 Perícias", "📅 Audiências", "🔍 Filtros Avançados"])
+    tab1, tab2, tab4, tab5, tab6, tab_filtros = st.tabs(["📋 Ativos", "✅ Concluídos", "📦 Arquivo", "🔬 Perícias", "📅 Audiências", "🔍 Filtros Avançados"])
 
     with tab1:
         # ===== PASSO 1: CARDS COM CORES DINÂMICAS =====
@@ -6642,103 +6642,6 @@ def main() -> None:
                 atualizar_campos({id_reativar: {"concluido": False, "concluido_em": None}})
                 st.session_state.aviso = "✅ Prazo reativado!"
                 st.session_state.editor_v += 1
-                st.rerun()
-
-    with tab3:
-        st.subheader("📋 Pauta de Prazos")
-
-        prazos_ativos = df_prazos[~df_prazos["arquivado"] & ~df_prazos["concluido"]].copy()
-
-        data_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
-        data_semana = pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=7)
-
-        if prazos_ativos.empty:
-            st.info("✅ Nenhum prazo ativo no momento!")
-        else:
-            prazos_hoje = prazos_ativos[prazos_ativos["data_fatal"] == data_hoje]
-            prazos_semana = prazos_ativos[(prazos_ativos["data_fatal"] > data_hoje) & (prazos_ativos["data_fatal"] <= data_semana)]
-            prazos_futuro = prazos_ativos[prazos_ativos["data_fatal"] > data_semana]
-
-            if not prazos_hoje.empty:
-                st.markdown("### 🔴 **HOJE** (" + data_hoje.strftime("%d/%m/%Y") + ")")
-                for _, p in prazos_hoje.iterrows():
-                    col1, col2 = st.columns([3, 1])
-                    col1.markdown(f"""
-                    **{p['titulo']}** | {p['cliente']} / {p.get('parte_contraria', 'N/A')}
-
-                    Responsável: {p['responsavel']} | Prioridade: {p['prioridade']}
-                    """)
-                st.divider()
-
-            if not prazos_semana.empty:
-                st.markdown("### 🟠 **PRÓXIMOS 7 DIAS**")
-                for _, p in prazos_semana.iterrows():
-                    dias_faltam = (p['data_fatal'] - data_hoje).days
-                    col1, col2 = st.columns([3, 1])
-                    col1.markdown(f"""
-                    **{p['titulo']}** | {p['cliente']} ({dias_faltam} dia{'s' if dias_faltam != 1 else ''})
-
-                    Data Fatal: {p['data_fatal'].strftime('%d/%m/%Y')} | Responsável: {p['responsavel']}
-                    """)
-                st.divider()
-
-            if not prazos_futuro.empty:
-                st.markdown("### 🟡 **FUTURO** (após 7 dias)")
-                for _, p in prazos_futuro.iloc[:10].iterrows():
-                    col1, col2 = st.columns([3, 1])
-                    col1.markdown(f"""
-                    **{p['titulo']}** | {p['cliente']}
-
-                    Data Fatal: {p['data_fatal'].strftime('%d/%m/%Y')} | Responsável: {p['responsavel']}
-                    """)
-
-        st.divider()
-        st.subheader("📥 Exportar Pauta")
-
-        excel_path = gerar_excel_bonito(prazos_ativos, df_processos)
-
-        if excel_path:
-            with open(excel_path, "rb") as f:
-                st.download_button(
-                    label="📊 Baixar Pauta em Excel",
-                    data=f.read(),
-                    file_name=f"pauta_prazos_{data_hoje.strftime('%d_%m_%Y')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-        else:
-            st.info("Sem dados para exportar")
-
-        st.subheader("📅 Exportar Agenda")
-        st.caption("Gera um arquivo para importar os prazos ativos no Google Calendar, Outlook ou iPhone.")
-        st.download_button(
-            label="📅 Baixar agenda (.ics)",
-            data=gerar_ics(prazos_ativos, nome_calendario="Prazos"),
-            file_name=f"agenda_prazos_{data_hoje.strftime('%d_%m_%Y')}.ics",
-            mime="text/calendar",
-            use_container_width=True,
-        )
-
-        st.subheader("🔄 Desarquivar Prazos")
-        arquivados = df_prazos[df_prazos["arquivado"]]
-
-        if arquivados.empty:
-            st.info("Nenhum prazo arquivado.")
-        else:
-            st.write(f"**{len(arquivados)} prazos arquivados:**")
-
-            col1, col2 = st.columns([2, 1])
-            id_des = col1.selectbox(
-                "Selecione para desarquivar:",
-                options=arquivados["id"].values,
-                format_func=lambda x: f"{arquivados[arquivados['id'] == x]['cliente'].values[0]} | {arquivados[arquivados['id'] == x]['titulo'].values[0]} | {arquivados[arquivados['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
-                key="sel_des"
-            )
-
-            if col2.button("🔄 Desarquivar", use_container_width=True, type="secondary"):
-                supabase().table(TABELA_PRAZOS).update({"arquivado": False}).eq("id", id_des).execute()
-                carregar_prazos.clear()
-                st.success("✅ Prazo restaurado!")
                 st.rerun()
 
     with tab4:
