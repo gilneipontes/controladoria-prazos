@@ -4518,13 +4518,39 @@ def gerar_relatorio_cliente_pdf_simples(df_prazos: pd.DataFrame, df_processos: p
     except Exception as e:
         return None
 
+def _intervalo_periodo(periodo: str):
+    """Devolve (data_inicial, data_final) do período escolhido, ou (None, None) se não há filtro."""
+    if periodo == "Últimos 15 dias":
+        return hoje() - dt.timedelta(days=15), hoje()
+    if periodo == "Últimos 30 dias":
+        return hoje() - dt.timedelta(days=30), hoje()
+    if periodo == "Personalizado":
+        return st.session_state.get("rel_cf_periodo_ini"), st.session_state.get("rel_cf_periodo_fim")
+    return None, None
+
+
+@st.dialog("📅 Escolher período", width="small")
+def _janela_periodo_personalizado() -> None:
+    """Janela no centro da tela para escolher a data inicial e a final."""
+    c1, c2 = st.columns(2)
+    inicio = c1.date_input("De", value=hoje() - dt.timedelta(days=30), format="DD/MM/YYYY", key="rel_cf_de")
+    fim = c2.date_input("Até", value=hoje(), format="DD/MM/YYYY", key="rel_cf_ate")
+    if st.button("✅ Aplicar período", type="primary", use_container_width=True, key="rel_cf_aplicar"):
+        if inicio > fim:
+            st.error("A data inicial não pode ser depois da data final.")
+        else:
+            st.session_state["rel_cf_periodo_ini"] = inicio
+            st.session_state["rel_cf_periodo_fim"] = fim
+            st.rerun()
+
+
 def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
     """
     Relatório filtrado por Cliente e Fase do Processo
     Exibe: Último prazo concluído e prazos em aberto
     """
     st.markdown("### 🔍 Filtro por Cliente & Fase")
-    st.caption("Visualize o último prazo concluído e todos os prazos em aberto para um cliente específico")
+    st.caption("Prazos de um cliente (ou de todos), com filtros de status, fase e período das conclusões")
 
     if df_prazos.empty:
         st.info("Nenhum prazo cadastrado.")
@@ -4623,6 +4649,35 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
     if prazos_cliente.empty:
         st.warning(f"Nenhum prazo encontrado com o filtro '{status_filtro}'.")
         return
+
+    # ===== PERÍODO DAS CONCLUSÕES (últimos 15 dias, últimos 30 dias ou personalizado) =====
+    if status_filtro in ("Apenas Concluídos", "Todos"):
+        opcoes_periodo = ["Todos os períodos", "Últimos 15 dias", "Últimos 30 dias", "Personalizado"]
+        periodo = st.pills(
+            "📅 Período das conclusões",
+            opcoes_periodo,
+            default=opcoes_periodo[0],
+            key="rel_cf_periodo",
+        ) or opcoes_periodo[0]
+        if periodo == "Personalizado":
+            if st.button("📅 Escolher datas", key="rel_cf_abrir_datas"):
+                _janela_periodo_personalizado()
+            ini_p = st.session_state.get("rel_cf_periodo_ini")
+            fim_p = st.session_state.get("rel_cf_periodo_fim")
+            if ini_p and fim_p:
+                st.caption(f"Período escolhido: {ini_p.strftime('%d/%m/%Y')} a {fim_p.strftime('%d/%m/%Y')}")
+        ini, fim = _intervalo_periodo(periodo)
+        if ini is not None and fim is not None:
+            datas_conc = pd.to_datetime(prazos_cliente["concluido_em"], errors="coerce").dt.date
+            no_periodo = datas_conc.apply(lambda d: d is not None and pd.notna(d) and ini <= d <= fim)
+            if status_filtro == "Apenas Concluídos":
+                prazos_cliente = prazos_cliente[no_periodo]
+            else:
+                # Em "Todos", os abertos continuam aparecendo; só as conclusões são filtradas pelo período
+                prazos_cliente = prazos_cliente[(~prazos_cliente["concluido"]) | no_periodo]
+            if prazos_cliente.empty:
+                st.warning("Nenhum prazo concluído neste período.")
+                return
 
     # Atualizar lista de processos para mostrar apenas os que têm prazos
     processos_com_prazos = prazos_cliente["processo"].unique().tolist()
