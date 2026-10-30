@@ -117,7 +117,13 @@ TIPOS_AUDIENCIA = [
 ]
 # Papéis das partes no processo (cliente e parte adversária)
 PAPEIS_PROCESSO = ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado", "Embargante", "Embargado"]
-STATUS_AUDIENCIA = ["Agendada", "Realizada", "Cancelada"]
+STATUS_AUDIENCIA = ["Agendada", "Realizada", "Adiada"]
+MOTIVOS_ADIAMENTO = ["Adiada pelo juízo", "Erro de lançamento pela parte"]
+def _com_motivo(observacoes, motivo: str) -> str:
+    """Coloca o motivo no início das observações, substituindo um motivo anterior."""
+    texto = re.sub(r"^\[[^\]]*\]\s*", "", str(observacoes or "")).strip()
+    return f"[{motivo}] {texto}".strip()
+
 
 COLUNAS_PERICIAS = [
     "id", "created_at", "processo", "cliente", "tipo_pericia", "descricao_laudo",
@@ -1005,7 +1011,7 @@ def atualizar_audiencia(id_audiencia: int, campos: dict) -> None:
         return
 
     try:
-        campos_validos = {"processo", "tipo", "data", "hora", "descricao", "parecer"}
+        campos_validos = set(COLUNAS_AUDIENCIAS) - {"id", "created_at"}
         campos_filtrados = {k: v for k, v in campos.items() if k in campos_validos}
 
         if not campos_filtrados:
@@ -2740,11 +2746,16 @@ def tabela_audiencias(df: pd.DataFrame, prefix: str = "main") -> None:
                     st.rerun()
 
             with col3:
-                if st.button("❌ Cancelar", use_container_width=True, type="secondary", key=f"btn_cancelar_{prefix}_{id_audiencia}"):
-                    atualizar_audiencia(id_audiencia, {"status": "Cancelada"})
-                    st.session_state.aviso = "⚠️ Audiência cancelada!"
-                    st.session_state[modal_key_aberta] = False
-                    st.rerun()
+                with st.popover("⏸️ Adiada", use_container_width=True):
+                    motivo_adi = st.selectbox("Motivo", MOTIVOS_ADIAMENTO, key=f"motivo_adi_{prefix}_{id_audiencia}")
+                    if st.button("Confirmar", type="primary", use_container_width=True, key=f"confirma_adi_{prefix}_{id_audiencia}"):
+                        atualizar_audiencia(id_audiencia, {
+                            "status": "Adiada",
+                            "observacoes": _com_motivo(audiencia["observacoes"], motivo_adi),
+                        })
+                        st.session_state.aviso = "⏸️ Audiência marcada como adiada!"
+                        st.session_state[modal_key_aberta] = False
+                        st.rerun()
 
             with col4:
                 if st.button("🗑️ Excluir", use_container_width=True, type="secondary", key=f"btn_excluir_{prefix}_{id_audiencia}"):
@@ -6519,19 +6530,20 @@ def main() -> None:
         else:
             audiencias_agendadas = df_audiencias[df_audiencias["status"] == "Agendada"].sort_values("data_audiencia")
             audiencias_realizadas = df_audiencias[df_audiencias["status"] == "Realizada"].sort_values("data_audiencia", ascending=False)
-            audiencias_canceladas = df_audiencias[df_audiencias["status"] == "Cancelada"].sort_values("data_audiencia", ascending=False)
+            # "Cancelada" é o status antigo: continua aparecendo em Adiadas
+            audiencias_adiadas = df_audiencias[df_audiencias["status"].isin(["Adiada", "Cancelada"])].sort_values("data_audiencia")
 
             col1, col2, col3 = st.columns(3)
             col1.metric("📅 Agendadas", len(audiencias_agendadas))
             col2.metric("✅ Realizadas", len(audiencias_realizadas))
-            col3.metric("❌ Canceladas", len(audiencias_canceladas))
+            col3.metric("⏸️ Adiadas", len(audiencias_adiadas))
 
             st.divider()
 
             aud_tab1, aud_tab2, aud_tab3 = st.tabs([
                 f"📅 Agendadas ({len(audiencias_agendadas)})",
                 f"✅ Realizadas ({len(audiencias_realizadas)})",
-                f"❌ Canceladas ({len(audiencias_canceladas)})"
+                f"⏸️ Adiadas ({len(audiencias_adiadas)})"
             ])
 
             with aud_tab1:
@@ -6547,10 +6559,10 @@ def main() -> None:
                     tabela_audiencias(audiencias_realizadas, prefix="tab_realizadas")
 
             with aud_tab3:
-                if audiencias_canceladas.empty:
-                    st.info("Nenhuma audiência cancelada.")
+                if audiencias_adiadas.empty:
+                    st.info("Nenhuma audiência adiada.")
                 else:
-                    tabela_audiencias(audiencias_canceladas, prefix="tab_canceladas")
+                    tabela_audiencias(audiencias_adiadas, prefix="tab_adiadas")
 
             st.divider()
             st.subheader("📥 Exportar Audiências")
