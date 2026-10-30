@@ -115,6 +115,8 @@ TIPOS_AUDIENCIA = [
     "Audiência de Justificação",
     "Outra",
 ]
+# Papéis das partes no processo (cliente e parte adversária)
+PAPEIS_PROCESSO = ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado", "Embargante", "Embargado"]
 STATUS_AUDIENCIA = ["Agendada", "Realizada", "Cancelada"]
 
 COLUNAS_PERICIAS = [
@@ -2387,8 +2389,8 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                             papel_cliente_atual = proc.get("papel_cliente", "Autor")
                             novo_papel_cliente = st.selectbox(
                                 "Papel",
-                                ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
-                                index=(["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"].index(papel_cliente_atual) if papel_cliente_atual in ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"] else 0),
+                                PAPEIS_PROCESSO,
+                                index=(PAPEIS_PROCESSO.index(papel_cliente_atual) if papel_cliente_atual in PAPEIS_PROCESSO else 0),
                                 key=f"papel_cli_{proc['id']}"
                             )
 
@@ -2400,8 +2402,8 @@ def gerenciar_processos(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> 
                             papel_parte_atual = proc.get("papel_parte", "Réu")
                             novo_papel_parte = st.selectbox(
                                 "Papel",
-                                ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
-                                index=(["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"].index(papel_parte_atual) if papel_parte_atual in ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"] else 1),
+                                PAPEIS_PROCESSO,
+                                index=(PAPEIS_PROCESSO.index(papel_parte_atual) if papel_parte_atual in PAPEIS_PROCESSO else 1),
                                 key=f"papel_parte_{proc['id']}"
                             )
 
@@ -4928,7 +4930,7 @@ def formulario_novo_processo() -> None:
         with col_cliente2:
             papel_cliente = st.selectbox(
                 "Papel do Cliente *",
-                ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                PAPEIS_PROCESSO,
                 index=0,
                 key=f"ppapel_cliente_{v}"
             )
@@ -4940,7 +4942,7 @@ def formulario_novo_processo() -> None:
         with col_parte2:
             papel_parte = st.selectbox(
                 "Papel da Parte Adversária *",
-                ["Autor", "Réu", "Reclamante", "Reclamada", "Agravante", "Agravado"],
+                PAPEIS_PROCESSO,
                 index=1,  # Default para "Réu"
                 key=f"ppapel_parte_{v}"
             )
