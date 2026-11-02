@@ -1127,7 +1127,7 @@ def resumo_o_que_fazer(texto, limite: int = 200) -> str:
         resumo = resumo[:limite].rsplit(" ", 1)[0].rstrip(",;:.") + "…"
     return resumo
 
-def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
+def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None, nome_aba: str = "Pauta", titulo: str = None):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     import tempfile
@@ -1137,20 +1137,22 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
 
     df_export = df_prazos[["cliente", "processo", "titulo", "data_fatal", "descricao"]].copy()
     df_export = df_export.rename(columns={"descricao": "o_que_fazer"})
-    df_export["cliente"] = df_export["cliente"].apply(lambda x: x.split()[0] if pd.notna(x) and x else "")
+    df_export["cliente"] = df_export["cliente"].apply(lambda x: x if pd.notna(x) and x else "")
     df_export["o_que_fazer"] = df_export["o_que_fazer"].apply(resumo_o_que_fazer)
 
     # Tipo de ação: vem do cadastro do processo
     if df_processos is not None and not df_processos.empty:
         processos_desc = (
-            df_processos[["numero", "descricao"]]
+            df_processos[["numero", "descricao", "parte_contraria"]]
             .drop_duplicates(subset=["numero"], keep="first")
-            .rename(columns={"descricao": "acao"})
+            .rename(columns={"descricao": "acao", "parte_contraria": "parte"})
         )
         df_export = df_export.merge(processos_desc, left_on="processo", right_on="numero", how="left")
         df_export["acao"] = df_export["acao"].fillna("-").replace("", "-")
+        df_export["parte"] = df_export["parte"].fillna("-").replace("", "-")
     else:
         df_export["acao"] = "-"
+        df_export["parte"] = "-"
 
     try:
         df_export["data_fatal"] = pd.to_datetime(df_export["data_fatal"]).dt.strftime("%d/%m/%Y")
@@ -1158,17 +1160,18 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
         df_export["data_fatal"] = df_export["data_fatal"].astype(str)
 
     colunas = [
-        ("cliente", "Cliente", 15, "left"),
+        ("cliente", "Cliente", 30, "left"),
+        ("parte", "Parte Contrária", 30, "left"),
         ("processo", "Nº Processo", 28, "left"),
         ("titulo", "Prazo", 24, "left"),
         ("data_fatal", "Data Fatal", 13, "center"),
-        ("acao", "Ação", 26, "left"),
         ("o_que_fazer", "O que fazer", 55, "left"),
     ]
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Pauta"
+    # Nome da aba do Excel: máximo 31 caracteres, sem / \ ? * [ ] :
+    ws.title = "".join(c for c in nome_aba if c not in "/\\?*[]:")[:31] or "Pauta"
 
     header_fill = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=12)
@@ -1183,16 +1186,27 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
         "left": Alignment(horizontal="left", vertical="center", wrap_text=True),
     }
 
-    for col_num, (_, titulo, largura, _) in enumerate(colunas, 1):
-        cell = ws.cell(row=1, column=col_num)
-        cell.value = titulo
+    # Linha de título (opcional) acima do cabeçalho
+    linha_cab = 1
+    if titulo:
+        linha_cab = 2
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(colunas))
+        cel_titulo = ws.cell(row=1, column=1)
+        cel_titulo.value = titulo
+        cel_titulo.font = Font(bold=True, size=14, color="1f4788")
+        cel_titulo.alignment = Alignment(horizontal="left", vertical="center")
+        ws.row_dimensions[1].height = 26
+
+    for col_num, (_, nome_col, largura, _) in enumerate(colunas, 1):
+        cell = ws.cell(row=linha_cab, column=col_num)
+        cell.value = nome_col
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = alinhamentos["center"]
         cell.border = border
         ws.column_dimensions[cell.column_letter].width = largura
 
-    for row_num, (_, row) in enumerate(df_export.iterrows(), 2):
+    for row_num, (_, row) in enumerate(df_export.iterrows(), linha_cab + 1):
         for col_num, (campo, _, _, alinhamento) in enumerate(colunas, 1):
             cell = ws.cell(row=row_num, column=col_num)
             cell.value = row[campo]
@@ -1204,8 +1218,8 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.print_title_rows = "1:1"
-    ws.freeze_panes = "A2"
+    ws.print_title_rows = f"1:{linha_cab}"
+    ws.freeze_panes = f"A{linha_cab + 1}"
 
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         wb.save(tmp.name)
@@ -3552,10 +3566,12 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
     st.caption("👉 Clique no botão 🔍 para abrir o prazo, consultar e editar.")
 
     # Criar colunas para exibição com botões - Ordem: Cliente, Papel, Processo, Prazo, Data Fatal, Responsável, Ação
-    col_cliente, col_papel, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([2, 1.5, 1.8, 1.8, 1.8, 1.5, 0.6])
+    col_cliente, col_parte, col_papel, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([1.8, 1.8, 1.2, 1.7, 1.7, 1.5, 1.4, 0.6])
 
     with col_cliente:
         st.markdown("**Cliente**")
+    with col_parte:
+        st.markdown("**Parte Contrária**")
     with col_papel:
         st.markdown("**Papel**")
     with col_processo:
@@ -3573,7 +3589,7 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
 
     # Exibir cada linha com botão
     for idx, (_, row) in enumerate(df_filtrado.iterrows()):
-        col_cliente, col_papel, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([2, 1.5, 1.8, 1.8, 1.8, 1.5, 0.6])
+        col_cliente, col_parte, col_papel, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([1.8, 1.8, 1.2, 1.7, 1.7, 1.5, 1.4, 0.6])
 
         # Buscar papel do cliente no df_processos
         papel_cliente = "—"
@@ -3583,8 +3599,18 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
                 papel_cli = proc_match.iloc[0].get("papel_cliente", "")
                 papel_cliente = papel_cli if papel_cli and pd.notna(papel_cli) else "—"
 
+        # Buscar parte contrária no cadastro do processo
+        parte_contraria = "—"
+        if row["processo"] and not df_processos.empty:
+            proc_parte = df_processos[df_processos["numero"] == row["processo"]]
+            if not proc_parte.empty:
+                parte_val = proc_parte.iloc[0].get("parte_contraria", "")
+                parte_contraria = parte_val if parte_val and pd.notna(parte_val) else "—"
+
         with col_cliente:
             st.caption(row["cliente"])
+        with col_parte:
+            st.caption(parte_contraria)
         with col_papel:
             st.caption(f"📋 {papel_cliente}")
         with col_processo:
@@ -3605,7 +3631,7 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
     # ===== EXPORT EM EXCEL =====
     st.markdown("### 📥 Exportar Pauta")
 
-    excel_path = gerar_excel_bonito(df_filtrado, df_processos)
+    excel_path = gerar_excel_bonito(df_filtrado, df_processos, nome_aba="Prazos Ativos", titulo=f"Prazos Ativos — período de {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}")
 
     if excel_path:
         with open(excel_path, "rb") as f:
@@ -3809,7 +3835,7 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
     # ===== EXPORT EM EXCEL =====
     st.markdown("### 📥 Exportar Relatório")
 
-    excel_path = gerar_excel_bonito(df_filtrado, df_processos)
+    excel_path = gerar_excel_bonito(df_filtrado, df_processos, nome_aba="Prazos Concluídos", titulo=f"Prazos Concluídos — gerado em {dt.date.today().strftime('%d/%m/%Y')}")
 
     if excel_path:
         with open(excel_path, "rb") as f:
@@ -3960,6 +3986,21 @@ def relatorio_audiencias(df_audiencias: pd.DataFrame) -> None:
         height=400,
         hide_index=True
     )
+
+    # Excel com o nome do relatório e o período escolhido
+    ini_txt = data_inicio.strftime("%d/%m/%Y") if data_inicio else "—"
+    fim_txt = data_fim.strftime("%d/%m/%Y") if data_fim else "—"
+    titulo_xls = f"Audiências — período de {ini_txt} a {fim_txt} — status: {filtro_status}"
+    caminho_xls = gerar_excel_processos_fase(df_exibicao.fillna(""), titulo_xls, nome_aba="Audiências")
+    with open(caminho_xls, "rb") as arq:
+        st.download_button(
+            "📊 Baixar Excel",
+            data=arq.read(),
+            file_name=f"audiencias_{dt.date.today().strftime('%d_%m_%Y')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="baixar_relatorio_audiencias",
+        )
 
 def gerar_relatorio_cliente_excel(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, cliente: str, fase: str):
     """Gera Excel com o relatório de cliente e fase"""
@@ -4774,6 +4815,116 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
     except Exception as e:
         st.error(f"❌ Erro ao criar Excel: {str(e)}")
 
+def gerar_excel_processos_fase(lista: pd.DataFrame, titulo: str, nome_aba: str = "Processos por fase"):
+    """Excel com título, cabeçalho azul, filtro e impressão em uma folha de largura."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.properties import PageSetupProperties
+    import tempfile
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "".join(c for c in nome_aba if c not in "/\\?*[]:")[:31] or "Relatório"
+    colunas = list(lista.columns)
+    n = len(colunas)
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n)
+    cel_titulo = ws.cell(row=1, column=1, value=titulo)
+    cel_titulo.font = Font(bold=True, size=14, color="1f4788")
+    cel_titulo.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[1].height = 26
+
+    borda = Side(style="thin", color="BFBFBF")
+    border = Border(left=borda, right=borda, top=borda, bottom=borda)
+    fill_cab = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
+    fill_zebra = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+
+    for j, nome in enumerate(colunas, 1):
+        cell = ws.cell(row=2, column=j, value=nome)
+        cell.fill = fill_cab
+        cell.font = Font(bold=True, color="FFFFFF", size=12)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border
+        larg = max([len(str(nome))] + [len(str(v)) for v in lista[nome].tolist()]) + 3
+        ws.column_dimensions[get_column_letter(j)].width = min(max(larg, 14), 60)
+
+    for i, (_, linha) in enumerate(lista.iterrows(), 3):
+        for j, nome in enumerate(colunas, 1):
+            cell = ws.cell(row=i, column=j, value=linha[nome])
+            cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+            cell.border = border
+            if i % 2 == 0:
+                cell.fill = fill_zebra
+
+    ws.freeze_panes = "A3"
+    ws.auto_filter.ref = f"A2:{get_column_letter(n)}{max(len(lista) + 2, 3)}"
+
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.print_title_rows = "1:2"
+    ws.page_margins.left = ws.page_margins.right = 0.4
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        wb.save(tmp.name)
+        return tmp.name
+
+
+def relatorio_processos_fase(df_processos: pd.DataFrame) -> None:
+    """Processos por cliente e fase: nome do cliente, parte adversária, número e fase, com Excel."""
+    st.markdown("### 🗂️ Processos por cliente e fase")
+    st.caption("Nome do cliente, parte adversária, número do processo e fase. Escolha um cliente (ou todos) e a fase.")
+
+    if df_processos is None or df_processos.empty:
+        st.info("Nenhum processo cadastrado.")
+        return
+
+    base = df_processos[df_processos["ativo"]].copy() if "ativo" in df_processos.columns else df_processos.copy()
+
+    col1, col2 = st.columns(2)
+    clientes = ["Todos os clientes"] + sorted(base["cliente"].dropna().astype(str).unique().tolist())
+    cliente_sel = col1.selectbox("👤 Cliente", clientes, key="rel_proc_fase_cliente")
+    fase_sel = col2.selectbox("📋 Fase", ["Todas as fases"] + FASES_PROCESSO, key="rel_proc_fase_fase")
+
+    if cliente_sel != "Todos os clientes":
+        base = base[base["cliente"].astype(str) == cliente_sel]
+    if fase_sel != "Todas as fases":
+        base = base[base["fase"].astype(str) == fase_sel]
+
+    if base.empty:
+        st.info("Nenhum processo com esses filtros.")
+        return
+
+    papel = base["papel_cliente"].fillna("—").astype(str).values if "papel_cliente" in base.columns else ["—"] * len(base)
+    lista = pd.DataFrame({
+        "Cliente": base["cliente"].fillna("—").astype(str).values,
+        "Papel do cliente": papel,
+        "Parte adversária": base["parte_contraria"].fillna("—").astype(str).values,
+        "Nº Processo": base["numero"].fillna("—").astype(str).values,
+        "Fase": base["fase"].fillna("—").astype(str).values,
+    }).sort_values(["Cliente", "Nº Processo"]).reset_index(drop=True)
+
+    st.metric("Processos listados", len(lista))
+
+    nome_cli = "Todos os clientes" if cliente_sel == "Todos os clientes" else cliente_sel
+    titulo = f"Processos por fase — {nome_cli} — {fase_sel}"
+    caminho = gerar_excel_processos_fase(lista, titulo)
+    with open(caminho, "rb") as f:
+        st.download_button(
+            "📊 Baixar Excel",
+            data=f.read(),
+            file_name=f"processos_por_fase_{dt.date.today().strftime('%d_%m_%Y')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="baixar_processos_fase",
+        )
+
+    st.dataframe(lista, use_container_width=True, hide_index=True)
+
+
 def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, df_audiencias: pd.DataFrame) -> None:
     """
     PASSO 2.5: Dashboard de Relatórios com 4 abas
@@ -4785,7 +4936,7 @@ def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, d
     st.markdown("# 📊 Relatórios")
     st.caption("Extraia pautas e relatórios de seu sistema")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 Prazos Ativos", "✅ Concluídos", "📅 Audiências", "🔍 Cliente & Fase"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Prazos Ativos", "✅ Concluídos", "📅 Audiências", "🔍 Cliente & Fase", "🗂️ Processos"])
 
     with tab1:
         relatorio_prazos_ativos(df_prazos, df_processos)
@@ -4798,6 +4949,9 @@ def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, d
 
     with tab4:
         relatorio_cliente_fase(df_prazos, df_processos)
+
+    with tab5:
+        relatorio_processos_fase(df_processos)
 
 def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
     """Gerencia visualização de clientes (catálogo)."""
