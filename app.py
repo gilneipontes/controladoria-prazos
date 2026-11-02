@@ -1127,7 +1127,7 @@ def resumo_o_que_fazer(texto, limite: int = 200) -> str:
         resumo = resumo[:limite].rsplit(" ", 1)[0].rstrip(",;:.") + "…"
     return resumo
 
-def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None, nome_aba: str = "Pauta", titulo: str = None):
+def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = None):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     import tempfile
@@ -1137,22 +1137,20 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
 
     df_export = df_prazos[["cliente", "processo", "titulo", "data_fatal", "descricao"]].copy()
     df_export = df_export.rename(columns={"descricao": "o_que_fazer"})
-    df_export["cliente"] = df_export["cliente"].apply(lambda x: x if pd.notna(x) and x else "")
+    df_export["cliente"] = df_export["cliente"].apply(lambda x: x.split()[0] if pd.notna(x) and x else "")
     df_export["o_que_fazer"] = df_export["o_que_fazer"].apply(resumo_o_que_fazer)
 
     # Tipo de ação: vem do cadastro do processo
     if df_processos is not None and not df_processos.empty:
         processos_desc = (
-            df_processos[["numero", "descricao", "parte_contraria"]]
+            df_processos[["numero", "descricao"]]
             .drop_duplicates(subset=["numero"], keep="first")
-            .rename(columns={"descricao": "acao", "parte_contraria": "parte"})
+            .rename(columns={"descricao": "acao"})
         )
         df_export = df_export.merge(processos_desc, left_on="processo", right_on="numero", how="left")
         df_export["acao"] = df_export["acao"].fillna("-").replace("", "-")
-        df_export["parte"] = df_export["parte"].fillna("-").replace("", "-")
     else:
         df_export["acao"] = "-"
-        df_export["parte"] = "-"
 
     try:
         df_export["data_fatal"] = pd.to_datetime(df_export["data_fatal"]).dt.strftime("%d/%m/%Y")
@@ -1160,18 +1158,17 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
         df_export["data_fatal"] = df_export["data_fatal"].astype(str)
 
     colunas = [
-        ("cliente", "Cliente", 30, "left"),
-        ("parte", "Parte Contrária", 30, "left"),
+        ("cliente", "Cliente", 15, "left"),
         ("processo", "Nº Processo", 28, "left"),
         ("titulo", "Prazo", 24, "left"),
         ("data_fatal", "Data Fatal", 13, "center"),
+        ("acao", "Ação", 26, "left"),
         ("o_que_fazer", "O que fazer", 55, "left"),
     ]
 
     wb = Workbook()
     ws = wb.active
-    # Nome da aba do Excel: máximo 31 caracteres, sem / \ ? * [ ] :
-    ws.title = "".join(c for c in nome_aba if c not in "/\\?*[]:")[:31] or "Pauta"
+    ws.title = "Pauta"
 
     header_fill = PatternFill(start_color="1f4788", end_color="1f4788", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=12)
@@ -1186,27 +1183,16 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
         "left": Alignment(horizontal="left", vertical="center", wrap_text=True),
     }
 
-    # Linha de título (opcional) acima do cabeçalho
-    linha_cab = 1
-    if titulo:
-        linha_cab = 2
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(colunas))
-        cel_titulo = ws.cell(row=1, column=1)
-        cel_titulo.value = titulo
-        cel_titulo.font = Font(bold=True, size=14, color="1f4788")
-        cel_titulo.alignment = Alignment(horizontal="left", vertical="center")
-        ws.row_dimensions[1].height = 26
-
-    for col_num, (_, nome_col, largura, _) in enumerate(colunas, 1):
-        cell = ws.cell(row=linha_cab, column=col_num)
-        cell.value = nome_col
+    for col_num, (_, titulo, largura, _) in enumerate(colunas, 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.value = titulo
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = alinhamentos["center"]
         cell.border = border
         ws.column_dimensions[cell.column_letter].width = largura
 
-    for row_num, (_, row) in enumerate(df_export.iterrows(), linha_cab + 1):
+    for row_num, (_, row) in enumerate(df_export.iterrows(), 2):
         for col_num, (campo, _, _, alinhamento) in enumerate(colunas, 1):
             cell = ws.cell(row=row_num, column=col_num)
             cell.value = row[campo]
@@ -1218,8 +1204,8 @@ def gerar_excel_bonito(df_prazos: pd.DataFrame, df_processos: pd.DataFrame = Non
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.print_title_rows = f"1:{linha_cab}"
-    ws.freeze_panes = f"A{linha_cab + 1}"
+    ws.print_title_rows = "1:1"
+    ws.freeze_panes = "A2"
 
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         wb.save(tmp.name)
@@ -3566,12 +3552,10 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
     st.caption("👉 Clique no botão 🔍 para abrir o prazo, consultar e editar.")
 
     # Criar colunas para exibição com botões - Ordem: Cliente, Papel, Processo, Prazo, Data Fatal, Responsável, Ação
-    col_cliente, col_parte, col_papel, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([1.8, 1.8, 1.2, 1.7, 1.7, 1.5, 1.4, 0.6])
+    col_cliente, col_papel, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([2, 1.5, 1.8, 1.8, 1.8, 1.5, 0.6])
 
     with col_cliente:
         st.markdown("**Cliente**")
-    with col_parte:
-        st.markdown("**Parte Contrária**")
     with col_papel:
         st.markdown("**Papel**")
     with col_processo:
@@ -3589,7 +3573,7 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
 
     # Exibir cada linha com botão
     for idx, (_, row) in enumerate(df_filtrado.iterrows()):
-        col_cliente, col_parte, col_papel, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([1.8, 1.8, 1.2, 1.7, 1.7, 1.5, 1.4, 0.6])
+        col_cliente, col_papel, col_processo, col_prazo, col_data, col_resp, col_acao = st.columns([2, 1.5, 1.8, 1.8, 1.8, 1.5, 0.6])
 
         # Buscar papel do cliente no df_processos
         papel_cliente = "—"
@@ -3599,18 +3583,8 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
                 papel_cli = proc_match.iloc[0].get("papel_cliente", "")
                 papel_cliente = papel_cli if papel_cli and pd.notna(papel_cli) else "—"
 
-        # Buscar parte contrária no cadastro do processo
-        parte_contraria = "—"
-        if row["processo"] and not df_processos.empty:
-            proc_parte = df_processos[df_processos["numero"] == row["processo"]]
-            if not proc_parte.empty:
-                parte_val = proc_parte.iloc[0].get("parte_contraria", "")
-                parte_contraria = parte_val if parte_val and pd.notna(parte_val) else "—"
-
         with col_cliente:
             st.caption(row["cliente"])
-        with col_parte:
-            st.caption(parte_contraria)
         with col_papel:
             st.caption(f"📋 {papel_cliente}")
         with col_processo:
@@ -3631,7 +3605,7 @@ def relatorio_prazos_ativos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame)
     # ===== EXPORT EM EXCEL =====
     st.markdown("### 📥 Exportar Pauta")
 
-    excel_path = gerar_excel_bonito(df_filtrado, df_processos, nome_aba="Prazos Ativos", titulo=f"Prazos Ativos — período de {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}")
+    excel_path = gerar_excel_bonito(df_filtrado, df_processos)
 
     if excel_path:
         with open(excel_path, "rb") as f:
@@ -3835,7 +3809,7 @@ def relatorio_prazos_concluidos(df_prazos: pd.DataFrame, df_processos: pd.DataFr
     # ===== EXPORT EM EXCEL =====
     st.markdown("### 📥 Exportar Relatório")
 
-    excel_path = gerar_excel_bonito(df_filtrado, df_processos, nome_aba="Prazos Concluídos", titulo=f"Prazos Concluídos — gerado em {dt.date.today().strftime('%d/%m/%Y')}")
+    excel_path = gerar_excel_bonito(df_filtrado, df_processos)
 
     if excel_path:
         with open(excel_path, "rb") as f:
@@ -4002,7 +3976,7 @@ def relatorio_audiencias(df_audiencias: pd.DataFrame) -> None:
             key="baixar_relatorio_audiencias",
         )
 
-def gerar_relatorio_cliente_excel(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, cliente: str, fase: str):
+def gerar_relatorio_cliente_excel(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, cliente: str, fase: str, status: str = "Todos"):
     """Gera Excel com o relatório de cliente e fase"""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -4021,6 +3995,12 @@ def gerar_relatorio_cliente_excel(df_prazos: pd.DataFrame, df_processos: pd.Data
 
         numeros_processos = processos_cliente["numero"].tolist()
         prazos_cliente = prazos_cliente[prazos_cliente["processo"].isin(numeros_processos)]
+
+    # Filtro de status (abertos / concluídos), igual ao que está na tela
+    if status == "Apenas Abertos":
+        prazos_cliente = prazos_cliente[(~prazos_cliente["concluido"]) & (~prazos_cliente["arquivado"])]
+    elif status == "Apenas Concluídos":
+        prazos_cliente = prazos_cliente[prazos_cliente["concluido"]]
 
     if prazos_cliente.empty:
         return None
@@ -4141,7 +4121,7 @@ def gerar_relatorio_cliente_excel(df_prazos: pd.DataFrame, df_processos: pd.Data
         wb.save(tmp.name)
         return tmp.name
 
-def gerar_relatorio_cliente_excel_todos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, fase: str):
+def gerar_relatorio_cliente_excel_todos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, fase: str, status: str = "Todos"):
     """Gera Excel com o relatório de TODOS os clientes e uma fase específica"""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -4159,6 +4139,13 @@ def gerar_relatorio_cliente_excel_todos(df_prazos: pd.DataFrame, df_processos: p
             return None
         numeros_processos = processos_fase["numero"].tolist()
         prazos_para_export = prazos_para_export[prazos_para_export["processo"].isin(numeros_processos)]
+
+    # Filtro de status (abertos / concluídos), igual ao que está na tela
+    if status == "Apenas Abertos":
+        prazos_para_export = prazos_para_export[(~prazos_para_export["concluido"]) & (~prazos_para_export["arquivado"])]
+    elif status == "Apenas Concluídos":
+        prazos_para_export = prazos_para_export[prazos_para_export["concluido"]]
+
 
     if prazos_para_export.empty:
         return None
@@ -4796,10 +4783,10 @@ def relatorio_cliente_fase(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) 
         # Se "Todos os Clientes" foi selecionado, usar nome genérico para o arquivo
         if cliente_selecionado == "📌 Todos os Clientes":
             nome_cliente_arquivo = "Todos_os_Clientes"
-            excel_path = gerar_relatorio_cliente_excel_todos(df_prazos, df_processos, fase_selecionada)
+            excel_path = gerar_relatorio_cliente_excel_todos(df_prazos, df_processos, fase_selecionada, status_filtro)
         else:
             nome_cliente_arquivo = cliente_selecionado.replace(' ', '_')
-            excel_path = gerar_relatorio_cliente_excel(df_prazos, df_processos, cliente_selecionado, fase_selecionada)
+            excel_path = gerar_relatorio_cliente_excel(df_prazos, df_processos, cliente_selecionado, fase_selecionada, status_filtro)
 
         if excel_path and os.path.exists(excel_path):
             with open(excel_path, "rb") as f:
@@ -4925,33 +4912,169 @@ def relatorio_processos_fase(df_processos: pd.DataFrame) -> None:
     st.dataframe(lista, use_container_width=True, hide_index=True)
 
 
+def relatorio_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> None:
+    """Relatório único de prazos: situação, responsável, cliente, fase e período, com Excel."""
+    st.markdown("### 📋 Relatório de Prazos")
+    st.caption("Escolha a situação e os filtros. Os vencidos aparecem primeiro entre os abertos.")
+
+    if df_prazos is None or df_prazos.empty:
+        st.info("Nenhum prazo cadastrado.")
+        return
+
+    situacao = st.pills(
+        "📌 Situação", ["Abertos", "Concluídos", "Todos"], default="Abertos", key="rel_prazos_situacao"
+    ) or "Abertos"
+
+    base = df_prazos[~df_prazos["arquivado"]].copy()
+    if situacao == "Abertos":
+        base = base[~base["concluido"]]
+    elif situacao == "Concluídos":
+        base = base[base["concluido"]]
+
+    c1, c2, c3 = st.columns(3)
+    responsavel_sel = c1.selectbox("👤 Responsável", ["Todos"] + RESPONSAVEIS, key="rel_prazos_resp")
+    clientes = ["Todos os clientes"] + sorted(df_prazos["cliente"].dropna().astype(str).unique().tolist())
+    cliente_sel = c2.selectbox("🏢 Cliente", clientes, key="rel_prazos_cliente")
+    fase_sel = c3.selectbox("📋 Fase", ["Todas as fases"] + FASES_PROCESSO, key="rel_prazos_fase")
+
+    periodo = None
+    ini_p = fim_p = None
+    if situacao == "Abertos":
+        opcoes = ["Próximos 7 dias", "Próximos 30 dias", "Todos os abertos"]
+        periodo = st.pills("📅 Vencimento", opcoes, default=opcoes[0], key="rel_prazos_periodo_abertos") or opcoes[0]
+    elif situacao == "Concluídos":
+        opcoes = ["Todos os concluídos", "Últimos 15 dias", "Últimos 30 dias", "Personalizado"]
+        periodo = st.pills("📅 Data da conclusão", opcoes, default=opcoes[0], key="rel_prazos_periodo_concl") or opcoes[0]
+        if periodo == "Personalizado":
+            cd1, cd2 = st.columns(2)
+            ini_p = cd1.date_input("De", value=hoje() - dt.timedelta(days=30), format="DD/MM/YYYY", key="rel_prazos_de")
+            fim_p = cd2.date_input("Até", value=hoje(), format="DD/MM/YYYY", key="rel_prazos_ate")
+    else:
+        st.caption("Sem filtro de período: mostra abertos e concluídos.")
+
+    usar_inicio = st.checkbox("📆 Mostrar a partir de uma data", key="rel_prazos_usar_inicio")
+    inicio_sel = None
+    if usar_inicio:
+        inicio_sel = st.date_input(
+            "A partir de (data fatal, ou data da conclusão nos concluídos)",
+            value=hoje() - dt.timedelta(days=30), format="DD/MM/YYYY", key="rel_prazos_inicio",
+        )
+
+    # ===== FILTROS =====
+    if responsavel_sel != "Todos":
+        base = base[base["responsavel"] == responsavel_sel]
+    if cliente_sel != "Todos os clientes":
+        base = base[base["cliente"].astype(str) == cliente_sel]
+    if fase_sel != "Todas as fases" and df_processos is not None and not df_processos.empty:
+        numeros_fase = df_processos[df_processos["fase"] == fase_sel]["numero"].tolist()
+        base = base[base["processo"].isin(numeros_fase)]
+
+    if situacao == "Abertos" and periodo in ("Próximos 7 dias", "Próximos 30 dias") and not base.empty:
+        dias = 7 if periodo == "Próximos 7 dias" else 30
+        limite = pd.Timestamp(hoje() + dt.timedelta(days=dias))
+        base = base[pd.to_datetime(base["data_fatal"]) <= limite]
+
+    if situacao == "Concluídos" and periodo != "Todos os concluídos" and not base.empty:
+        if periodo == "Últimos 15 dias":
+            ini, fim = hoje() - dt.timedelta(days=15), hoje()
+        elif periodo == "Últimos 30 dias":
+            ini, fim = hoje() - dt.timedelta(days=30), hoje()
+        else:
+            ini, fim = ini_p, fim_p
+        datas_conc = pd.to_datetime(base["concluido_em"], errors="coerce").dt.date
+        base = base[[pd.notna(d) and ini <= d <= fim for d in datas_conc]]
+
+    if usar_inicio and inicio_sel is not None and not base.empty:
+        if situacao == "Concluídos":
+            datas_conc = pd.to_datetime(base["concluido_em"], errors="coerce").dt.date
+            base = base[[pd.notna(d) and d >= inicio_sel for d in datas_conc]]
+        else:
+            base = base[[d >= inicio_sel for d in base["data_fatal"]]]
+
+    if base.empty:
+        st.info("Nenhum prazo com esses filtros.")
+        return
+
+    base = (
+        base.sort_values("concluido_em", ascending=False)
+        if situacao == "Concluídos"
+        else base.sort_values("data_fatal")
+    )
+
+    # ===== TABELA =====
+    hoje_ref = hoje()
+    mapa_parte, mapa_fase = {}, {}
+    if df_processos is not None and not df_processos.empty:
+        proc_unicos = df_processos.drop_duplicates(subset=["numero"], keep="first")
+        mapa_parte = dict(zip(proc_unicos["numero"], proc_unicos["parte_contraria"]))
+        mapa_fase = dict(zip(proc_unicos["numero"], proc_unicos["fase"]))
+
+    def _txt(valor, padrao="—"):
+        return padrao if valor is None or (isinstance(valor, float) and pd.isna(valor)) or str(valor).strip() in ("", "nan", "None") else str(valor)
+
+    situacoes = []
+    for concl, d in zip(base["concluido"], base["data_fatal"]):
+        if concl:
+            situacoes.append("✅ Concluído")
+        elif d < hoje_ref:
+            situacoes.append("⚠️ Vencido")
+        elif d == hoje_ref:
+            situacoes.append("🔴 Hoje")
+        else:
+            situacoes.append("")
+
+    lista = pd.DataFrame({
+        "Data fatal": pd.to_datetime(base["data_fatal"]).dt.strftime("%d/%m/%Y").values,
+        "Situação": situacoes,
+        "Cliente": [_txt(v) for v in base["cliente"]],
+        "Parte contrária": [_txt(mapa_parte.get(p)) for p in base["processo"]],
+        "Nº Processo": [_txt(p) for p in base["processo"]],
+        "Fase": [_txt(mapa_fase.get(p)) for p in base["processo"]],
+        "Prazo": [_txt(v) for v in base["titulo"]],
+        "Responsável": [_txt(v) for v in base["responsavel"]],
+    })
+    if situacao != "Abertos":
+        lista["Concluído em"] = pd.to_datetime(base["concluido_em"], errors="coerce").dt.strftime("%d/%m/%Y").fillna("—").values
+
+    lista = lista.reset_index(drop=True)
+
+    partes_titulo = [f"Relatório de prazos — {situacao}"]
+    if periodo:
+        partes_titulo.append(periodo)
+    partes_titulo.append(cliente_sel)
+    partes_titulo.append(fase_sel)
+    titulo_xls = " — ".join(partes_titulo) + f" — gerado em {hoje_ref.strftime('%d/%m/%Y')}"
+
+    st.metric("Prazos listados", len(lista))
+    caminho = gerar_excel_processos_fase(lista, titulo_xls, nome_aba="Prazos")
+    with open(caminho, "rb") as arq:
+        st.download_button(
+            "📊 Baixar Excel",
+            data=arq.read(),
+            file_name=f"relatorio_prazos_{situacao.lower()}_{hoje_ref.strftime('%d_%m_%Y')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="baixar_relatorio_prazos",
+        )
+    st.dataframe(lista, use_container_width=True, hide_index=True)
+
+
 def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, df_audiencias: pd.DataFrame) -> None:
-    """
-    PASSO 2.5: Dashboard de Relatórios com 4 abas
-    - Prazos Ativos
-    - Prazos Concluídos
-    - Audiências
-    - Cliente & Fase
-    """
+    """Relatórios: prazos (um relatório só), audiências e processos por cliente e fase."""
     st.markdown("# 📊 Relatórios")
     st.caption("Extraia pautas e relatórios de seu sistema")
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Prazos Ativos", "✅ Concluídos", "📅 Audiências", "🔍 Cliente & Fase", "🗂️ Processos"])
+    tab1, tab2, tab3 = st.tabs(["📋 Prazos", "📅 Audiências", "🗂️ Processos"])
 
     with tab1:
-        relatorio_prazos_ativos(df_prazos, df_processos)
+        relatorio_prazos(df_prazos, df_processos)
 
     with tab2:
-        relatorio_prazos_concluidos(df_prazos, df_processos)
-
-    with tab3:
         relatorio_audiencias(df_audiencias)
 
-    with tab4:
-        relatorio_cliente_fase(df_prazos, df_processos)
-
-    with tab5:
+    with tab3:
         relatorio_processos_fase(df_processos)
+
 
 def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
     """Gerencia visualização de clientes (catálogo)."""
@@ -6418,7 +6541,7 @@ def main() -> None:
 
     df_prazos = enriquecer(df_prazos_filtrados) if not df_prazos_filtrados.empty else pd.DataFrame()
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab_filtros = st.tabs(["📋 Ativos", "✅ Concluídos", "📋 Pauta", "📦 Arquivo", "🔬 Perícias", "📅 Audiências", "🔍 Filtros Avançados"])
+    tab1, tab2, tab4, tab5, tab6, tab_filtros = st.tabs(["📋 Ativos", "✅ Concluídos", "📦 Arquivo", "🔬 Perícias", "📅 Audiências", "🔍 Filtros Avançados"])
 
     with tab1:
         # ===== PASSO 1: CARDS COM CORES DINÂMICAS =====
@@ -6484,93 +6607,6 @@ def main() -> None:
                 atualizar_campos({id_reativar: {"concluido": False, "concluido_em": None}})
                 st.session_state.aviso = "✅ Prazo reativado!"
                 st.session_state.editor_v += 1
-                st.rerun()
-
-    with tab3:
-        st.subheader("📋 Pauta de Prazos")
-
-        prazos_ativos = df_prazos[~df_prazos["arquivado"] & ~df_prazos["concluido"]].copy()
-
-        data_hoje = pd.Timestamp.now(tz="America/Sao_Paulo").date()
-        data_semana = pd.Timestamp.now(tz="America/Sao_Paulo").date() + pd.Timedelta(days=7)
-
-        if prazos_ativos.empty:
-            st.info("✅ Nenhum prazo ativo no momento!")
-        else:
-            prazos_hoje = prazos_ativos[prazos_ativos["data_fatal"] == data_hoje]
-            prazos_semana = prazos_ativos[(prazos_ativos["data_fatal"] > data_hoje) & (prazos_ativos["data_fatal"] <= data_semana)]
-            prazos_futuro = prazos_ativos[prazos_ativos["data_fatal"] > data_semana]
-
-            if not prazos_hoje.empty:
-                st.markdown("### 🔴 **HOJE** (" + data_hoje.strftime("%d/%m/%Y") + ")")
-                for _, p in prazos_hoje.iterrows():
-                    col1, col2 = st.columns([3, 1])
-                    col1.markdown(f"""
-                    **{p['titulo']}** | {p['cliente']} / {p.get('parte_contraria', 'N/A')}
-
-                    Responsável: {p['responsavel']} | Prioridade: {p['prioridade']}
-                    """)
-                st.divider()
-
-            if not prazos_semana.empty:
-                st.markdown("### 🟠 **PRÓXIMOS 7 DIAS**")
-                for _, p in prazos_semana.iterrows():
-                    dias_faltam = (p['data_fatal'] - data_hoje).days
-                    col1, col2 = st.columns([3, 1])
-                    col1.markdown(f"""
-                    **{p['titulo']}** | {p['cliente']} ({dias_faltam} dia{'s' if dias_faltam != 1 else ''})
-
-                    Data Fatal: {p['data_fatal'].strftime('%d/%m/%Y')} | Responsável: {p['responsavel']}
-                    """)
-                st.divider()
-
-            if not prazos_futuro.empty:
-                st.markdown("### 🟡 **FUTURO** (após 7 dias)")
-                for _, p in prazos_futuro.iloc[:10].iterrows():
-                    col1, col2 = st.columns([3, 1])
-                    col1.markdown(f"""
-                    **{p['titulo']}** | {p['cliente']}
-
-                    Data Fatal: {p['data_fatal'].strftime('%d/%m/%Y')} | Responsável: {p['responsavel']}
-                    """)
-
-        st.divider()
-        st.subheader("📥 Exportar Pauta")
-
-        excel_path = gerar_excel_bonito(prazos_ativos, df_processos)
-
-        if excel_path:
-            with open(excel_path, "rb") as f:
-                st.download_button(
-                    label="📊 Baixar Pauta em Excel",
-                    data=f.read(),
-                    file_name=f"pauta_prazos_{data_hoje.strftime('%d_%m_%Y')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-        else:
-            st.info("Sem dados para exportar")
-
-        st.subheader("🔄 Desarquivar Prazos")
-        arquivados = df_prazos[df_prazos["arquivado"]]
-
-        if arquivados.empty:
-            st.info("Nenhum prazo arquivado.")
-        else:
-            st.write(f"**{len(arquivados)} prazos arquivados:**")
-
-            col1, col2 = st.columns([2, 1])
-            id_des = col1.selectbox(
-                "Selecione para desarquivar:",
-                options=arquivados["id"].values,
-                format_func=lambda x: f"{arquivados[arquivados['id'] == x]['cliente'].values[0]} | {arquivados[arquivados['id'] == x]['titulo'].values[0]} | {arquivados[arquivados['id'] == x]['data_fatal'].values[0].strftime('%d/%m/%Y')}",
-                key="sel_des"
-            )
-
-            if col2.button("🔄 Desarquivar", use_container_width=True, type="secondary"):
-                supabase().table(TABELA_PRAZOS).update({"arquivado": False}).eq("id", id_des).execute()
-                carregar_prazos.clear()
-                st.success("✅ Prazo restaurado!")
                 st.rerun()
 
     with tab4:
