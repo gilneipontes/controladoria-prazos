@@ -5046,7 +5046,7 @@ def relatorio_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> Non
     titulo_xls = " — ".join(partes_titulo) + f" — gerado em {hoje_ref.strftime('%d/%m/%Y')}"
 
     st.metric("Prazos listados", len(lista))
-    caminho = gerar_excel_processos_fase(lista, titulo_xls, nome_aba="Prazos")
+    caminho = gerar_excel_processos_fase(lista.drop(columns=["Situação"]), titulo_xls, nome_aba="Prazos")
     with open(caminho, "rb") as arq:
         st.download_button(
             "📊 Baixar Excel",
@@ -5059,12 +5059,107 @@ def relatorio_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> Non
     st.dataframe(lista, use_container_width=True, hide_index=True)
 
 
-def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, df_audiencias: pd.DataFrame) -> None:
-    """Relatórios: prazos (um relatório só), audiências e processos por cliente e fase."""
+def relatorio_pericias(df_pericias: pd.DataFrame) -> None:
+    """Relatório de perícias com filtros por situação, tipo, cliente e prazo, com Excel."""
+    st.markdown("### 🔬 Perícias")
+    st.caption("Filtre as perícias por situação, tipo, cliente e prazo. Baixe o Excel do que estiver na tela.")
+
+    if df_pericias is None:
+        df_pericias = pd.DataFrame(columns=COLUNAS_PERICIAS)
+    base = df_pericias.copy()
+
+    col1, col2, col3 = st.columns(3)
+    situacao = col1.selectbox(
+        "🎯 Situação",
+        ["Em aberto", "Todas"] + STATUS_PERICIA,
+        key="rel_per_situacao",
+    )
+    tipos = ["Todos os tipos"] + sorted(base["tipo_pericia"].dropna().astype(str).unique().tolist())
+    tipo_sel = col2.selectbox("🔬 Tipo", tipos, key="rel_per_tipo")
+    clientes = ["Todos os clientes"] + sorted(base["cliente"].dropna().astype(str).unique().tolist())
+    cliente_sel = col3.selectbox("👤 Cliente", clientes, key="rel_per_cliente")
+
+    periodo = st.selectbox(
+        "📅 Período do prazo",
+        ["Todos os prazos", "Próximos 30 dias", "Próximos 90 dias", "Últimos 30 dias", "Personalizado"],
+        key="rel_per_periodo",
+    )
+    hj = hoje()
+    if periodo == "Próximos 30 dias":
+        de, ate = hj, hj + dt.timedelta(days=30)
+    elif periodo == "Próximos 90 dias":
+        de, ate = hj, hj + dt.timedelta(days=90)
+    elif periodo == "Últimos 30 dias":
+        de, ate = hj - dt.timedelta(days=30), hj
+    elif periodo == "Personalizado":
+        col4, col5 = st.columns(2)
+        de = col4.date_input("Prazo de", value=hj - dt.timedelta(days=30), key="rel_per_de")
+        ate = col5.date_input("Prazo até", value=hj + dt.timedelta(days=90), key="rel_per_ate")
+    usar_periodo = periodo != "Todos os prazos"
+
+    if situacao == "Em aberto":
+        base = base[base["status"].isin(["Requisitada", "Em andamento", "Adiada"])]
+    elif situacao != "Todas":
+        base = base[base["status"] == situacao]
+
+    if tipo_sel != "Todos os tipos":
+        base = base[base["tipo_pericia"].astype(str) == tipo_sel]
+    if cliente_sel != "Todos os clientes":
+        base = base[base["cliente"].astype(str) == cliente_sel]
+
+    if usar_periodo:
+        datas = pd.to_datetime(base["data_prazo"], errors="coerce").dt.date
+        base = base[datas.apply(lambda d: pd.notna(d) and de <= d <= ate)]
+
+    if base.empty:
+        if df_pericias.empty:
+            st.info("Nenhuma perícia cadastrada ainda. Os filtros acima ficam disponíveis assim que houver perícias.")
+        else:
+            st.info("Nenhuma perícia com esses filtros.")
+        return
+
+    def fmt(d):
+        return d.strftime("%d/%m/%Y") if pd.notna(d) and d is not None else "—"
+
+    base = base.sort_values("data_prazo", na_position="last")
+    lista = pd.DataFrame({
+        "Prazo": base["data_prazo"].apply(fmt).values,
+        "Situação": base["status"].fillna("—").astype(str).values,
+        "Cliente": base["cliente"].fillna("—").astype(str).values,
+        "Nº Processo": base["processo"].fillna("—").astype(str).values,
+        "Tipo": base["tipo_pericia"].fillna("—").astype(str).values,
+        "Perito": base["perito_responsavel"].fillna("—").astype(str).values,
+        "Responsável": base["responsavel"].fillna("—").astype(str).values,
+        "Requisitada em": base["data_requisicao"].apply(fmt).values,
+        "Concluída em": base["data_conclusao"].apply(fmt).values,
+        "Observações": base["observacoes"].fillna("").astype(str).values,
+    }).reset_index(drop=True)
+
+    st.metric("Perícias listadas", len(lista))
+
+    titulo = f"Perícias — {situacao} — {tipo_sel} — {cliente_sel}"
+    if usar_periodo:
+        titulo += f" — prazo de {de.strftime('%d/%m/%Y')} a {ate.strftime('%d/%m/%Y')}"
+    caminho = gerar_excel_processos_fase(lista, titulo, nome_aba="Perícias")
+    with open(caminho, "rb") as f:
+        st.download_button(
+            "📊 Baixar Excel",
+            data=f.read(),
+            file_name=f"pericias_{dt.date.today().strftime('%d_%m_%Y')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="baixar_relatorio_pericias",
+        )
+
+    st.dataframe(lista, use_container_width=True, hide_index=True)
+
+
+def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, df_audiencias: pd.DataFrame, df_pericias: pd.DataFrame = None) -> None:
+    """Relatórios: prazos (um relatório só), audiências, processos por cliente e fase e perícias."""
     st.markdown("# 📊 Relatórios")
     st.caption("Extraia pautas e relatórios de seu sistema")
 
-    tab1, tab2, tab3 = st.tabs(["📋 Prazos", "📅 Audiências", "🗂️ Processos"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 Prazos", "📅 Audiências", "🗂️ Processos", "🔬 Perícias"])
 
     with tab1:
         relatorio_prazos(df_prazos, df_processos)
@@ -5074,6 +5169,9 @@ def relatórios_dashboard(df_prazos: pd.DataFrame, df_processos: pd.DataFrame, d
 
     with tab3:
         relatorio_processos_fase(df_processos)
+
+    with tab4:
+        relatorio_pericias(df_pericias)
 
 
 def gerenciar_clientes(df_processos: pd.DataFrame, df_prazos: pd.DataFrame) -> None:
@@ -6522,7 +6620,7 @@ def main() -> None:
 
     # ===== PASSO 2.5: RENDERIZAR DASHBOARD DE RELATÓRIOS =====
     if aba == "📊 Relatórios":
-        relatórios_dashboard(df_prazos, df_processos, df_audiencias)
+        relatórios_dashboard(df_prazos, df_processos, df_audiencias, df_pericias)
         st.stop()
 
     # ===== APLICAR FILTRO DE BUSCA NAS TABS =====
