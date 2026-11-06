@@ -1,3 +1,4 @@
+# atualizado em 06/11
 """
 Controladoria Jurídica - SEMANA 1 EM PROGRESSO
 PASSO 1: Cards com cores dinâmicas ✅
