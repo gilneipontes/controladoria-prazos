@@ -426,6 +426,16 @@ def painel_aparencia() -> None:
         else:
             st.caption("✅ Estas são as cores em uso.")
 
+def _ts_seguro(v):
+    """Converte um valor do Supabase (texto ISO ou None) em Timestamp UTC, ou NaT."""
+    if v is None or (isinstance(v, float) and pd.isna(v)) or (isinstance(v, str) and not v.strip()):
+        return pd.NaT
+    try:
+        return pd.Timestamp(v).tz_convert("UTC") if pd.Timestamp(v).tzinfo else pd.Timestamp(v).tz_localize("UTC")
+    except Exception:
+        return pd.NaT
+
+
 @st.cache_data(ttl=60, show_spinner="Carregando prazos…")
 def carregar_prazos() -> pd.DataFrame:
     resp = supabase().table(TABELA_PRAZOS).select("*").order("data_fatal").execute()
@@ -436,8 +446,13 @@ def carregar_prazos() -> pd.DataFrame:
     for col in ("data_fatal", "data_interna"):
         df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
 
-    # Garantir que concluido_em seja datetime
-    df["concluido_em"] = pd.to_datetime(df["concluido_em"], errors="coerce")
+    # Garantir que concluido_em seja datetime (leitura linha a linha, sem inferência de tipo)
+    df["concluido_em"] = pd.Series(
+        [_ts_seguro(v) for v in df["concluido_em"].tolist()], index=df.index, dtype="datetime64[ns, UTC]"
+    )
+    st.session_state["_dbg_conv"] = [
+        (int(i), str(v)) for i, v in zip(df["id"].tolist()[:5], df["concluido_em"].tolist()[:5])
+    ]
 
     df["concluido"] = df["concluido"].fillna(False).astype(bool)
     df["arquivado"] = df["arquivado"].fillna(False).astype(bool)
@@ -4935,6 +4950,7 @@ def relatorio_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> Non
         base = base[base["concluido"]]
     st.caption("DEBUG concluido_em recebido: " + str(base[["titulo", "concluido_em"]].head(5).values.tolist()))
     st.caption("DEBUG API bruta: " + str(st.session_state.get("_dbg_raw")))
+    st.caption("DEBUG após conversão: " + str(st.session_state.get("_dbg_conv")))
 
     c1, c2, c3 = st.columns(3)
     responsavel_sel = c1.selectbox("👤 Responsável", ["Todos"] + RESPONSAVEIS, key="rel_prazos_resp")
