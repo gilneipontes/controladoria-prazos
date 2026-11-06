@@ -1,4 +1,3 @@
-# atualizado em 06/11
 """
 Controladoria Jurídica - SEMANA 1 EM PROGRESSO
 PASSO 1: Cards com cores dinâmicas ✅
@@ -430,6 +429,9 @@ def painel_aparencia() -> None:
 @st.cache_data(ttl=60, show_spinner="Carregando prazos…")
 def carregar_prazos() -> pd.DataFrame:
     resp = supabase().table(TABELA_PRAZOS).select("*").order("data_fatal").execute()
+    st.session_state["_dbg_raw"] = [
+        {k: r.get(k) for k in ("id", "titulo", "concluido", "concluido_em")} for r in (resp.data or []) if r.get("id") in (17, 22, 14)
+    ] + [sorted(list((resp.data or [{}])[0].keys()))]
     df = pd.DataFrame(resp.data, columns=COLUNAS_PRAZOS)
     for col in ("data_fatal", "data_interna"):
         df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
@@ -4932,6 +4934,7 @@ def relatorio_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> Non
     elif situacao == "Concluídos":
         base = base[base["concluido"]]
     st.caption("DEBUG concluido_em recebido: " + str(base[["titulo", "concluido_em"]].head(5).values.tolist()))
+    st.caption("DEBUG API bruta: " + str(st.session_state.get("_dbg_raw")))
 
     c1, c2, c3 = st.columns(3)
     responsavel_sel = c1.selectbox("👤 Responsável", ["Todos"] + RESPONSAVEIS, key="rel_prazos_resp")
