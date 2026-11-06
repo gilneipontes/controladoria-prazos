@@ -5998,54 +5998,33 @@ def modal_detalhes_prazo(prazo, id_prazo: int, df_prazos: pd.DataFrame, df_proce
     col_acao1, col_acao2, col_acao3, col_acao4 = st.columns(4)
 
     with col_acao1:
-        # Botão para concluir (novo ou re-concluir com nova data)
+        # Conclusão com data escolhida (padrão: hoje). Serve para dar baixa no dia seguinte.
         label_btn = "✅ Concluir Agora" if not prazo['concluido'] else "🔄 Re-concluir"
         tipo_btn = "primary" if not prazo['concluido'] else "secondary"
+        chave_aberta = f"concl_aberta_{id_prazo}"
 
         if st.button(label_btn, use_container_width=True, key=f"btn_concl_{id_prazo}", type=tipo_btn):
-            # ✨ USAR VERSÃO CORRIGIDA que usa o padrão comprovado
-            with st.spinner("⏳ Salvando conclusão com data..."):
-                sucesso = concluir_prazo_agora_v2(id_prazo)
+            st.session_state[chave_aberta] = True
 
-            if sucesso:
-                data_conclusao = dt.datetime.now(TZ)
-                data_formatada = data_conclusao.strftime("%d/%m/%Y às %H:%M")
-                acao = "concluído" if not prazo.get('_ja_foi_concluido') else "re-concluído"
-                st.session_state.aviso = f"✅ '{prazo['titulo']}' {acao} em {data_formatada}! Data será exibida no relatório Excel."
-                st.success(f"✅ {prazo['titulo']} concluído em {data_formatada}!")
-                st.info(f"📊 Verifique o relatório Excel para confirmar que a data aparece corretamente.")
-            else:
-                st.error(f"❌ ERRO CRÍTICO ao salvar a data de conclusão!")
-                st.warning("""
-                ⚠️ **O QUE ACONTECEU:**
-                - O sistema tentou 4 métodos diferentes para salvar a data
-                - Nenhum deles funcionou
-
-                **PRÓXIMOS PASSOS:**
-                1. Verifique se você tem conexão com a internet
-                2. Tente novamente em alguns segundos
-                3. Se o problema persistir, contate o suporte com a mensagem de erro dos logs
-                """)
-
-                # Mostrar diagnostico técnico
-                with st.expander("🔧 Informações Técnicas (para suporte)", expanded=False):
-                    st.code("""
-                Problema identificado:
-                - A coluna 'concluido_em' no Supabase não está persistindo valores
-                - Tentativas falhadas:
-                  1. SQL direto com NOW()
-                  2. ISO-8601 com timezone
-                  3. String simples YYYY-MM-DD HH:MM:SS
-                  4. Sem forçar valor (usar DEFAULT)
-
-                Possíveis causas:
-                - Coluna com restrição NOT NULL mas sem DEFAULT
-                - Trigger ou stored procedure rejeitando a escrita
-                - Row Level Security (RLS) bloqueando acesso
-                - Tipo de coluna incompatível
-                    """, language="text")
-
+    if st.session_state.get(chave_aberta, False):
+        st.info("📅 Escolha a data em que o prazo foi cumprido (padrão: hoje).")
+        col_dt, col_ok, col_no = st.columns([2, 1, 1])
+        data_conc_sel = col_dt.date_input(
+            "Data da conclusão",
+            value=hoje(),
+            format="DD/MM/YYYY",
+            key=f"concl_data_{id_prazo}",
+        )
+        if col_ok.button("💾 Confirmar", type="primary", use_container_width=True, key=f"concl_ok_{id_prazo}"):
+            data_iso = dt.datetime.combine(data_conc_sel, dt.time(12, 0)).replace(tzinfo=TZ).isoformat()
+            atualizar_campos({id_prazo: {"concluido": True, "concluido_em": data_iso}})
+            carregar_prazos.clear()
+            st.session_state[chave_aberta] = False
+            st.session_state.aviso = f"✅ '{prazo['titulo']}' concluído em {data_conc_sel.strftime('%d/%m/%Y')}!"
             st.session_state.modal_aberta = False
+            st.rerun()
+        if col_no.button("❌ Cancelar", use_container_width=True, key=f"concl_no_{id_prazo}"):
+            st.session_state[chave_aberta] = False
             st.rerun()
 
     with col_acao2:
