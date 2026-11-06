@@ -4930,6 +4930,7 @@ def relatorio_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> Non
         base = base[~base["concluido"]]
     elif situacao == "Concluídos":
         base = base[base["concluido"]]
+    st.caption("DEBUG concluido_em recebido: " + str(base[["titulo", "concluido_em"]].head(5).values.tolist()))
 
     c1, c2, c3 = st.columns(3)
     responsavel_sel = c1.selectbox("👤 Responsável", ["Todos"] + RESPONSAVEIS, key="rel_prazos_resp")
