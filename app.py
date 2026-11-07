@@ -5202,6 +5202,58 @@ def relatorio_pericias(df_pericias: pd.DataFrame) -> None:
     st.dataframe(lista, use_container_width=True, hide_index=True)
 
 
+def _data_ou_none(valor):
+    """Devolve a data se houver, senão None (para os campos de data do formulário)."""
+    return valor if isinstance(valor, dt.date) else None
+
+def editar_defesa_form(d) -> None:
+    """Editor completo de uma defesa cadastrada, com salvar e excluir."""
+    i = int(d["id"])
+    with st.expander("✏️ Editar defesa"):
+        with st.form(f"def_edit_form_{i}"):
+            e1, e2 = st.columns(2)
+            tipo_e = e1.selectbox(
+                "Tipo de Defesa", TIPOS_DEFESA,
+                index=TIPOS_DEFESA.index(d["tipo_defesa"]) if d["tipo_defesa"] in TIPOS_DEFESA else 0,
+                key=f"def_edit_tipo_{i}",
+            )
+            resp_atual = d["responsavel"] if d["responsavel"] in RESPONSAVEIS else RESPONSAVEIS[0]
+            resp_e = e2.radio("Responsável", RESPONSAVEIS, index=RESPONSAVEIS.index(resp_atual), horizontal=True, key=f"def_edit_resp_{i}")
+
+            f1, f2 = st.columns(2)
+            prazo_e = f1.date_input("Data Fatal", value=_data_ou_none(d["data_prazo"]), format="DD/MM/YYYY", key=f"def_edit_prazo_{i}")
+            status_e = f2.selectbox(
+                "Status", STATUS_DEFESA,
+                index=STATUS_DEFESA.index(d["status"]) if d["status"] in STATUS_DEFESA else 0,
+                key=f"def_edit_status_{i}",
+            )
+
+            g1, g2 = st.columns(2)
+            prot_e = g1.date_input("Data do protocolo (se protocolada)", value=_data_ou_none(d["data_protocolo"]), format="DD/MM/YYYY", key=f"def_edit_prot_{i}")
+            proc_e = g2.text_input("Processo", value=str(d["processo"] or ""), key=f"def_edit_proc_{i}")
+
+            desc_e = st.text_area("Descrição", value=str(d["descricao"] or ""), key=f"def_edit_desc_{i}")
+            obs_e = st.text_area("Observações", value=str(d["observacoes"] or ""), key=f"def_edit_obs_{i}")
+
+            if st.form_submit_button("💾 Salvar alterações", type="primary", use_container_width=True):
+                atualizar_defesa(i, {
+                    "tipo_defesa": tipo_e,
+                    "responsavel": resp_e,
+                    "data_prazo": prazo_e.isoformat() if prazo_e else None,
+                    "status": status_e,
+                    "data_protocolo": prot_e.isoformat() if prot_e else None,
+                    "processo": proc_e.strip() or None,
+                    "descricao": desc_e or None,
+                    "observacoes": obs_e or None,
+                })
+                st.session_state.aviso = "✅ Defesa atualizada!"
+                st.rerun()
+
+        if st.button("🗑️ Excluir esta defesa", key=f"def_del_{i}"):
+            excluir_defesa(i)
+            st.session_state.aviso = "🗑️ Defesa excluída."
+            st.rerun()
+
 def relatorio_defesas(df_defesas: pd.DataFrame) -> None:
     """Relatório de defesas: a fazer, protocoladas e canceladas, com filtros e Excel."""
     st.markdown("### 🛡️ Defesas")
@@ -6995,6 +7047,7 @@ def main() -> None:
                                 atualizar_defesa(int(d["id"]), {"status": "Protocolada", "data_protocolo": data_prot.isoformat()})
                                 st.session_state.aviso = f"✅ Defesa de {d['cliente']} protocolada em {data_prot.strftime('%d/%m/%Y')}!"
                                 st.rerun()
+                        editar_defesa_form(d)
 
             with sub_p:
                 if defesas_protocoladas.empty:
@@ -7005,6 +7058,7 @@ def main() -> None:
                         col1.markdown(f"**{d['cliente']}**  \n`{d['processo']}` · {d['tipo_defesa']}")
                         col2.markdown(f"✅ Protocolada em: **{_fmt_def(d['data_protocolo'])}**")
                         col3.markdown(f"👤 {d['responsavel']} · prazo {_fmt_def(d['data_prazo'])}")
+                        editar_defesa_form(d)
 
     with tab6:
         st.subheader("📅 Audiências Agendadas")
