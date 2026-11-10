@@ -449,9 +449,6 @@ def _ts_seguro(v):
 @st.cache_data(ttl=60, show_spinner="Carregando prazos…")
 def carregar_prazos() -> pd.DataFrame:
     resp = supabase().table(TABELA_PRAZOS).select("*").order("data_fatal").execute()
-    st.session_state["_dbg_raw"] = [
-        {k: r.get(k) for k in ("id", "titulo", "concluido", "concluido_em")} for r in (resp.data or []) if r.get("id") in (17, 22, 14)
-    ] + [sorted(list((resp.data or [{}])[0].keys()))]
     df = pd.DataFrame(resp.data, columns=COLUNAS_PRAZOS)
     for col in ("data_fatal", "data_interna"):
         df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
@@ -460,9 +457,6 @@ def carregar_prazos() -> pd.DataFrame:
     df["concluido_em"] = pd.Series(
         [_ts_seguro(v) for v in df["concluido_em"].tolist()], index=df.index, dtype="datetime64[ns, UTC]"
     )
-    st.session_state["_dbg_conv"] = [
-        (int(i), str(v)) for i, v in zip(df["id"].tolist()[:5], df["concluido_em"].tolist()[:5])
-    ]
 
     df["concluido"] = df["concluido"].fillna(False).astype(bool)
     df["arquivado"] = df["arquivado"].fillna(False).astype(bool)
@@ -4975,9 +4969,6 @@ def relatorio_prazos(df_prazos: pd.DataFrame, df_processos: pd.DataFrame) -> Non
         base = base[~base["concluido"]]
     elif situacao == "Concluídos":
         base = base[base["concluido"]]
-    st.caption("DEBUG concluido_em recebido: " + str(base[["titulo", "concluido_em"]].head(5).values.tolist()))
-    st.caption("DEBUG API bruta: " + str(st.session_state.get("_dbg_raw")))
-    st.caption("DEBUG após conversão: " + str(st.session_state.get("_dbg_conv")))
 
     c1, c2, c3 = st.columns(3)
     responsavel_sel = c1.selectbox("👤 Responsável", ["Todos"] + RESPONSAVEIS, key="rel_prazos_resp")
@@ -5202,8 +5193,58 @@ def relatorio_pericias(df_pericias: pd.DataFrame) -> None:
     st.dataframe(lista, use_container_width=True, hide_index=True)
 
 
+def painel_alertas(df_prazos: pd.DataFrame, df_audiencias: pd.DataFrame, df_defesas: pd.DataFrame) -> None:
+    """Alertas: prazos, defesas e audiências vencidos, de hoje e dos próximos 3 dias."""
+    hj = hoje()
+    limite = hj + dt.timedelta(days=3)
+
+    def _data(v):
+        d = pd.to_datetime(v, errors="coerce")
+        return d.date() if pd.notna(d) else None
+
+    itens = []  # (data, categoria, texto)
+    if df_prazos is not None and not df_prazos.empty:
+        abertos = df_prazos[(~df_prazos["concluido"].astype(bool)) & (~df_prazos["arquivado"].astype(bool))]
+        for _, p in abertos.iterrows():
+            d = _data(p.get("data_fatal"))
+            if d and d <= limite:
+                itens.append((d, "Prazo", f"{p.get('titulo', '')} · {p.get('cliente', '') or ''} · {p.get('responsavel', '') or ''}"))
+    if df_defesas is not None and not df_defesas.empty:
+        for _, x in df_defesas[df_defesas["status"] == "A fazer"].iterrows():
+            d = _data(x.get("data_prazo"))
+            if d and d <= limite:
+                itens.append((d, "Defesa", f"{x.get('tipo_defesa', '') or ''} · {x.get('cliente', '') or ''} · {x.get('responsavel', '') or ''}"))
+    if df_audiencias is not None and not df_audiencias.empty and "status" in df_audiencias.columns:
+        for _, a in df_audiencias[df_audiencias["status"] == "Agendada"].iterrows():
+            d = _data(a.get("data_audiencia"))
+            if d and d <= limite:
+                itens.append((d, "Audiência", f"{a.get('autor', '') or ''} x {a.get('reu', '') or ''} · {a.get('processo', '') or ''} · {a.get('responsavel', '') or ''}"))
+
+    st.markdown("### 🔔 Alertas")
+    if not itens:
+        st.success("✅ Nenhum prazo, defesa ou audiência vencido ou nos próximos 3 dias.")
+        return
+
+    itens.sort(key=lambda t: t[0])
+    vencidos = [t for t in itens if t[0] < hj]
+    de_hoje = [t for t in itens if t[0] == hj]
+    proximos = [t for t in itens if hj < t[0] <= limite]
+
+    def _linhas(lista):
+        return "\n".join(f"- **{d.strftime('%d/%m/%Y')}** · {cat}: {txt}" for d, cat, txt in lista)
+
+    if vencidos:
+        st.error(f"⚠️ **Vencidos ({len(vencidos)})**\n\n" + _linhas(vencidos))
+    if de_hoje:
+        st.warning(f"🔴 **Vencem hoje ({len(de_hoje)})**\n\n" + _linhas(de_hoje))
+    if proximos:
+        st.info(f"📅 **Próximos 3 dias ({len(proximos)})**\n\n" + _linhas(proximos))
+
+
 def _data_ou_none(valor):
     """Devolve a data se houver, senão None (para os campos de data do formulário)."""
+    if valor is None or pd.isna(valor):
+        return None
     return valor if isinstance(valor, dt.date) else None
 
 def editar_defesa_form(d) -> None:
@@ -6636,6 +6677,7 @@ def main() -> None:
 
     try:
         df_prazos = carregar_prazos()
+        df_prazos_todos = df_prazos.copy()
         df_processos = carregar_processos()
         df_audiencias = carregar_audiencias()
         df_pericias = carregar_pericias()
@@ -6834,6 +6876,7 @@ def main() -> None:
         st.info("Nenhum prazo.")
         st.stop()
 
+    painel_alertas(df_prazos_todos, df_audiencias, df_defesas)
     df_prazos = enriquecer(df_prazos_filtrados) if not df_prazos_filtrados.empty else pd.DataFrame()
 
     tab1, tab2, tab4, tab5, tab_def, tab6, tab_filtros = st.tabs(["📋 Ativos", "✅ Concluídos", "📦 Arquivo", "🔬 Perícias", "🛡️ Defesas", "📅 Audiências", "🔍 Filtros Avançados"])
